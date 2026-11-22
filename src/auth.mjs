@@ -25,10 +25,15 @@ export function authConfig(env = process.env) {
   };
 }
 
+// Pinroute needs only to know who is signing in, not their email or profile: Claude asks for this scope alone
+// (plus offline_access, which it adds itself for refresh tokens), so the consent screen stays short.
+export const SCOPES = ['openid'];
+
 // RFC 9728 protected resource metadata: tells Claude which sign-in service issues tokens for this server
 export const resourceMetadata = (cfg) => ({
   resource: cfg.resource,
   authorization_servers: [cfg.issuer],
+  scopes_supported: SCOPES,
   bearer_methods_supported: ['header'],
   resource_name: 'Pinroute',
   resource_documentation: `${cfg.base}/help`,
@@ -36,7 +41,7 @@ export const resourceMetadata = (cfg) => ({
 
 // The challenge that makes Claude show its Connect card, then retry the same call with a token
 export const challenge = (cfg, why = 'Sign in to Pinroute to use this tool') =>
-  `Bearer error="invalid_token", error_description="${why}", resource_metadata="${cfg.metadataUrl}"`;
+  `Bearer error="invalid_token", error_description="${why}", resource_metadata="${cfg.metadataUrl}", scope="${SCOPES.join(' ')}"`;
 
 // Where the issuer publishes its signing keys: AUTH_JWKS_URL, or its RFC 8414 / OpenID discovery document
 const keySets = new Map();

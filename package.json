@@ -1,6 +1,6 @@
 {
   "name": "pinroute-app",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Pinroute as an MCP App: a trip planner that runs inside Claude, using each traveller's own Claude plan.",
@@ -20,8 +20,12 @@
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "1.32.2",
+    "d3-geo": "3.1.2",
     "esbuild": "0.28.2",
     "jose": "6.2.18",
+    "lucide": "1.70.0",
+    "topojson-client": "3.1.0",
+    "world-atlas": "2.0.2",
     "zod": "4.6.7"
   }
 }

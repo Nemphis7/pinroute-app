@@ -27,6 +27,14 @@ test('the privacy policy covers collection, use, sharing, retention and contact'
   assert.match(text, /Railway/);
 });
 
+test('shows bracketed placeholders until the operator and support email are set', async () => {
+  const bare = await startServer(null, { SUPPORT_EMAIL: '', OPERATOR_NAME: '' });
+  const text = await (await fetch(`${bare.base}/privacy`)).text();
+  assert.match(text, /\[operator name\]/);
+  assert.match(text, /\[support email\]/);
+  bare.server.close();
+});
+
 test('serves the icon as SVG', async () => {
   const { type, text } = await get('/icon.svg');
   assert.match(type, /image\/svg\+xml/);

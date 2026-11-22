@@ -20,11 +20,27 @@ Claude (the traveller's own plan)
 | --- | --- | --- |
 | `open_planner` | Shows the planner for a trip (the MCP App screen) | reads |
 | `create_trip` / `update_trip` / `delete_trip` / `list_trips` | Multi-stop trips with nights per stop; dates and legs are worked out | writes / changes / deletes / reads |
-| `choose_flight` | Saves the flight picked for a leg, from any flight search | writes |
+| `set_nights` | Changes the nights at one stop; later dates move with it | writes |
+| `choose_flight` / `clear_flight` | Saves the flight picked for a leg, from any flight search, or removes it | writes / deletes |
+| `mark_leg` | Marks a flight, ferry or drive as booked, with an optional note | writes |
 | `search_flights` | Airline fares for one day or a return, cheapest first; daily limit per person | reads |
 | `find_airports` | Airports by city, name or code; works without signing in | reads |
 | `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link | writes / reads |
 | `delete_my_data` | Deletes everything the person saved | deletes |
+
+## The planner
+
+- **In the chat:** a trip card. It shows the nights strip (one segment per stay, sized by its nights, with today marked), where you are today and what's next, how many flights are chosen and transfers booked, a small map, and one action: **Open planner**.
+- **Full screen:**
+  - The route on the left (stops, and the flight, ferry or drive between them, each with its state); the selected stop or leg on the right, with the map beside it. Phones show one pane at a time.
+  - Change nights with plus and minus. Choose, book or remove flights, and mark ferries booked.
+  - Ask Claude for flights (with whatever flight tools the traveller has connected), for local picks, or for how to get between two places.
+  - Every change saves through the tools above, and Claude is told about it.
+- **Map:** drawn on the server from Natural Earth's 1:50m coastline (`src/map.mjs`). It travels in the result's `_meta`, so the model never reads it.
+- **Design:** audited with the /unslop process.
+  - A 4 px spacing grid, neutrals from Claude's theme, and one accent used only for the selection and the single main action.
+  - Two font weights, sentence case and tabular figures.
+  - Lucide line icons at one size and one stroke.
 
 Every tool has a title and a read-only or destructive annotation, and its description says what it does without steering Claude, as the [directory review](https://claude.com/docs/connectors/building/review-criteria) asks.
 
@@ -34,7 +50,7 @@ Node 22.13 or later (the database uses Node's built-in `node:sqlite`).
 
 ```bash
 npm install
-npm test             # builds the planner, then 40 tests: tools, sign-in, separate data per person, limits, pages, planner
+npm test             # builds the planner, then 50 tests: tools, sign-in, separate data per person, limits, map, pages, planner
 npm run dev          # http://127.0.0.1:3000/mcp
 npm run screenshots  # directory images in listing/ (needs Playwright)
 ```
@@ -136,6 +152,7 @@ src/auth.mjs          token checks (JWT, any OAuth issuer), protected resource m
 src/app.mjs           tools and the planner resource, scoped to one owner per request
 src/store.mjs         SQLite on the volume: trips, picks and search counts per owner; imports 0.1's store.json
 src/pages.mjs         /help, /privacy and the icon
+src/map.mjs           each trip's map: coastline (Natural Earth via world-atlas) and stop positions
 src/providers/        amadeus.mjs, demo.mjs, index.mjs (picks the source)
 src/geo.mjs           airports (OurAirports, public domain) and Pinroute's Thailand places
 src/trips.mjs         dates and legs of a trip
@@ -145,4 +162,4 @@ listing/              directory listing: draft answers, screenshots, icon
 test/                 tools, sign-in, store, pages, hosting, Amadeus, planner; test/host is the stand-in host
 ```
 
-Versions are pinned to the stack Claude's MCP Apps quickstart is verified with (`@modelcontextprotocol/ext-apps` 1.7.5). `@modelcontextprotocol/sdk` 1.32.2 and `zod` 4.6.7 are raised from the quickstart's 1.30.1 and 4.6.5 for their security fixes; ext-apps 1.7.5 accepts both. `jose` 6.2.18 checks tokens. Run `npm audit --omit=dev` after any change.
+Versions are pinned to the stack Claude's MCP Apps quickstart is verified with (`@modelcontextprotocol/ext-apps` 1.7.5). `@modelcontextprotocol/sdk` 1.32.2 and `zod` 4.6.7 are raised from the quickstart's 1.30.1 and 4.6.5 for their security fixes; ext-apps 1.7.5 accepts both. `jose` 6.2.18 checks tokens; `d3-geo`, `topojson-client` and `world-atlas` draw the maps; `lucide` provides the icons. Run `npm audit --omit=dev` after any change.

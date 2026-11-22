@@ -18,25 +18,29 @@ export function schedule(trip) {
 }
 
 // Flights worth searching: home → first stop, between stops that are far apart and have different airports, last stop → home.
-// Short hops (under 250 km, or the same airport) are left to road and ferry, as in Pinroute.
+// Short hops (under 250 km, or the same airport) are left to road and ferry, as in Pinroute: a ferry when either end is
+// an island. `after` is the index of the stop the leg leaves from (-1 for the flight out).
 export function legs(trip) {
   const rows = schedule(trip), out = [];
   const home = trip.home ? airport(trip.home) : null;
   if (home && rows[0]?.iata && rows[0].iata !== home.code) {
-    out.push({ key: `out|${home.code}|${rows[0].iata}|${trip.start}`, kind: 'out', from: home.code, to: rows[0].iata, fromName: home.city, toName: rows[0].place, date: trip.start });
+    out.push({ key: `out|${home.code}|${rows[0].iata}|${trip.start}`, kind: 'out', mode: 'flight', after: -1, from: home.code, to: rows[0].iata, fromName: home.city, toName: rows[0].place, date: trip.start });
   }
   for (let i = 0; i < rows.length - 1; i++) {
     const a = rows[i], b = rows[i + 1];
     const dist = km(a, b);
     const fly = a.iata && b.iata && a.iata !== b.iata && (dist == null || dist >= 250);
-    out.push({ key: `leg|${a.iata || a.place}|${b.iata || b.place}|${a.depart}`, kind: fly ? 'flight' : 'ground', from: a.iata, to: b.iata, fromName: a.place, toName: b.place, date: a.depart, km: dist });
+    out.push({ key: `leg|${a.iata || a.place}|${b.iata || b.place}|${a.depart}`, kind: fly ? 'flight' : 'ground', mode: fly ? 'flight' : a.island || b.island ? 'ferry' : 'road', after: i, from: a.iata, to: b.iata, fromName: a.place, toName: b.place, date: a.depart, km: dist });
   }
   const last = rows[rows.length - 1];
   if (home && last?.iata && last.iata !== home.code) {
-    out.push({ key: `home|${last.iata}|${home.code}|${last.depart}`, kind: 'home', from: last.iata, to: home.code, fromName: last.place, toName: home.city, date: last.depart });
+    out.push({ key: `home|${last.iata}|${home.code}|${last.depart}`, kind: 'home', mode: 'flight', after: rows.length - 1, from: last.iata, to: home.code, fromName: last.place, toName: home.city, date: last.depart });
   }
   return out;
 }
+
+// A leg without the date: the same hop keeps this when nights change and its date moves
+export const legRoute = (key) => String(key).split('|').slice(0, 3).join('|');
 
 export const endDate = (trip) => {
   const rows = schedule(trip);

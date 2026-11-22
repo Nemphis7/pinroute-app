@@ -1,15 +1,15 @@
 // Every tool, called the way Claude calls it: over HTTP through an MCP client (sign-in off: one local owner).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startServer, connect, THAILAND_TRIP, START, LAST_DAY, KBV_BKK } from './helpers.mjs';
+import { startServer, connect, THAILAND_TRIP, START, LAST_DAY, KBV_BKK, addDays } from './helpers.mjs';
 
 let srv, client, trip;
 before(async () => { srv = await startServer(null, { SEARCH_LIMIT_PER_DAY: '6' }); client = await connect(srv.url); });
 after(async () => { await client.close(); srv.server.close(); });
 
-const TOOLS = ['choose_flight', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'get_local_picks', 'list_trips', 'open_planner', 'save_local_picks', 'search_flights', 'update_trip'];
+const TOOLS = ['choose_flight', 'clear_flight', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'get_local_picks', 'list_trips', 'mark_leg', 'open_planner', 'save_local_picks', 'search_flights', 'set_nights', 'update_trip'];
 
-test('lists eleven tools, each with a title and the right read or write annotation', async () => {
+test('lists fourteen tools, each with a title and the right read or write annotation', async () => {
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((t) => t.name).sort(), TOOLS);
   for (const t of tools) {
@@ -17,7 +17,8 @@ test('lists eleven tools, each with a title and the right read or write annotati
     assert.ok(t.name.length <= 64);
     const read = t.annotations.readOnlyHint === true;
     assert.ok(read || 'destructiveHint' in t.annotations, `${t.name} declares read-only or destructive`);
-    if (/^delete_|^update_/.test(t.name)) assert.equal(t.annotations.destructiveHint, true, `${t.name} is destructive`);
+    if (/^(delete|update|clear)_/.test(t.name)) assert.equal(t.annotations.destructiveHint, true, `${t.name} is destructive`);
+    if (/^(set_nights|mark_leg)$/.test(t.name)) assert.deepEqual([t.annotations.readOnlyHint, t.annotations.destructiveHint], [false, false], `${t.name} writes but takes nothing away`);
     if (/^(get|list|find|open|search)_/.test(t.name)) assert.equal(read, true, `${t.name} is read-only`);
   }
   assert.equal(tools.find((t) => t.name === 'open_planner')._meta.ui.resourceUri, 'ui://pinroute/planner');
@@ -62,10 +63,20 @@ test('refuses impossible input with a message that says what to fix', async () =
   assert.match(JSON.stringify(bad.content), /calendar date/);
 });
 
-test('opens the planner on the newest trip', async () => {
+test('opens the planner on the newest trip, with its map for the view only', async () => {
   const r = await client.callTool({ name: 'open_planner', arguments: {} });
   assert.equal(r.structuredContent.trip.id, trip.id);
   assert.equal(r.structuredContent.flights.live, false);
+  const { map, mini } = r._meta;
+  assert.ok(map.h > map.w, 'a trip down a coast gets a tall map');
+  assert.deepEqual([mini.w, mini.h], [320, 200]);
+  assert.match(map.land, /^M[\d.,-]+/);
+  assert.equal(map.points.length, THAILAND_TRIP.stops.length);
+  for (const [x, y] of map.points) assert.ok(x >= 0 && x <= map.w && y >= 0 && y <= map.h, 'every stop inside the frame');
+  assert.deepEqual(map.points[0], map.points.at(-1), 'the trip ends where it began');
+  assert.doesNotMatch(JSON.stringify(r.structuredContent), /"land"/, 'the coastline stays out of what the model reads');
+  assert.equal(r.structuredContent.legs.find((l) => l.fromName === 'Koh Phi Phi').mode, 'ferry');
+  assert.equal(r.structuredContent.legs.find((l) => l.fromName === 'Khao Sok').mode, 'road');
   const bad = await client.callTool({ name: 'open_planner', arguments: { trip_id: 'trp_nope' } });
   assert.equal(bad.isError, true);
   assert.match(bad.content[0].text, /list_trips/);
@@ -128,6 +139,32 @@ test('changes a trip and lists trips', async () => {
   assert.equal(r.structuredContent.trip.choices[KBV_BKK].price, 186, 'the chosen flight stays');
   const l = await client.callTool({ name: 'list_trips', arguments: {} });
   assert.equal(l.structuredContent.trips[0].id, trip.id);
+});
+
+test('changes nights at one stop, and flags a flight whose date moved', async () => {
+  const lanta = THAILAND_TRIP.stops.findIndex((x) => x.place === 'Koh Lanta');
+  const r = await client.callTool({ name: 'set_nights', arguments: { trip_id: trip.id, stop: lanta, nights: 4 } });
+  assert.ok(!r.isError, JSON.stringify(r.content));
+  assert.equal(r.structuredContent.stops[lanta].nights, 4);
+  assert.equal(r.structuredContent.trip.end, addDays(LAST_DAY, 1), 'the end moves a day');
+  const leg = r.structuredContent.legs.find((l) => l.from === 'KBV' && l.to === 'BKK');
+  assert.equal(leg.chosen, null);
+  assert.deepEqual([leg.stale.date, leg.stale.price], [LAST_DAY, 186], 'the flight chosen for the old date is kept and flagged');
+  const back = await client.callTool({ name: 'set_nights', arguments: { trip_id: trip.id, stop: lanta, nights: 3 } });
+  assert.equal(back.structuredContent.legs.find((l) => l.key === KBV_BKK).chosen.price, 186, 'and it fits again once the date is back');
+  const bad = await client.callTool({ name: 'set_nights', arguments: { trip_id: trip.id, stop: 19, nights: 1 } });
+  assert.match(bad.content[0].text, /has 8 stops/);
+});
+
+test('marks a ferry booked with a note, and removes a chosen flight', async () => {
+  const ferry = (await client.callTool({ name: 'open_planner', arguments: { trip_id: trip.id } })).structuredContent.legs.find((l) => l.mode === 'ferry');
+  const m = await client.callTool({ name: 'mark_leg', arguments: { trip_id: trip.id, leg_key: ferry.key, booked: true, note: 'Ferry 11:30 from Tonsai pier' } });
+  const marked = m.structuredContent.legs.find((l) => l.key === ferry.key);
+  assert.deepEqual([marked.booked, marked.note], [true, 'Ferry 11:30 from Tonsai pier']);
+  const c = await client.callTool({ name: 'clear_flight', arguments: { trip_id: trip.id, leg_key: KBV_BKK } });
+  assert.equal(c.structuredContent.legs.find((l) => l.key === KBV_BKK).chosen, null);
+  assert.equal((await client.callTool({ name: 'clear_flight', arguments: { trip_id: trip.id, leg_key: KBV_BKK } })).isError, true, 'nothing left to remove');
+  await client.callTool({ name: 'choose_flight', arguments: { trip_id: trip.id, leg_key: KBV_BKK, summary: 'Thai AirAsia FD4403, 08:55 KBV → 10:30 DMK', price: 186, currency: 'EUR' } });
 });
 
 test('deletes one trip, then everything', async () => {

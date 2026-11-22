@@ -21,7 +21,10 @@ const TOOLS = [
   ['update_trip', 'Changes a trip: name, start, travellers, home airport or route', 'Changes'],
   ['delete_trip', 'Deletes one trip', 'Deletes'],
   ['list_trips', 'Lists your saved trips', 'Reads'],
+  ['set_nights', 'Changes the nights at one stop; later dates move with it', 'Writes'],
   ['choose_flight', 'Saves the flight you picked for a leg, from any flight search', 'Writes'],
+  ['clear_flight', 'Removes the flight saved for a leg', 'Deletes'],
+  ['mark_leg', 'Marks a flight, ferry or drive as booked, with an optional note', 'Writes'],
   ['search_flights', 'Searches airline fares (Amadeus Travel Builder); daily limit per person', 'Reads'],
   ['find_airports', 'Finds airports by city, name or code; works without signing in', 'Reads'],
   ['save_local_picks', 'Saves local favourites for a place, each with its source link', 'Writes'],
@@ -53,8 +56,9 @@ ${body}
 </main></body></html>`;
 }
 
-const contact = (env) => (env.SUPPORT_EMAIL ? `<a href="mailto:${esc(env.SUPPORT_EMAIL)}">${esc(env.SUPPORT_EMAIL)}</a>` : '<em>not set yet (SUPPORT_EMAIL)</em>');
-const operator = (env) => (env.OPERATOR_NAME ? esc(env.OPERATOR_NAME) : '<em>not set yet (OPERATOR_NAME)</em>');
+// Until OPERATOR_NAME and SUPPORT_EMAIL are set, bracketed placeholders show where they go
+const contact = (env) => (env.SUPPORT_EMAIL ? `<a href="mailto:${esc(env.SUPPORT_EMAIL)}">${esc(env.SUPPORT_EMAIL)}</a>` : '[support email]');
+const operator = (env) => (env.OPERATOR_NAME ? esc(env.OPERATOR_NAME) : '[operator name]');
 
 export function helpPage(env = process.env) {
   const auth = authConfig(env);
@@ -94,7 +98,7 @@ export function privacyPage(env = process.env) {
 <h2>What Pinroute keeps</h2>
 <ul>
 <li><b>An account id.</b> ${auth ? 'When you sign in, the sign-in service gives Pinroute a random id for your account, and your data is stored under it. Pinroute never sees your password and does not store your name or email address.' : 'This server has no sign-in; everything is stored under one shared account.'}</li>
-<li><b>Your trips:</b> their names, dates, places and nights, the number of travellers, your home airport, and the flights you chose (a one-line summary, price, booking link and where it was found).</li>
+<li><b>Your trips:</b> their names, dates, places and nights, the number of travellers, your home airport, the flights you chose (a one-line summary, price, booking link and where it was found), which legs you marked as booked, and any short note you added to a leg.</li>
 <li><b>Local picks</b> saved for places: name, type, a short note, area and source link.</li>
 <li><b>A count of your flight searches per day</b>, kept for seven days, to apply the daily limit.</li>
 </ul>
