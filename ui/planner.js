@@ -3,12 +3,13 @@
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
 
 // Size reports start once the host has answered (see connect below), so none is sent into a closed channel
-const app = new App({ name: 'Pinroute planner', version: '0.1.0' }, {}, { autoResize: false });
+const app = new App({ name: 'Pinroute planner', version: '0.2.0' }, {}, { autoResize: false });
 const $ = (id) => document.getElementById(id);
 
 let V = null;                       // the trip as the server sent it
 const legs = {};                    // leg key → { state, fares, note, live, error, direct, sort }
 const asked = {};                   // place → true once Claude was asked for picks
+const askedFlights = {};            // leg key → true once Claude was asked to find flights
 
 // Small DOM helper: text always goes through textContent, never through HTML
 function h(tag, props = {}, ...kids) {
@@ -96,13 +97,21 @@ function picksBlock(s, picks) {
 function legRow(l) {
   const st = legs[l.key] || {};
   const chosen = V.trip.choices?.[l.key];
-  const label = l.kind === 'ground' ? `${l.fromName} → ${l.toName}: by road or ferry${l.km ? `, about ${l.km} km` : ''}` : `${l.fromName} → ${l.toName} · flight ${l.from} → ${l.to} · ${day(l.date)}`;
+  const flight = l.kind !== 'ground';
+  const label = flight ? `${l.fromName} → ${l.toName} · flight ${l.from} → ${l.to} · ${day(l.date)}` : `${l.fromName} → ${l.toName}: by road or ferry${l.km ? `, about ${l.km} km` : ''}`;
+  const fareLabel = st.state === 'loading' ? 'Searching…' : st.state === 'done' ? 'Search again' : V.flights.live ? 'Airline fares' : 'Demo fares';
   const row = h('div', { class: 'row' },
     h('span', { class: 'what quiet', text: label }),
-    l.kind !== 'ground' ? h('button', { class: st.state === 'done' ? 'ghost' : 'primary', disabled: st.state === 'loading', text: st.state === 'loading' ? 'Searching…' : st.state === 'done' ? 'Search again' : 'Find flights', onclick: () => findFlights(l) }) : null);
+    flight ? h('span', { class: 'btns' },
+      h('button', { class: chosen ? 'ghost' : 'primary', text: chosen ? 'Ask Claude again' : 'Ask Claude', title: 'Claude searches with your flight tools and saves the one you pick', onclick: () => askFlights(l) }),
+      h('button', { class: 'ghost', disabled: st.state === 'loading', text: fareLabel, onclick: () => findFlights(l) })) : null);
   return h('li', { class: 'leg', 'data-leg': l.key },
     row,
-    chosen ? h('p', { class: 'chosen', text: `Chosen: ${chosen.summary} · ${money(chosen.price, chosen.currency)}` }) : null,
+    chosen ? h('p', { class: 'chosen' },
+      `Chosen: ${chosen.summary} · ${money(chosen.price, chosen.currency)}${chosen.source ? ` · via ${chosen.source}` : ''}`,
+      chosen.link ? h('button', { class: 'link small', text: 'Booking page', onclick: () => app.openLink({ url: chosen.link }) }) : null) : null,
+    askedFlights[l.key] && !chosen ? h('p', { class: 'quiet small' }, 'Claude is searching with your flight tools; the flight you pick appears here. ',
+      h('button', { class: 'link small', text: 'Refresh', onclick: () => refreshTrip() })) : null,
     st.state === 'error' ? h('p', { class: 'note warn', text: st.error }) : null,
     st.state === 'done' ? faresBlock(l, st) : null);
 }
@@ -116,6 +125,10 @@ function faresBlock(l, st) {
     h('button', { 'aria-pressed': String(st.sort !== 'time'), text: 'Cheapest', onclick: () => { st.sort = 'price'; render(); } }),
     h('button', { 'aria-pressed': String(st.sort === 'time'), text: 'Fastest', onclick: () => { st.sort = 'time'; render(); } }),
     h('span', { class: 'quiet small', text: `${list.length} of ${st.fares.length}` }));
+  if (!st.fares.length) {
+    return h('p', { class: 'note' }, `No offers from ${st.live ? 'the airlines Amadeus covers' : 'this source'} on this route. `,
+      h('button', { class: 'link', text: 'Ask Claude to search with your flight tools', onclick: () => askFlights(l) }));
+  }
   return h('div', {},
     bar,
     st.note ? h('p', { class: 'quiet small', text: st.note }) : null,
@@ -157,8 +170,35 @@ async function findFlights(l) {
   render();
 }
 
+// Claude searches with whatever flight tools the traveller has connected (any airline or booking site), shows the
+// options in the conversation and saves the pick with choose_flight; this view then picks it up from the server.
+async function askFlights(l) {
+  askedFlights[l.key] = true;
+  render();
+  const n = V.trip.adults;
+  const longDay = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${l.date}T00:00:00Z`));
+  const msg = `Find flights from ${l.fromName} (${l.from}) to ${l.toName} (${l.to} or another airport nearby) on ${longDay} for ${n} adult${n === 1 ? '' : 's'}, using my flight search tools. Show me the best options, and when I pick one, save it to Pinroute with choose_flight (trip_id "${V.trip.id}", leg_key "${l.key}").`;
+  await app.sendMessage({ role: 'user', content: [{ type: 'text', text: msg }] }).catch((e) => showError(e.message || String(e)));
+  // The save happens through Claude's own tool call, which this view isn't told about: look again for four minutes
+  const before = JSON.stringify(V.trip.choices?.[l.key] || null);
+  let tries = 0;
+  const timer = setInterval(async () => {
+    tries += 1;
+    await refreshTrip(true);
+    if (JSON.stringify(V.trip.choices?.[l.key] || null) !== before || tries >= 30) { clearInterval(timer); if (tries < 30) askedFlights[l.key] = false; render(); }
+  }, 8000);
+}
+
+async function refreshTrip(quiet) {
+  try {
+    const r = await app.callServerTool({ name: 'open_planner', arguments: { trip_id: V.trip.id } });
+    if (r.isError) throw new Error(textOf(r));
+    V = r.structuredContent; render();
+  } catch (e) { if (!quiet) showError(e.message || String(e)); }
+}
+
 async function choose(l, f, line) {
-  const r = await app.callServerTool({ name: 'choose_flight', arguments: { trip_id: V.trip.id, leg_key: l.key, summary: line, price: f.total, currency: f.currency, ...(f.link ? { link: f.link } : {}) } });
+  const r = await app.callServerTool({ name: 'choose_flight', arguments: { trip_id: V.trip.id, leg_key: l.key, summary: line, price: f.total, currency: f.currency, source: f.demo ? 'Demo data' : V.flights.provider, ...(f.link ? { link: f.link } : {}) } });
   if (r.isError) { showError(textOf(r)); return; }
   V = r.structuredContent;
   render();
