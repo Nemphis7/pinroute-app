@@ -113,4 +113,4 @@ ui/                   the planner: planner.js, planner.css, planner.html → dis
 test/                 server, Amadeus, hosting and planner tests; test/host is the stand-in host
 ```
 
-Versions are pinned to the stack Claude's MCP Apps quickstart is verified with: `@modelcontextprotocol/sdk` 1.30.1, `@modelcontextprotocol/ext-apps` 1.7.5, `zod` 4.6.5. The 2.x line of ext-apps uses the same wire protocol and can come later.
+Versions are pinned to the stack Claude's MCP Apps quickstart is verified with (`@modelcontextprotocol/ext-apps` 1.7.5), with `@modelcontextprotocol/sdk` 1.32.2 and `zod` 4.6.7 raised from the quickstart's 1.30.1 and 4.6.5 for their security fixes; ext-apps 1.7.5 accepts both. Run `npm audit --omit=dev` after any change. The 2.x line of ext-apps uses the same wire protocol and can come later.
