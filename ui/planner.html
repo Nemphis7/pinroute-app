@@ -8,16 +8,22 @@
 <style>/*CSS*/</style>
 </head>
 <body>
-<div id="app">
+<div id="app" data-layout="card">
   <header class="top">
     <div class="titles">
       <h1 id="name">Pinroute</h1>
-      <p id="sub" class="quiet">Loading your trip…</p>
+      <p id="sub" class="meta">Loading your trip…</p>
+      <p id="status" class="meta" hidden></p>
     </div>
-    <div class="tools"><span id="source" class="badge" hidden></span><button id="fs" class="ghost" hidden>Full screen</button></div>
+    <div id="side" class="side"></div>
   </header>
+  <div id="strip"></div>
   <p id="error" class="note warn" hidden></p>
-  <ol id="route" class="route"></ol>
+  <div id="open-row" class="open-row" hidden></div>
+  <main id="panes" class="panes" hidden>
+    <nav id="list" class="list" aria-label="Route"></nav>
+    <section id="detail" class="detail" aria-live="polite"></section>
+  </main>
 </div>
 <script>/*JS*/</script>
 </body>

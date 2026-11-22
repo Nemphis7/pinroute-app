@@ -50,6 +50,7 @@ test('answers every other tool with 401 and points Claude to the sign-in service
     const h = r.headers.get('www-authenticate');
     assert.match(h, /^Bearer /);
     assert.match(h, new RegExp(`resource_metadata="${PUBLIC}/\\.well-known/oauth-protected-resource/mcp"`));
+    assert.match(h, /scope="openid"/, 'asks for sign-in only: no email or profile');
     assert.equal(JSON.parse(r.text).error, 'invalid_token');
   }
 });
@@ -60,6 +61,7 @@ test('publishes protected resource metadata at both well-known paths', async () 
     assert.equal(m.resource, RESOURCE);
     assert.deepEqual(m.authorization_servers, [issuer]);
     assert.deepEqual(m.bearer_methods_supported, ['header']);
+    assert.deepEqual(m.scopes_supported, ['openid']);
   }
 });
 

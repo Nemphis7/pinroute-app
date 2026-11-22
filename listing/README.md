@@ -58,16 +58,16 @@ Everything the submission portal at [claude.ai/directory/manage](https://claude.
   4. Try the prompts below.
 - Confirm you've called every tool yourself as a custom connector in Claude.
 
-## Carousel screenshots (PNG, 1520 px wide, cropped to the app)
+## Carousel screenshots (PNG, 2× scale, cropped to the app)
 
 | File | Paired prompt |
 | --- | --- |
-| `1-route.png` | Plan my Thailand trip in Pinroute: Bangkok 1 night, Khao Sok 1, Khao Lak 2, Koh Yao Noi 2, Koh Phi Phi 3, Koh Lanta 3 and Ao Nang 2, then back to Bangkok, for 2 adults from Frankfurt. |
-| `2-local-picks.png` | Find local favourites for Koh Lanta from recent posts and save them to my Pinroute trip. |
-| `3-flights.png` | Find flights from Krabi to Bangkok for the last day of my Pinroute trip and save the one I pick. |
-| `4-route-dark.png` | Open my Pinroute trip. |
+| `1-planner.png` | Plan my Thailand trip in Pinroute: Bangkok 1 night, Khao Sok 1, Khao Lak 2, Koh Yao Noi 2, Koh Phi Phi 3, Koh Lanta 3 and Ao Nang 2, then back to Bangkok, for 2 adults from Frankfurt, and find local favourites for Koh Lanta. |
+| `2-flight.png` | Find flights from Krabi to Bangkok for the last day of my Pinroute trip and save the one I pick. |
+| `3-card.png` | Open my Pinroute trip. |
+| `4-ferry-dark.png` | How do I get from Koh Lanta to Ao Nang on my Pinroute trip? |
 
-The images use a sample trip. The Koh Lanta picks are real recommendations from Reddit, Instagram and travel guides. Regenerate the images with `npm run screenshots`.
+The images use a sample trip; the Koh Lanta picks are real recommendations from Reddit, Instagram and travel guides. Regenerate them with `npm run screenshots`.
 
 ## Allowed link URIs
 

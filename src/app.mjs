@@ -6,10 +6,11 @@ import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@model
 import { z } from 'zod';
 import { findAirports, resolvePlace } from './geo.mjs';
 import * as store from './store.mjs';
-import { schedule, legs, endDate } from './trips.mjs';
+import { schedule, legs, endDate, legRoute } from './trips.mjs';
+import { tripMap } from './map.mjs';
 import { flightProvider } from './providers/index.mjs';
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 export const PLANNER_URI = 'ui://pinroute/planner';
 
 const realDate = (s) => { const d = new Date(`${s}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
@@ -51,19 +52,31 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   const mine = (fn) => async (args) => (owner ? fn(args) : fail('Sign in to Pinroute to use this.'));
   const noTrip = (id) => fail(`No trip with id ${id} in your Pinroute account. list_trips shows the trips you have.`);
 
-  // Everything the planner needs for one trip, kept small: this also goes to the model
+  // Everything the planner needs for one trip, kept small: this also goes to the model. Each leg carries its state:
+  // the flight chosen, whether it's booked (with a note), or a flight chosen before its date moved ("stale").
   function tripView(trip) {
     const rows = schedule(trip);
     const picks = Object.fromEntries(rows.map((s) => [s.place, store.getPicks(owner, s.place)]));
     const provider = flightProvider(env);
+    const choices = trip.choices || {}, marks = trip.marks || {};
+    const legList = legs(trip).map((l) => {
+      const chosen = choices[l.key] || null;
+      const old = chosen ? null : Object.entries(choices).find(([k]) => k !== l.key && legRoute(k) === legRoute(l.key));
+      return { ...l, chosen, stale: old ? { ...old[1], date: old[0].split('|')[3] } : null, booked: !!marks[l.key]?.booked, note: marks[l.key]?.note || null };
+    });
     return {
-      trip: { id: trip.id, name: trip.name, start: trip.start, end: endDate(trip), adults: trip.adults, home: trip.home || null, choices: trip.choices || {} },
-      stops: rows.map((s) => ({ place: s.place, nights: s.nights, arrive: s.arrive, depart: s.depart, iata: s.iata, region: s.region })),
-      legs: legs(trip),
+      trip: { id: trip.id, name: trip.name, start: trip.start, end: endDate(trip), adults: trip.adults, home: trip.home || null, choices },
+      stops: rows.map((s, i) => ({ index: i, place: s.place, nights: s.nights, arrive: s.arrive, depart: s.depart, iata: s.iata, region: s.region, island: !!s.island })),
+      legs: legList,
       picks,
       flights: { provider: provider.name, live: provider.name !== 'Demo data' },
     };
   }
+  // The map goes in _meta: the planner draws it, the model never needs the coastline
+  const viewResult = (trip, line) => {
+    const v = tripView(trip);
+    return { content: [text(line ?? summary(v))], structuredContent: v, _meta: { map: tripMap(trip.stops), mini: tripMap(trip.stops, { w: 320, h: 200, pad: 20 }) } };
+  };
 
   // ---- the planner screen
   registerAppTool(server, 'open_planner', {
@@ -75,8 +88,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   }, mine(async ({ trip_id }) => {
     const trip = trip_id ? store.getTrip(owner, trip_id) : store.listTrips(owner)[0];
     if (!trip) return trip_id ? noTrip(trip_id) : fail('Your Pinroute account has no saved trips yet; create_trip saves one.');
-    const v = tripView(trip);
-    return { content: [text(summary(v))], structuredContent: v };
+    return viewResult(trip);
   }));
 
   registerAppResource(server, 'Pinroute planner', PLANNER_URI, { description: 'Interactive trip planner: route, flights and local picks' }, async () => ({
@@ -107,8 +119,9 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const resolved = resolveStops(stops);
     const trip = store.putTrip(owner, { id: store.newId('trp'), name, start, adults, home: home_airport?.toUpperCase() || null, stops: resolved, choices: {}, created: new Date().toISOString() });
     const missing = resolved.filter((s) => !s.iata).map((s) => s.place);
-    const v = tripView(trip);
-    return { content: [text(summary(v) + (missing.length ? ` No airport found for: ${missing.join(', ')}; give "airport" for those stops to get flight legs.` : ''))], structuredContent: v };
+    const r = viewResult(trip);
+    if (missing.length) r.content[0].text += ` No airport found for: ${missing.join(', ')}; give "airport" for those stops to get flight legs.`;
+    return r;
   }));
 
   server.registerTool('update_trip', {
@@ -128,8 +141,20 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     if (!t) return noTrip(trip_id);
     const next = { ...t, ...(name && { name }), ...(start && { start }), ...(adults && { adults }), ...(home_airport && { home: home_airport.toUpperCase() }) };
     if (stops) next.stops = resolveStops(stops);
-    const v = tripView(store.putTrip(owner, next));
-    return { content: [text(summary(v))], structuredContent: v };
+    return viewResult(store.putTrip(owner, next));
+  }));
+
+  server.registerTool('set_nights', {
+    title: 'Change nights at a stop',
+    description: 'Changes how many nights the traveller spends at one stop of a saved trip. The stop is counted from 0 in travel order; the dates of every later stop move with it.',
+    inputSchema: { trip_id: z.string().max(40), stop: z.number().int().min(0).max(19).describe('Position of the stop, 0 for the first'), nights: z.number().int().min(0).max(60) },
+    annotations: { title: 'Change nights at a stop', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, mine(async ({ trip_id, stop, nights }) => {
+    const t = store.getTrip(owner, trip_id);
+    if (!t) return noTrip(trip_id);
+    if (!t.stops[stop]) return fail(`Trip ${trip_id} has ${t.stops.length} stops, numbered 0 to ${t.stops.length - 1}.`);
+    const stops = t.stops.map((s, i) => (i === stop ? { ...s, nights } : s));
+    return viewResult(store.putTrip(owner, { ...t, stops }), `${t.stops[stop].place}: ${nights} night${nights === 1 ? '' : 's'}. ${summary(tripView({ ...t, stops }))}`);
   }));
 
   server.registerTool('delete_trip', {
@@ -173,9 +198,37 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const keys = legs(t).map((l) => l.key);
     if (!keys.includes(leg_key)) return fail(`Trip ${trip_id} has no leg ${leg_key}. Its legs are: ${keys.join(', ')}.`);
     const cur = currency.toUpperCase();
-    const choices = { ...(t.choices || {}), [leg_key]: { summary: line, price, currency: cur, link: link || null, source: source || null, at: new Date().toISOString() } };
-    const v = tripView(store.putTrip(owner, { ...t, choices }));
-    return { content: [text(`Saved for ${leg_key}: ${line} (${cur} ${price}).`)], structuredContent: v };
+    // A choice for the same hop on an earlier date gives way to this one
+    const choices = Object.fromEntries(Object.entries(t.choices || {}).filter(([k]) => legRoute(k) !== legRoute(leg_key)));
+    choices[leg_key] = { summary: line, price, currency: cur, link: link || null, source: source || null, at: new Date().toISOString() };
+    return viewResult(store.putTrip(owner, { ...t, choices }), `Saved for ${leg_key}: ${line} (${cur} ${price}).`);
+  }));
+
+  server.registerTool('clear_flight', {
+    title: 'Remove a chosen flight',
+    description: 'Removes the flight saved for one leg of a trip, so the leg shows as not chosen again. It does not cancel any booking.',
+    inputSchema: { trip_id: z.string().max(40), leg_key: z.string().max(80) },
+    annotations: { title: 'Remove a chosen flight', readOnlyHint: false, destructiveHint: true },
+  }, mine(async ({ trip_id, leg_key }) => {
+    const t = store.getTrip(owner, trip_id);
+    if (!t) return noTrip(trip_id);
+    const choices = Object.fromEntries(Object.entries(t.choices || {}).filter(([k]) => legRoute(k) !== legRoute(leg_key)));
+    if (Object.keys(choices).length === Object.keys(t.choices || {}).length) return fail(`No flight is saved for ${leg_key}.`);
+    return viewResult(store.putTrip(owner, { ...t, choices }), `Removed the flight saved for ${leg_key}.`);
+  }));
+
+  server.registerTool('mark_leg', {
+    title: 'Mark a leg booked',
+    description: 'Marks one leg of a trip (a flight, ferry or drive) as booked or not booked yet, with an optional short note such as a departure time or booking reference.',
+    inputSchema: { trip_id: z.string().max(40), leg_key: z.string().max(80), booked: z.boolean(), note: z.string().max(120).optional() },
+    annotations: { title: 'Mark a leg booked', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, mine(async ({ trip_id, leg_key, booked, note }) => {
+    const t = store.getTrip(owner, trip_id);
+    if (!t) return noTrip(trip_id);
+    const keys = legs(t).map((l) => l.key);
+    if (!keys.includes(leg_key)) return fail(`Trip ${trip_id} has no leg ${leg_key}. Its legs are: ${keys.join(', ')}.`);
+    const marks = { ...(t.marks || {}), [leg_key]: { booked, note: note ?? t.marks?.[leg_key]?.note ?? null, at: new Date().toISOString() } };
+    return viewResult(store.putTrip(owner, { ...t, marks }), `${leg_key} is ${booked ? 'booked' : 'not booked yet'}${note ? ` (${note})` : ''}.`);
   }));
 
   // ---- airports and flights
