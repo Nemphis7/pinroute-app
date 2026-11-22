@@ -1,0 +1,74 @@
+# Claude directory listing: draft answers
+
+Everything the submission portal at [claude.ai/directory/manage](https://claude.ai/directory/manage) (choose **MCP connector**) asks for, ready to paste. Placeholders in angle brackets are yours to fill in.
+
+## 1. Connection
+
+- **Server URL:** `https://<your domain>/mcp` (universal URL: everyone connects to the same address)
+
+## 3. Listing
+
+- **Name:** Pinroute
+- **One-liner (≤200):** Plan multi-stop trips in Claude: route and dates, flights between stops, and local favourites for every place, in one interactive planner.
+- **Description (≤2,000):**
+
+  Pinroute turns a trip idea into a day-by-day route you can see and change in the conversation. Tell Claude where you want to go and for how many nights; Pinroute works out the dates, spots which hops are flights and which are a ferry or a drive, and shows it all in an interactive planner.
+
+  For each flight, ask Claude to search with the flight tools you already use, or check airline fares directly, then save the one you pick to your trip with its price and booking link. For each place, Claude can gather what locals and recent visitors recommend, from restaurants to beaches and viewpoints, and save each pick to the planner with its source.
+
+  Your trips are saved to your own Pinroute account, so you can come back to them in any chat and on any device, including the Claude mobile apps. Pinroute never books or pays for anything: booking happens on the airline's or booking site. Delete a trip or all your data at any time by asking Claude.
+
+- **Categories:** Travel; Productivity (pick what the portal offers closest to these)
+- **Documentation URL:** `https://<your domain>/help`
+- **Privacy policy URL:** `https://<your domain>/privacy`
+- **Support contact:** `<SUPPORT_EMAIL>`
+- **Icon:** `icon-512.png` (or `icon-1024.png`, `icon.svg`)
+- **Slug (permanent):** `pinroute`
+
+## 4. Use cases
+
+- **Primary use cases:** planning multi-stop trips; finding and comparing flights for each leg; collecting local recommendations per place; keeping a trip plan across chats and devices.
+- **What users need first:** a free Pinroute account, created when they first sign in from Claude. No paid plan is needed.
+- **Reads or writes:** both. It reads and writes the user's own trips and picks; flight search and airport lookup only read.
+
+## 5. Company
+
+- **Name and website:** `<OPERATOR_NAME>`, `<website, or https://<your domain>/help>`
+- **Primary contact:** `<your email>`
+
+## 6. Authentication
+
+- **Authentication requirement:** Required when the server asks (airport lookup works without signing in; everything else asks for sign-in).
+- **Method:** OAuth sign-in through WorkOS AuthKit. Claude registers itself with a Client ID Metadata Document, with Dynamic Client Registration as a fallback, so there's no client to enter here.
+
+## 7. Data handling
+
+- **Underlying API:** Pinroute's own API for trips, picks and the planner. Flight search calls Amadeus Travel Builder with Pinroute's key under Amadeus's terms.
+- **Personal health data:** no.
+- **Sponsored content:** no. Results are ranked by price or travel time only, and no links carry commissions.
+
+## 8. Test & launch
+
+- **Reviewer account:** `<email and password of a test user in AuthKit>`. Sign in with it when Claude shows the Connect card.
+- **Populated data:** before submitting, sign in to Claude with the reviewer account and run prompts 1–3 below. That way the reviewers find a trip with chosen flights and saved picks.
+- **Steps:**
+  1. Add the connector with the URL above.
+  2. Ask: *Open my Pinroute trip.*
+  3. Click **Connect** and sign in with the reviewer account.
+  4. Try the prompts below.
+- Confirm you've called every tool yourself as a custom connector in Claude.
+
+## Carousel screenshots (PNG, 1520 px wide, cropped to the app)
+
+| File | Paired prompt |
+| --- | --- |
+| `1-route.png` | Plan my Thailand trip in Pinroute: Bangkok 1 night, Khao Sok 1, Khao Lak 2, Koh Yao Noi 2, Koh Phi Phi 3, Koh Lanta 3 and Ao Nang 2, then back to Bangkok, for 2 adults from Frankfurt. |
+| `2-local-picks.png` | Find local favourites for Koh Lanta from recent posts and save them to my Pinroute trip. |
+| `3-flights.png` | Find flights from Krabi to Bangkok for the last day of my Pinroute trip and save the one I pick. |
+| `4-route-dark.png` | Open my Pinroute trip. |
+
+The images use a sample trip. The Koh Lanta picks are real recommendations from Reddit, Instagram and travel guides. Regenerate the images with `npm run screenshots`.
+
+## Allowed link URIs
+
+Leave this empty. Pinroute opens airline, booking and source links that belong to other sites, and the portal only accepts origins you own. People see Claude's confirmation before each external link opens.

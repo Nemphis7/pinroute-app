@@ -10,13 +10,13 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 test('runs over stdio with the same tools', async () => {
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [new URL('../src/stdio.mjs', import.meta.url).pathname],
-    env: { ...process.env, FLIGHT_PROVIDER: 'demo', DATA_FILE: join(mkdtempSync(join(tmpdir(), 'pinroute-')), 'store.json') },
+    args: ['--disable-warning=ExperimentalWarning', new URL('../src/stdio.mjs', import.meta.url).pathname],
+    env: { ...process.env, FLIGHT_PROVIDER: 'demo', DATA_DIR: mkdtempSync(join(tmpdir(), 'pinroute-')) },
   });
   const client = new Client({ name: 'stdio-test', version: '1.0.0' });
   await client.connect(transport);
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 9);
+  assert.equal(tools.length, 11);
   const r = await client.callTool({ name: 'create_trip', arguments: { name: 'Test', start: '2026-12-01', adults: 1, stops: [{ place: 'Ao Nang', nights: 2 }, { place: 'Bangkok', nights: 1 }] } });
   assert.equal(r.structuredContent.legs[0].from, 'KBV');
   await client.close();

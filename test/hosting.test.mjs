@@ -43,6 +43,7 @@ test('on Railway: all interfaces, its own domain only, secret kept off the statu
     const home = await call(port, '/', RAILWAY.RAILWAY_PUBLIC_DOMAIN);
     assert.match(home.text, /Flights: Demo data \(AMADEUS_API_KEY is not set\)/);
     assert.match(home.text, /https:\/\/pinroute-test\.up\.railway\.app\/mcp\/<your MCP_SECRET>/);
+    assert.match(home.text, /Sign-in: off; the address is protected by MCP_SECRET/);
     assert.doesNotMatch(home.text, /s3cret-path/);
   } finally { srv.close(); }
 });
@@ -51,7 +52,7 @@ test('trips go to the attached volume', () => {
   const vol = mkdtempSync(join(tmpdir(), 'vol-'));
   const store = new URL('../src/store.mjs', import.meta.url).href;
   const env = { ...process.env, RAILWAY_VOLUME_MOUNT_PATH: vol };
-  delete env.DATA_FILE;
-  execFileSync(process.execPath, ['--input-type=module', '-e', `const s = await import(${JSON.stringify(store)}); s.putTrip({ id: 'trp_x', name: 'x', start: '2026-12-01', adults: 1, stops: [] });`], { env });
-  assert.ok(existsSync(join(vol, 'store.json')));
+  delete env.DATA_DIR;
+  execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', `const s = await import(${JSON.stringify(store)}); s.putTrip(s.LOCAL, { id: 'trp_x', name: 'x', start: '2026-12-01', adults: 1, stops: [] });`], { env });
+  assert.ok(existsSync(join(vol, 'pinroute.db')));
 });

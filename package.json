@@ -1,25 +1,27 @@
 {
   "name": "pinroute-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Pinroute as an MCP App: a trip planner that runs inside Claude, using each traveller's own Claude plan.",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "postinstall": "node scripts/build-ui.mjs",
     "build": "node scripts/build-ui.mjs",
-    "start": "node src/server.mjs",
-    "dev": "node scripts/build-ui.mjs && node src/server.mjs",
-    "test": "node scripts/build-ui.mjs && node --test test/*.test.mjs",
-    "stdio": "node src/stdio.mjs",
-    "check:amadeus": "node scripts/check-amadeus.mjs"
+    "start": "node --disable-warning=ExperimentalWarning src/server.mjs",
+    "dev": "node scripts/build-ui.mjs && node --disable-warning=ExperimentalWarning src/server.mjs",
+    "test": "node scripts/build-ui.mjs && node --disable-warning=ExperimentalWarning --test test/*.test.mjs",
+    "stdio": "node --disable-warning=ExperimentalWarning src/stdio.mjs",
+    "check:amadeus": "node scripts/check-amadeus.mjs",
+    "screenshots": "node --disable-warning=ExperimentalWarning scripts/screenshots.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "1.32.2",
     "esbuild": "0.28.2",
+    "jose": "6.2.18",
     "zod": "4.6.7"
   }
 }
