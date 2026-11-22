@@ -1,0 +1,93 @@
+/* Colours and type come from the host (Claude) when it sends them; the fallbacks keep the planner readable anywhere. */
+:root {
+  --pr-ink: var(--color-text-primary, #1f1e1d);
+  --pr-quiet: var(--color-text-secondary, #6b6a66);
+  --pr-card: var(--color-background-secondary, #f5f4f0);
+  --pr-raised: var(--color-background-primary, #ffffff);
+  --pr-line: var(--color-border-primary, #e2dfd8);
+  --pr-accent: var(--color-text-info, #2c6aa8);
+  --pr-accent-bg: var(--color-background-info, #e8f1fb);
+  --pr-warn: var(--color-text-warning, #8a5300);
+  --pr-warn-bg: var(--color-background-warning, #fff3dd);
+  --pr-ok: var(--color-text-success, #2f7a35);
+  --pr-radius: var(--border-radius-lg, 10px);
+  --pr-radius-sm: var(--border-radius-md, 7px);
+  --pr-font: var(--font-sans, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+  --pr-semibold: var(--font-weight-semibold, 600);
+}
+:root[data-theme="dark"] {
+  --pr-ink: var(--color-text-primary, #ecebe7);
+  --pr-quiet: var(--color-text-secondary, #a9a7a1);
+  --pr-card: var(--color-background-secondary, #2a2926);
+  --pr-raised: var(--color-background-primary, #1f1e1c);
+  --pr-line: var(--color-border-primary, #3d3b37);
+  --pr-accent: var(--color-text-info, #8ab9ec);
+  --pr-accent-bg: var(--color-background-info, #1d2d40);
+  --pr-warn: var(--color-text-warning, #f0b45c);
+  --pr-warn-bg: var(--color-background-warning, #3a2a10);
+  --pr-ok: var(--color-text-success, #7fcf86);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: transparent; }
+body { color: var(--pr-ink); font: 14px/1.45 var(--pr-font); }
+#app { padding: 12px; max-width: 760px; margin: 0 auto; }
+h1 { font-size: 17px; line-height: 1.3; margin: 0; font-weight: var(--pr-semibold); text-wrap: balance; }
+p { margin: 0; }
+.quiet { color: var(--pr-quiet); }
+.small { font-size: 12.5px; }
+button {
+  font: inherit; font-size: 13px; color: var(--pr-ink); background: var(--pr-raised); border: 1px solid var(--pr-line);
+  border-radius: var(--pr-radius-sm); padding: 5px 10px; cursor: pointer; min-height: 32px;
+}
+button:hover { border-color: var(--pr-quiet); }
+button:disabled { opacity: 0.55; cursor: default; }
+button.primary { background: var(--pr-accent); border-color: var(--pr-accent); color: var(--pr-raised); }
+button.ghost { background: transparent; }
+button[aria-pressed="true"] { background: var(--pr-accent-bg); border-color: var(--pr-accent); color: var(--pr-accent); }
+a, .link { color: var(--pr-accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; background: none; border: 0; padding: 0; min-height: 0; font-size: inherit; }
+
+.top { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; }
+.titles { min-width: 0; }
+.tools { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--pr-card); color: var(--pr-quiet); white-space: nowrap; }
+.badge.demo { background: var(--pr-warn-bg); color: var(--pr-warn); }
+.badge.live { background: var(--pr-accent-bg); color: var(--pr-accent); }
+.note { padding: 8px 10px; border-radius: var(--pr-radius-sm); margin: 8px 0; }
+.note.warn { background: var(--pr-warn-bg); color: var(--pr-warn); }
+
+/* The route: stops as cards on a line, the legs between them */
+.route { list-style: none; margin: 0; padding: 0; position: relative; }
+.route::before { content: ""; position: absolute; left: 11px; top: 14px; bottom: 14px; width: 2px; background: var(--pr-line); }
+.stop, .leg { position: relative; padding-left: 34px; }
+.stop { margin: 6px 0; }
+.stop .dot { position: absolute; left: 4px; top: 14px; width: 16px; height: 16px; border-radius: 50%; background: var(--pr-raised); border: 2px solid var(--pr-accent); }
+.card { background: var(--pr-card); border-radius: var(--pr-radius); padding: 10px 12px; }
+.card .head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; justify-content: space-between; }
+.place { font-weight: var(--pr-semibold); font-size: 15px; }
+.leg { margin: 2px 0; padding-top: 4px; padding-bottom: 4px; }
+.leg .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.leg .what { font-size: 13px; }
+.chosen { font-size: 12.5px; color: var(--pr-ok); margin-top: 4px; }
+
+/* Flights */
+.fares { margin: 8px 0 6px; display: grid; gap: 6px; }
+.fbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.fare { background: var(--pr-raised); border: 1px solid var(--pr-line); border-radius: var(--pr-radius-sm); padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+.fare .price { font-weight: var(--pr-semibold); font-size: 15px; text-align: right; white-space: nowrap; }
+.fare .times { font-variant-numeric: tabular-nums; }
+.fare .acts { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.plus { font-size: 11px; vertical-align: super; color: var(--pr-quiet); }
+.warnc { color: var(--pr-warn); }
+
+/* Local picks */
+.picks { margin-top: 8px; border-top: 1px solid var(--pr-line); padding-top: 8px; }
+.picks ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.picks li { font-size: 13px; }
+.kind { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pr-quiet); margin-left: 6px; }
+.pbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+
+@media (max-width: 480px) {
+  #app { padding: 8px; }
+  .fare { grid-template-columns: 1fr; }
+  .fare .price { text-align: left; }
+}
