@@ -118,12 +118,41 @@ kbd { font: inherit; font-size: 11px; line-height: 16px; padding: 0 var(--s-1); 
 #app[data-layout="app"] { height: 100vh; display: flex; flex-direction: column; padding: 0; }
 #app[data-layout="app"] > #screen { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--s-4) var(--s-4) 0; }
 #app[data-layout="app"] > #error { margin: var(--s-3) var(--s-4) 0; }
-.bar { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; }
+
+/* ---- navigation: Back, Home, New trip, Trips and the way out along the top; on a phone the three places are
+   tabs at the bottom. The current place is marked with the paper tint and a teal icon. */
+.bar { display: grid; gap: var(--s-2); }
+.bar-row { display: flex; align-items: center; gap: var(--s-1); min-height: 40px; min-width: 0; }
+.bar-row.sub { min-height: 0; }
 #app[data-layout="app"] > .bar { padding: var(--s-2) var(--s-4); border-bottom: 1px solid var(--line); }
-#app[data-layout="stacked"] > .bar { padding-bottom: var(--s-3); margin-bottom: var(--s-4); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.bar .brand { font-weight: var(--medium); }
-.bar .brand[aria-current="page"] { color: var(--accent); }
+#app[data-layout="stacked"] > .bar { padding-bottom: var(--s-3); margin-bottom: var(--s-4); border-bottom: 1px solid var(--line); }
 .bar .grow { flex: 1; }
+.bar .sep { flex: none; width: 1px; height: 20px; background: var(--line); margin: 0 var(--s-2); }
+.bar .back { margin: 0; }
+.back:disabled { opacity: 0.4; }
+.bar-title { flex: 1; min-width: 0; text-align: center; font-weight: var(--medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.places { display: flex; align-items: center; gap: var(--s-1); min-width: 0; }
+.tab { border-color: transparent; background: transparent; color: var(--ink-2); white-space: nowrap; min-width: 0; }
+.tab:hover { background: var(--paper-2); color: var(--ink); }
+.tab[aria-current="page"] { color: var(--ink); background: var(--paper-2); }
+.tab[aria-current="page"] > svg.i:first-child { color: var(--accent); }
+.tab .tab-l { overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.trips-wrap { position: relative; min-width: 0; }
+.menu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; width: max-content; min-width: 260px; max-width: min(380px, calc(100vw - 32px)); max-height: 60vh; overflow-y: auto;
+  display: grid; gap: 2px; padding: var(--s-1); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--r-2); box-shadow: 0 8px 24px rgb(0 0 0 / 0.14); }
+.menu > p { margin: 0; padding: var(--s-2) var(--s-3); }
+.mi { display: grid; justify-items: start; gap: 0; width: 100%; min-height: 0; padding: var(--s-2) var(--s-3); text-align: left; border-color: transparent; background: transparent; }
+.mi:hover, .mi:focus-visible { background: var(--paper-2); }
+.mi[aria-current="true"] { box-shadow: inset 2px 0 0 var(--accent); }
+.mi-t { color: var(--ink); }
+#app[data-layout="app"] > .tabs { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-1);
+  padding: var(--s-1) var(--s-2) calc(var(--s-1) + var(--safe-bottom, 0px)); border-top: 1px solid var(--line); background: var(--paper); }
+.tabs[hidden] { display: none !important; }
+#app[data-layout="app"][data-narrow="true"][data-screen="trip"] #name { display: none; }   /* the bar above already names the trip */
+.tabs .trips-wrap { position: static; display: grid; }
+.tab.bottom { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 48px; padding: var(--s-1); font-size: 11px; line-height: 14px; }
+.tab.bottom[aria-current="page"] { background: transparent; }
+.tabs .menu { left: var(--s-2); right: var(--s-2); top: auto; bottom: calc(100% + 4px); width: auto; max-width: none; }
 .steps { flex: 1; display: flex; gap: var(--s-1); list-style: none; margin: 0; padding: 0; min-width: 0; overflow-x: auto; }
 .step { border-color: transparent; background: transparent; color: var(--ink-2); white-space: nowrap; }
 .step .n { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line-2); display: grid; place-items: center; font-size: 11px; line-height: 1; }

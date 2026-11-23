@@ -15,7 +15,7 @@ import {
 import { tripMap } from './map.mjs';
 import { flightProvider } from './providers/index.mjs';
 
-export const VERSION = '0.4.0';
+export const VERSION = '0.4.1';
 export const PLANNER_URI = 'ui://pinroute/planner';
 
 const realDate = (s) => { const d = new Date(`${s}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
