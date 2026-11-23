@@ -10,7 +10,7 @@ Why inside Claude: Anthropic does not allow other apps to offer a Claude login o
 Claude (the traveller's own plan)
  ├─ talks with the traveller; researches flights, routes and local picks with its own tools
  ├─ calls this server's tools ──── token from the sign-in service ────► Pinroute server (this repo)
- └─ shows the planner (ui/, one HTML)                                     ├─ checks the token (src/auth.mjs)
+ └─ shows the planner (ui/, one HTML; Back, Home, New trip, Trips)       ├─ checks the token (src/auth.mjs)
       ├─ start screen: I know when / I know where, the trips              ├─ trips, draft, fares, picks per person (SQLite on the volume)
       ├─ new trip: When → Where → Flights, Country → Best time → Flights  ├─ 60 countries by season and price level (src/discover.mjs)
       ├─ a trip: route, flights, ferries, local picks                     ├─ airports and Thailand places (src/data)
@@ -148,7 +148,7 @@ src/geo.mjs           airports (OurAirports, public domain), Pinroute's Thailand
 src/data/             airports.json, places-th.json, destinations.json (60 countries: seasons, gateway, price level)
 src/trips.mjs         dates and legs of a trip
 src/map.mjs           a trip's coastline map; src/world.mjs the world map, drawn at build time
-ui/                   the planner: planner.js (screens, trip), home.js, newtrip.js, world.js, core.js, dom.js,
+ui/                   the planner: planner.js (screens, trip), home.js, newtrip.js, nav.js, world.js, core.js, dom.js,
                       planner.css, planner.html → dist/planner.html (npm run build)
 scripts/              build-ui, check-amadeus, screenshots
 listing/              directory listing: draft answers, screenshots, icon

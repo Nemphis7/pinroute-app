@@ -6,11 +6,12 @@
 // It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, Maximize2, Minimize2, MessageSquare, House, Route } from 'lucide';
-import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, tell, ask, waiting } from './core.js';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, Maximize2, MessageSquare, Route } from 'lucide';
+import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting } from './core.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
 import { takeHome, homeCard, homeScreen } from './home.js';
 import { takeNew, newCard, newSteps, newScreen, newKey } from './newtrip.js';
+import { navBar, navTabs } from './nav.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
@@ -61,16 +62,19 @@ function render() {
 }
 onRender(render);
 
-// Full screen and in hosts without it: a bar to the start screen, the new-trip steps, and back to the chat
+// Full screen and in hosts without it: Back, Home, New trip, Trips and the way back to the chat (nav.js). On a phone
+// full screen, Home, New trip and Trips are tabs along the bottom.
 function bar(L) {
-  const el = $('bar');
+  const el = $('bar'), tabs = $('tabs');
   el.hidden = L === 'card';
-  if (el.hidden) return;
-  const small = window.innerWidth < 720;
-  el.replaceChildren(
-    h('button', { class: `ghost brand${small ? ' icon' : ''}`, 'aria-label': 'Pinroute', 'aria-current': screen === 'home' ? 'page' : null, title: 'Start screen', onclick: () => go('open_planner', {}) }, icon(House), small ? null : 'Pinroute'),
-    screen === 'new' ? newSteps() : h('span', { class: 'grow' }),
-    L === 'app' ? h('button', { class: small ? 'ghost icon' : 'ghost', 'aria-label': 'Back to chat', title: 'Back to chat', onclick: () => setMode('inline') }, icon(Minimize2), small ? null : 'Back to chat') : null);
+  const phone = L === 'app' && window.innerWidth < 720;
+  tabs.hidden = !phone;
+  if (el.hidden) { tabs.replaceChildren(); return; }
+  const trip = screen === 'trip' && V ? V.trip : null;
+  const where = { where: screen, tripName: trip?.name, tripId: trip?.id };
+  const title = screen === 'trip' ? trip?.name : screen === 'new' ? 'New trip' : 'Pinroute';
+  el.replaceChildren(...navBar({ layout: L, phone, title, steps: screen === 'new' ? newSteps() : null, ...where }));
+  tabs.replaceChildren(...(phone ? navTabs(where) : []));
 }
 
 // The start screen and the new-trip planner in the chat: a title, a line or two, a small map and one main action
@@ -100,7 +104,8 @@ function renderTrip(L) {
   $('side').replaceChildren(...(L === 'card' ? [mapSvg({ mini: true })] : []).filter(Boolean));
   $('strip').replaceChildren(strip());
   $('open-row').hidden = L !== 'card';
-  $('open-row').replaceChildren(h('button', { class: 'primary', onclick: () => openAt(sel) }, icon(Maximize2), 'Open planner'));
+  $('open-row').replaceChildren(h('div', { class: 'acts' }, h('button', { class: 'primary', onclick: () => openAt(sel) }, icon(Maximize2), 'Open planner'),
+    canFull() ? h('button', { onclick: () => go('open_planner', {}) }, 'All trips') : null));
   $('panes').hidden = L === 'card';
   if (L !== 'card') { $('list').replaceChildren(...listView()); $('detail').replaceChildren(...detailView()); }
 }
@@ -468,11 +473,11 @@ function take(r) {
 // A tool result picks the screen: the start screen, the new-trip planner, or a trip
 function showResult(r) {
   const sc = r.structuredContent || {};
-  if (sc.screen === 'home') { takeHome(sc); screen = 'home'; }
-  else if (sc.screen === 'new') { takeNew(sc); screen = 'new'; }
+  if (sc.screen === 'home') { takeHome(sc); screen = 'home'; setHere({ name: 'open_planner', args: {} }); }
+  else if (sc.screen === 'new') { takeNew(sc); screen = 'new'; setHere({ name: 'plan_new_trip', args: {} }); }
   else if (sc.trip) {
     if (V?.trip.id !== sc.trip.id) { sel = null; pane = 'list'; }
-    take(r); screen = 'trip';
+    take(r); screen = 'trip'; setHere({ name: 'open_planner', args: { trip_id: sc.trip.id } });
   }
   render();
 }
@@ -485,6 +490,8 @@ function applyContext(next) {
   if (ui.ctx.theme) applyDocumentTheme(ui.ctx.theme);
   if (ui.ctx.styles?.variables) applyHostStyleVariables(ui.ctx.styles.variables);
   if (ui.ctx.styles?.css?.fonts) applyHostFonts(ui.ctx.styles.css.fonts);
+  const inset = ui.ctx.safeAreaInsets || {};
+  document.documentElement.style.setProperty('--safe-bottom', `${inset.bottom || 0}px`);
   render();
 }
 

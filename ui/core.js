@@ -3,7 +3,7 @@
 import { App } from '@modelcontextprotocol/ext-apps';
 
 // Size reports start once the host has answered (see the start in planner.js), so none is sent into a closed channel
-export const app = new App({ name: 'Pinroute planner', version: '0.4.0' }, {}, { autoResize: false });
+export const app = new App({ name: 'Pinroute planner', version: '0.4.1' }, {}, { autoResize: false });
 export const $ = (id) => document.getElementById(id);
 export const ui = { ctx: {}, busy: false };
 
@@ -29,18 +29,32 @@ export async function call(name, args = {}) {
   return r;
 }
 
+// Where the traveller is and has been: each place is the tool call that shows it again, so Back reopens it fresh.
+// The screen sets `here` from what it shows (see where() in planner.js); go() remembers the place it leaves.
+export const nav = { here: null, back: [] };
+const same = (a, b) => a && b && a.name === b.name && JSON.stringify(a.args) === JSON.stringify(b.args);
+
 // Opens a screen from a tool call, full screen when the host offers it
-export async function go(name, args, { full = true } = {}) {
+export async function go(name, args, { full = true, remember = true } = {}) {
+  const from = nav.here;
   ui.busy = true; render();
   try {
     const r = await call(name, args);
     showError('');
     show(r);
+    if (remember && from && !same(from, nav.here)) nav.back = [...nav.back, from].slice(-20);
     if (full && canFull() && !isFull()) await setMode('fullscreen');
     return r;
   } catch (e) { showError(e.message || String(e)); return null; }
   finally { ui.busy = false; render(); }
 }
+export function goBack() {
+  const to = nav.back.at(-1);
+  if (!to) return null;
+  nav.back = nav.back.slice(0, -1);
+  return go(to.name, to.args, { remember: false });
+}
+export const setHere = (place) => { nav.here = place; };
 
 export async function setMode(mode) {
   try {

@@ -133,7 +133,7 @@ test('plans a trip with the best fare, then Claude plans the route', { skip }, a
 });
 
 test('I know where: a country, its best months with fares, then the flights of one month', { skip }, async () => {
-  await frame().getByRole('button', { name: 'Pinroute' }).click();
+  await frame().getByRole('button', { name: 'Home' }).click();
   await frame().locator('.home').waitFor();
   await frame().getByRole('button', { name: /I know where/ }).click();
   await frame().locator('#c-q').fill('jap');
