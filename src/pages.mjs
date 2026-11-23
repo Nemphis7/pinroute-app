@@ -20,10 +20,11 @@ export const EXAMPLE_PROMPTS = [
 
 const TOOLS = [
   ['open_planner', 'Shows the start screen, or the planner for a saved trip', 'Reads'],
-  ['plan_new_trip', 'Shows the new-trip planner and saves your free dates, length, travellers, budget, airports and countries to compare; ranks 60 countries by the weather then', 'Writes'],
+  ['plan_new_trip', 'Shows the new-trip planner and saves your free dates, length, travellers, budget, airports, countries to compare, your wishes in your own words and a focus on part of a country; ranks 60 countries by the weather then', 'Writes'],
   ['scan_flight_deals', 'Looks up return fares to a country across your window or by month (recent prices from Aviasales), or live airline fares, also comparing departure and arrival airports for one pair of dates (Amadeus Travel Builder); keeps the cheapest', 'Writes'],
   ['save_flight_deals', 'Keeps return fares Claude found with any flight search, for one country', 'Writes'],
   ['start_trip_from_flight', 'Creates a trip from a saved fare: from landing to the flight home, with the fare on both flights', 'Writes'],
+  ['set_trip_fare', 'Moves a trip to another saved fare: its dates follow the flights, nights are added to or taken from the longest stays', 'Changes'],
   ['create_trip', 'Saves a new multi-stop trip; dates and legs are worked out', 'Writes'],
   ['update_trip', 'Changes a trip: name, start, travellers, home airport or route', 'Changes'],
   ['delete_trip', 'Deletes one trip', 'Deletes'],
@@ -80,8 +81,11 @@ export function helpPage(env = process.env) {
 <li><b>I know when:</b> give your free days, how long to go and where you fly from (type an airport, or pick several on a map within the distance you would travel). Pinroute ranks 60 countries by the weather in those months, the flight time and your budget; tick a few and compare flight deals; plan the trip from the fare you like.</li>
 <li><b>I know where:</b> pick a country and see its weather month by month for the next year, with the cheapest fares found for the good months; choose a month to see its flights.</li>
 </ul>
+<p>Already know what you want, such as <i>Indonesia, but only Sulawesi</i>? Write it under <b>What do you have in mind?</b> when you start, or just tell Claude. Claude sets up the planner from it: the country, the part of it you mean and that area's airports, so fares are looked up to Makassar or Manado instead of Jakarta, and the route stays in that area.</p>
 <p>For a fare you like, <b>Same dates, other airports</b> compares the same dates from each of your departure airports to each of the country's main airports, with the cheapest route marked.</p>
 <p>A deal is rated against a rough fare for the distance, about €120 plus 7 cents a km per person for a return economy ticket. It points out unusual prices; it is not a forecast.</p>
+<h2>Looking after your trips</h2>
+<p>Each trip has a <b>Trip</b> menu: <b>Rename and details</b> (name, first night, travellers, home airport), <b>Change flights</b> to move the trip to another fare you saved, or one Claude finds, with the dates and nights following the new flights, and <b>Delete trip</b>. The start screen lists your trips with Rename and Delete next to each, and <b>Start over</b> clears a new trip you no longer want.</p>
 <h2>Add Pinroute to Claude</h2>
 <ol>
 <li>In Claude, open <b>Settings → Connectors</b> and choose <b>Add custom connector</b>.</li>
@@ -114,8 +118,8 @@ export function privacyPage(env = process.env) {
 <h2>What Pinroute keeps</h2>
 <ul>
 <li><b>An account id.</b> ${auth ? 'When you sign in, the sign-in service gives Pinroute a random id for your account, and your data is stored under it. Pinroute never sees your password and does not store your name or email address.' : 'This server has no sign-in; everything is stored under one shared account.'}</li>
-<li><b>Your trips:</b> their names, dates, places and nights, the number of travellers, your home airport, the flights you chose (a one-line summary, price, booking link and where it was found), which legs you marked as booked, and any short note you added to a leg.</li>
-<li><b>Your new-trip draft:</b> the days you are free, the trip length, the number of travellers, a budget if you gave one, your departure airports, the regions, interests and countries you chose, and the return fares saved for them (airports, dates, price, airline, booking link and where it was found).</li>
+<li><b>Your trips:</b> their names, dates, places and nights, the number of travellers, your home airport, the flights you chose (a one-line summary, price, booking link and where it was found), which legs you marked as booked, any short note you added to a leg, and the wishes and area you planned it from.</li>
+<li><b>Your new-trip draft:</b> the days you are free, the trip length, the number of travellers, a budget if you gave one, your departure airports, the regions, interests and countries you chose, what you wrote you have in mind and the part of a country you chose, and the return fares saved for them (airports, dates, price, airline, booking link and where it was found).</li>
 <li><b>Local picks</b> saved for places: name, type, a short note, area and source link.</li>
 <li><b>A count of your flight searches per day</b>, kept for seven days, to apply the daily limit.</li>
 </ul>

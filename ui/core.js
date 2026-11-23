@@ -3,7 +3,7 @@
 import { App } from '@modelcontextprotocol/ext-apps';
 
 // Size reports start once the host has answered (see the start in planner.js), so none is sent into a closed channel
-export const app = new App({ name: 'Pinroute planner', version: '0.6.0' }, {}, { autoResize: false });
+export const app = new App({ name: 'Pinroute planner', version: '0.7.0' }, {}, { autoResize: false });
 export const $ = (id) => document.getElementById(id);
 export const ui = { ctx: {}, busy: false };
 

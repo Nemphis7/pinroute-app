@@ -13,6 +13,7 @@ import { takeHome, homeCard, homeScreen } from './home.js';
 import { takeNew, newCard, newSteps, newScreen, newKey, openFlightLink, commissionNote } from './newtrip.js';
 import { navBar, navTabs } from './nav.js';
 import { airMapDialog } from './airmap.js';
+import { tripMenu, tripDialog } from './tripmenu.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
@@ -58,9 +59,9 @@ function render() {
     body.replaceChildren(screen === 'home' ? homeScreen() : newScreen());
     if (body.dataset.key !== key) { body.dataset.key = key; body.scrollTop = 0; if (L === 'stacked') $('app').scrollIntoView?.({ block: 'start' }); }
   }
-  const dialog = airMapDialog();
+  const dialog = airMapDialog() || tripDialog();
   $('overlay').replaceChildren(...[dialog].filter(Boolean));
-  if (dialog && !dialog.contains(document.getElementById(focus))) document.getElementById('am-close')?.focus();
+  if (dialog && !dialog.contains(document.getElementById(focus))) (dialog.querySelector('input:not([type="checkbox"]), #dlg-keep') || dialog.querySelector('#am-close, #dlg-close'))?.focus();
   const f = focus && document.getElementById(focus);
   if (f && f !== document.activeElement) { f.focus(); try { if (caret != null) f.setSelectionRange(caret, caret); } catch { /* not a text field */ } }
 }
@@ -105,7 +106,7 @@ function renderTrip(L) {
   const st = $('status');
   st.textContent = [L === 'card' ? nowAndNext() : null, tally(), unplanned() && L === 'card' ? 'Route not planned yet' : null].filter(Boolean).join('\n');
   st.hidden = !st.textContent;
-  $('side').replaceChildren(...(L === 'card' ? [mapSvg({ mini: true })] : []).filter(Boolean));
+  $('side').replaceChildren(...(L === 'card' ? [mapSvg({ mini: true })] : [tripMenu(V.trip)]).filter(Boolean));
   $('strip').replaceChildren(strip());
   $('open-row').hidden = L !== 'card';
   $('open-row').replaceChildren(h('div', { class: 'acts' }, h('button', { class: 'primary', onclick: () => openAt(sel) }, icon(Maximize2), 'Open planner'),
@@ -221,7 +222,8 @@ function planCallout() {
 function askPlan() {
   const t = V.trip.ticket, first = V.stops[0].place, last = V.stops.at(-1).place;
   const before = V.stops.map((x) => `${x.place}:${x.nights}`).join();
-  return ask('plan', `Plan the route for my Pinroute trip "${V.trip.name}" (trip_id "${V.trip.id}")${V.trip.country ? ` in ${V.trip.country}` : ''}: I land in ${first} (${t.to}) on ${longDay(V.trip.start)} and fly home from ${last} (${t.back_from || t.to}) on ${longDay(V.trip.end)}, ${nightsTxt(days(V.trip.start, V.trip.end))}, ${V.trip.adults} adult${V.trip.adults === 1 ? '' : 's'}. Suggest the stops in travel order with the nights at each, at a relaxed pace, and say in a few lines why. Then save it with update_trip: keep ${first} first, end with ${last} with 0 nights, and give every stop its nearest airport code, its lat and lon, and island true for islands.`,
+  const area = V.trip.area ? ` Keep the route in ${V.trip.area}.` : '', wish = V.trip.wishes ? ` What I have in mind: "${V.trip.wishes}".` : '';
+  return ask('plan', `Plan the route for my Pinroute trip "${V.trip.name}" (trip_id "${V.trip.id}")${V.trip.country ? ` in ${V.trip.country}` : ''}: I land in ${first} (${t.to}) on ${longDay(V.trip.start)} and fly home from ${last} (${t.back_from || t.to}) on ${longDay(V.trip.end)}, ${nightsTxt(days(V.trip.start, V.trip.end))}, ${V.trip.adults} adult${V.trip.adults === 1 ? '' : 's'}.${area}${wish} Suggest the stops in travel order with the nights at each, at a relaxed pace, and say in a few lines why. Then save it with update_trip: keep ${first} first, end with ${last} with 0 nights, and give every stop its nearest airport code, its lat and lon, and island true for islands.`,
     { poll: refresh, done: () => V.stops.map((x) => `${x.place}:${x.nights}`).join() !== before, tries: 60 });
 }
 

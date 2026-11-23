@@ -1,6 +1,6 @@
 {
   "name": "pinroute-app",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Pinroute as an MCP App: a trip planner that runs inside Claude, using each traveller's own Claude plan.",

@@ -461,3 +461,34 @@ span.mx-c { color: var(--ink-3); }
 .mx td.off .mx-c { background: transparent; border-style: dashed; }
 .mx td.win .mx-c { border-color: var(--accent); color: var(--accent); font-weight: var(--medium); }
 .mx td.picked .mx-c { box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+
+/* ---- dialogs for a trip: rename and details, change flights, confirm */
+.am-box.dlg { width: min(560px, 100%); }
+.dlg-body { display: grid; gap: var(--s-3); overflow-y: auto; min-height: 0; }
+.am-box.dlg > .dlg-body { flex: 1 1 auto; }
+.am-foot .grow { flex: 1; }
+input[type="text"], textarea { font: inherit; font-size: 14px; color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--r-2); min-height: 36px; padding: 6px 10px; width: 100%; }
+textarea { resize: vertical; line-height: 20px; }
+button.danger { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line-2)); }
+button.danger:hover { background: var(--warn-soft); }
+.fare-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+.fare-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-2); }
+.fr-main { min-width: 0; }
+.fr-main .pp { font-size: 16px; }
+@media (max-width: 520px) { .fare-row { flex-direction: column; align-items: stretch; } }
+
+/* ---- the trip menu, and trip rows with their own actions */
+.menu.right { left: auto; right: 0; }
+.mi.row-mi { display: flex; align-items: center; gap: var(--s-2); }
+.trip-menu { flex: none; }
+.trip-li { display: flex; align-items: center; gap: var(--s-1); }
+.trip-li > .row { flex: 1; min-width: 0; }
+.row-acts { display: flex; gap: 2px; flex: none; }
+.row-acts .icon { color: var(--ink-3); }
+.row-acts .icon:hover { color: var(--ink); }
+
+/* ---- what the traveller has in mind */
+.wish { display: grid; gap: var(--s-2); padding: var(--s-4); border-radius: var(--r-1); background: var(--accent-soft); }
+.wish-l b { font-weight: var(--medium); }
+.wish textarea { background: var(--paper); }
+.bar-row.sub { gap: var(--s-2); }
