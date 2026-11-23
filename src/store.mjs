@@ -1,4 +1,4 @@
-// Trips, chosen flights, local picks and search counts in one SQLite file on the server's disk (the Railway volume).
+// Trips, chosen flights, the new-trip draft, local picks and search counts in one SQLite file on the server's disk (the Railway volume).
 // Every row belongs to an owner: the signed-in person's id, or "local" while sign-in is off (one person, or Claude
 // Desktop on your own computer). Callers always pass the owner, so one person never reads another's rows.
 import { DatabaseSync } from 'node:sqlite';
@@ -25,6 +25,7 @@ function open() {
     CREATE INDEX IF NOT EXISTS trips_by_owner ON trips (owner, updated);
     CREATE TABLE IF NOT EXISTS picks (owner TEXT NOT NULL, place TEXT NOT NULL, data TEXT NOT NULL, updated TEXT NOT NULL, PRIMARY KEY (owner, place));
     CREATE TABLE IF NOT EXISTS usage (owner TEXT NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (owner, day, kind));
+    CREATE TABLE IF NOT EXISTS drafts (owner TEXT PRIMARY KEY, data TEXT NOT NULL, updated TEXT NOT NULL);
   `);
   importJson(dir);
   return db;
@@ -104,6 +105,24 @@ export function mergePicks(owner, place, picks) {
   });
 }
 
+// ---- the new-trip draft: one per owner, the trip being looked for before it exists
+export function getDraft(owner) {
+  const r = open().prepare('SELECT data, updated FROM drafts WHERE owner = ?').get(owner);
+  return r ? { ...JSON.parse(r.data), updated: r.updated } : null;
+}
+// Read, change and write in one transaction, so the planner and Claude saving at the same moment don't lose a change
+export function updateDraft(owner, fn, fresh) {
+  return tx((d) => {
+    const r = d.prepare('SELECT data FROM drafts WHERE owner = ?').get(owner);
+    const next = fn(r ? JSON.parse(r.data) : fresh());
+    const now = new Date().toISOString();
+    delete next.updated;
+    d.prepare('INSERT INTO drafts (owner, data, updated) VALUES (?, ?, ?) ON CONFLICT (owner) DO UPDATE SET data = excluded.data, updated = excluded.updated')
+      .run(owner, JSON.stringify(next), now);
+    return { ...next, updated: now };
+  });
+}
+
 // ---- daily counters, for limits such as flight searches per person
 export function bumpUsage(owner, kind, day = new Date().toISOString().slice(0, 10)) {
   return tx((d) => {
@@ -121,6 +140,7 @@ export function deleteOwner(owner) {
   return tx((d) => ({
     trips: d.prepare('DELETE FROM trips WHERE owner = ?').run(owner).changes,
     picks: d.prepare('DELETE FROM picks WHERE owner = ?').run(owner).changes,
+    drafts: d.prepare('DELETE FROM drafts WHERE owner = ?').run(owner).changes,
     usage: d.prepare('DELETE FROM usage WHERE owner = ?').run(owner).changes,
   }));
 }
@@ -133,9 +153,10 @@ export function adoptLocal(owner) {
     if (d.prepare('SELECT 1 FROM trips WHERE owner = ? LIMIT 1').get(owner)) return 0;
     const n = d.prepare('UPDATE trips SET owner = ? WHERE owner = ?').run(owner, LOCAL).changes;
     d.prepare('UPDATE OR IGNORE picks SET owner = ? WHERE owner = ?').run(owner, LOCAL);
+    d.prepare('UPDATE OR IGNORE drafts SET owner = ? WHERE owner = ?').run(owner, LOCAL);
     return n;
   });
 }
 
 // For tests: start from an empty store
-export function _reset() { open().exec('DELETE FROM trips; DELETE FROM picks; DELETE FROM usage;'); }
+export function _reset() { open().exec('DELETE FROM trips; DELETE FROM picks; DELETE FROM usage; DELETE FROM drafts;'); }

@@ -1,6 +1,6 @@
-// Makes the Claude directory listing images from the real planner: 4 carousel screenshots (PNG, 2× scale, cropped to
-// the app) and the icon as PNG. Sample trip; the Koh Lanta picks are real ones from Reddit, Instagram and travel
-// guides. Needs Playwright with Chromium. Run: npm run screenshots   → listing/
+// Makes the Claude directory listing images from the real planner: 6 carousel screenshots (PNG, 2× scale, cropped to
+// the app) and the icon as PNG. Sample trip and sample fares; the Koh Lanta picks are real ones from Reddit, Instagram
+// and travel guides. Needs Playwright with Chromium. Run: npm run screenshots   → listing/
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -50,8 +50,30 @@ await call('choose_flight', { trip_id: trip.id, leg_key: legs['KBV-BKK-flight'],
 const ferries = Object.keys(legs).filter((k) => /-(ferry|road)$/.test(k));
 for (const k of ferries.slice(0, 2)) await call('mark_leg', { trip_id: trip.id, leg_key: legs[k], booked: true });
 
+// ---- a new trip: free in March, from Frankfurt or Munich, four countries compared, sample fares saved
+await call('plan_new_trip', { free_from: '2027-03-01', free_until: '2027-03-24', min_nights: 13, max_nights: 16, home_airports: ['FRA', 'MUC'], adults: 2, budget: 6000, interests: ['beach', 'nature'], compare: ['Sri Lanka', 'Vietnam', 'Oman', 'Mexico'], step: 'where' });
+const fare = (from, to, depart, ret, price, airline, out, back, stops, source) => ({ from, to, depart, return: ret, price, currency: 'EUR', adults: 2, airline, out, back, stops, source });
+await call('save_flight_deals', { country: 'Sri Lanka', deals: [
+  fare('FRA', 'CMB', '2027-03-03', '2027-03-17', 1198, 'Qatar Airways', 'QR 68 / QR 664, 16:25 FRA → 08:10 CMB', 'QR 665 / QR 69, 04:20 CMB → 13:35 FRA', 1, 'LetsFG'),
+  fare('MUC', 'CMB', '2027-03-05', '2027-03-19', 1290, 'Emirates', 'EK 50 / EK 650, 21:45 MUC → 15:30 CMB', 'EK 651 / EK 49, 20:20 CMB → 07:05 MUC', 1, 'LetsFG')] });
+await call('save_flight_deals', { country: 'Vietnam', deals: [
+  fare('FRA', 'SGN', '2027-03-08', '2027-03-23', 1384, 'Vietnam Airlines', 'VN 30, 13:40 FRA → 07:20 SGN', 'VN 31, 23:05 SGN → 06:35 FRA', 0, 'LetsFG')] });
+await call('save_flight_deals', { country: 'Oman', deals: [
+  fare('MUC', 'MCT', '2027-03-06', '2027-03-20', 988, 'Oman Air', 'WY 126, 21:10 MUC → 06:15 MCT', 'WY 125, 02:05 MCT → 06:30 MUC', 0, 'Amadeus Travel Builder')] });
+await call('save_flight_deals', { country: 'Mexico', deals: [
+  fare('FRA', 'CUN', '2027-03-02', '2027-03-16', 1490, 'Condor', 'DE 2178, 10:25 FRA → 14:55 CUN', 'DE 2179, 17:10 CUN → 09:40 FRA', 0, 'LetsFG')] });
+
 // ---- the planner in a stand-in host, as Claude shows it: the card inline, the planner full screen
 const browser = await chromium.launch();
+async function openNew(theme) {
+  const page = await browser.newPage({ viewport: { width: 1160, height: 1000 }, deviceScaleFactor: 2, colorScheme: theme });
+  await page.goto(`${base}/__host`);
+  await page.evaluate(([u, t, bg]) => { document.body.style.background = bg; return window.startHost(u, {}, t, { inline: [760, 400], full: [1100, 720], tool: 'plan_new_trip' }); }, [`${base}${path}`, theme, BG[theme]]);
+  const frame = page.frameLocator('#planner');
+  await frame.getByRole('button', { name: 'Open planner' }).click();
+  await frame.locator('.dests').waitFor();
+  return { page, frame };
+}
 async function open(theme) {
   const page = await browser.newPage({ viewport: { width: 1160, height: 1000 }, deviceScaleFactor: 2, colorScheme: theme });
   await page.goto(`${base}/__host`);
@@ -62,22 +84,28 @@ async function open(theme) {
 }
 const shot = async (page, file) => { await page.waitForTimeout(300); await page.locator('#planner').screenshot({ path: join(OUT, file) }); console.log(`listing/${file}`); };
 
+const discover = await openNew('light');
+await shot(discover.page, '1-where.png');
+await discover.frame.locator('.step', { hasText: 'Flights' }).click();
+await discover.frame.locator('.banner').waitFor();
+await shot(discover.page, '2-deals.png');
+
 const light = await open('light');
 // The card, cropped to its content
 const cardH = await light.frame.locator('#app').evaluate((el) => Math.ceil(el.getBoundingClientRect().height));
 await light.page.evaluate((h) => { document.getElementById('planner').style.height = `${h}px`; }, cardH);
-await shot(light.page, '3-card.png');
+await shot(light.page, '5-card.png');
 await light.frame.getByRole('button', { name: 'Open planner' }).click();
 await light.frame.locator('#app[data-layout="app"]').waitFor();
 await light.frame.locator('.row.stop', { hasText: 'Koh Lanta' }).click();
-await shot(light.page, '1-planner.png');
+await shot(light.page, '3-planner.png');
 await light.frame.locator(`.row[data-leg="${legs['KBV-BKK-flight']}"]`).click();
-await shot(light.page, '2-flight.png');
+await shot(light.page, '4-flight.png');
 const dark = await open('dark');
 await dark.frame.getByRole('button', { name: 'Open planner' }).click();
 await dark.frame.locator('#app[data-layout="app"]').waitFor();
 await dark.frame.locator(`.row[data-leg="${legs['KBV-KBV-ferry']}"]`).click();
-await shot(dark.page, '4-ferry-dark.png');
+await shot(dark.page, '6-ferry-dark.png');
 
 // ---- icon: 512 and 1024 px
 for (const [scale, file] of [[1, 'icon-512.png'], [2, 'icon-1024.png']]) {

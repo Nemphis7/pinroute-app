@@ -9,21 +9,9 @@
 </head>
 <body>
 <div id="app" data-layout="card">
-  <header class="top">
-    <div class="titles">
-      <h1 id="name">Pinroute</h1>
-      <p id="sub" class="meta">Loading your trip…</p>
-      <p id="status" class="meta" hidden></p>
-    </div>
-    <div id="side" class="side"></div>
-  </header>
-  <div id="strip"></div>
-  <p id="error" class="note warn" hidden></p>
-  <div id="open-row" class="open-row" hidden></div>
-  <main id="panes" class="panes" hidden>
-    <nav id="list" class="list" aria-label="Route"></nav>
-    <section id="detail" class="detail" aria-live="polite"></section>
-  </main>
+  <nav id="bar" class="bar" aria-label="Pinroute" hidden></nav>
+  <p id="error" class="note warn" role="alert" hidden></p>
+  <div id="screen"><p class="meta">Loading Pinroute…</p></div>
 </div>
 <script>/*JS*/</script>
 </body>
