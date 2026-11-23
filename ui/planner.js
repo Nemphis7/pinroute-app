@@ -12,6 +12,7 @@ import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, toda
 import { takeHome, homeCard, homeScreen } from './home.js';
 import { takeNew, newCard, newSteps, newScreen, newKey } from './newtrip.js';
 import { navBar, navTabs } from './nav.js';
+import { airMapDialog } from './airmap.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
@@ -57,6 +58,9 @@ function render() {
     body.replaceChildren(screen === 'home' ? homeScreen() : newScreen());
     if (body.dataset.key !== key) { body.dataset.key = key; body.scrollTop = 0; if (L === 'stacked') $('app').scrollIntoView?.({ block: 'start' }); }
   }
+  const dialog = airMapDialog();
+  $('overlay').replaceChildren(...[dialog].filter(Boolean));
+  if (dialog && !dialog.contains(document.getElementById(focus))) document.getElementById('am-close')?.focus();
   const f = focus && document.getElementById(focus);
   if (f && f !== document.activeElement) { f.focus(); try { if (caret != null) f.setSelectionRange(caret, caret); } catch { /* not a text field */ } }
 }

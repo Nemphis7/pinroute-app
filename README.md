@@ -21,14 +21,14 @@ Claude (the traveller's own plan)
 | --- | --- | --- |
 | `open_planner` | The start screen, or a trip (the MCP App screen) | reads |
 | `plan_new_trip` | The new-trip planner; saves free dates, length, travellers, budget, airports, regions, interests and countries to compare | writes |
-| `scan_flight_deals` | Return fares to a country on a few dates spread over the window; keeps the cheapest | writes |
+| `scan_flight_deals` | Return fares to a country on a few dates spread over the window, or one pair of dates across several departure and arrival airports; keeps the cheapest | writes |
 | `save_flight_deals` | Keeps fares Claude found with any flight search, per country | writes |
 | `start_trip_from_flight` | A trip from a saved fare: from landing to the flight home, the fare on both flights | writes |
 | `create_trip` / `update_trip` / `delete_trip` / `list_trips` | Multi-stop trips with nights per stop; dates and legs are worked out; stops anywhere by coordinates | writes / changes / deletes / reads |
 | `set_nights` / `mark_leg` | Nights at one stop; a leg booked, with a note | writes |
 | `choose_flight` / `clear_flight` | Saves or removes the flight picked for a leg, from any flight search | writes / deletes |
 | `search_flights` | Airline fares for one day or a return, cheapest first; daily limit per person | reads |
-| `find_airports` | Airports by city, name or code; works without signing in | reads |
+| `find_airports` | Airports by city, name or code, or within a distance of a point (with a map for the picker); works without signing in | reads |
 | `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link | writes / reads |
 | `delete_my_data` | Deletes everything the person saved | deletes |
 
@@ -144,11 +144,11 @@ src/discover.mjs      the new-trip rules, shared with the planner: seasons, rank
 src/store.mjs         SQLite on the volume: trips, drafts, picks and search counts per owner; imports 0.1's store.json
 src/pages.mjs         /help, /privacy and the icon
 src/providers/        amadeus.mjs, demo.mjs, index.mjs (picks the source)
-src/geo.mjs           airports (OurAirports, public domain), Pinroute's Thailand places, nearest airport to a point
+src/geo.mjs           airports (OurAirports, public domain), Pinroute's Thailand places, airports near a point and per country
 src/data/             airports.json, places-th.json, destinations.json (60 countries: seasons, gateway, price level)
 src/trips.mjs         dates and legs of a trip
-src/map.mjs           a trip's coastline map; src/world.mjs the world map, drawn at build time
-ui/                   the planner: planner.js (screens, trip), home.js, newtrip.js, nav.js, world.js, core.js, dom.js,
+src/map.mjs           a trip's coastline map and the map around a point for picking airports; src/world.mjs the world map, drawn at build time
+ui/                   the planner: planner.js (screens, trip), home.js, newtrip.js, nav.js, airmap.js, world.js, core.js, dom.js,
                       planner.css, planner.html → dist/planner.html (npm run build)
 scripts/              build-ui, check-amadeus, screenshots
 listing/              directory listing: draft answers, screenshots, icon

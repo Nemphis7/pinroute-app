@@ -52,6 +52,28 @@ export function resolvePlace(text, airportHint, { lat, lon, island } = {}) {
   return { place: String(text).trim(), placeId: null, region: null, lat: null, lon: null, iata: null, island: false };
 }
 
+// Airports with scheduled flights within `within` km of a point, busiest first. International ones fly abroad.
+export function airportsNear(p, within, { international = true } = {}) {
+  const out = [];
+  for (const r of AIR.a) {
+    if (!r[7] || (international && !r[9])) continue;
+    const d = km(p, { lat: r[4], lon: r[5] });
+    if (d <= within) out.push({ ...airport(r[0]), km: d, international: !!r[9] });
+  }
+  return out.sort((a, b) => b.served - a.served || a.km - b.km);
+}
+
+// A country's airports with flights abroad, one per city (its busiest), busiest first: where a trip there can land
+export function countryAirports(cc, limit = 6) {
+  const byCity = new Map();
+  for (const r of AIR.a) {
+    if (r[3] !== cc || !r[7] || !r[9]) continue;
+    const city = String(r[1]).replace(/\s*\(.*\)\s*$/, '');
+    if (!byCity.has(city) || (r[8] || 0) > (byCity.get(city)[8] || 0)) byCity.set(city, r);
+  }
+  return [...byCity.values()].sort((a, b) => (b[8] || 0) - (a[8] || 0)).slice(0, limit).map((r) => airport(r[0]));
+}
+
 // The busiest airport with scheduled flights within 150 km, else the closest one that has them
 export function nearestAirport(p) {
   let best = null;

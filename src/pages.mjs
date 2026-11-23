@@ -21,7 +21,7 @@ export const EXAMPLE_PROMPTS = [
 const TOOLS = [
   ['open_planner', 'Shows the start screen, or the planner for a saved trip', 'Reads'],
   ['plan_new_trip', 'Shows the new-trip planner and saves your free dates, length, travellers, budget, airports and countries to compare; ranks 60 countries by the weather then', 'Writes'],
-  ['scan_flight_deals', 'Looks up return fares to a country on a few dates in your window (Amadeus Travel Builder) and keeps the cheapest; counts toward the daily limit', 'Writes'],
+  ['scan_flight_deals', 'Looks up return fares to a country on a few dates in your window, or compares departure and arrival airports for one pair of dates (Amadeus Travel Builder), and keeps the cheapest; counts toward the daily limit', 'Writes'],
   ['save_flight_deals', 'Keeps return fares Claude found with any flight search, for one country', 'Writes'],
   ['start_trip_from_flight', 'Creates a trip from a saved fare: from landing to the flight home, with the fare on both flights', 'Writes'],
   ['create_trip', 'Saves a new multi-stop trip; dates and legs are worked out', 'Writes'],
@@ -33,7 +33,7 @@ const TOOLS = [
   ['clear_flight', 'Removes the flight saved for a leg', 'Deletes'],
   ['mark_leg', 'Marks a flight, ferry or drive as booked, with an optional note', 'Writes'],
   ['search_flights', 'Searches airline fares (Amadeus Travel Builder); daily limit per person', 'Reads'],
-  ['find_airports', 'Finds airports by city, name or code; works without signing in', 'Reads'],
+  ['find_airports', 'Finds airports by city, name or code, or all airports within a distance of a point; works without signing in', 'Reads'],
   ['save_local_picks', 'Saves local favourites for a place, each with its source link', 'Writes'],
   ['get_local_picks', 'Returns the local favourites saved for a place', 'Reads'],
   ['delete_my_data', 'Deletes everything you saved in Pinroute', 'Deletes'],
@@ -76,9 +76,10 @@ export function helpPage(env = process.env) {
 <p>Plan trips inside Claude, starting from the days you are free or from where you want to go: see where the weather is good, compare flight deals, then plan the route and dates, the flight or ferry between stops, and local favourites for each place, together in one planner. Claude does the thinking on your own Claude plan; Pinroute keeps your trips.</p>
 <h2>Two ways to start</h2>
 <ul>
-<li><b>I know when:</b> give your free days, how long to go and where you fly from. Pinroute ranks 60 countries by the weather in those months, the flight time and your budget; tick a few and compare flight deals; plan the trip from the fare you like.</li>
+<li><b>I know when:</b> give your free days, how long to go and where you fly from (type an airport, or pick several on a map within the distance you would travel). Pinroute ranks 60 countries by the weather in those months, the flight time and your budget; tick a few and compare flight deals; plan the trip from the fare you like.</li>
 <li><b>I know where:</b> pick a country and see its weather month by month for the next year, with the cheapest fares found for the good months; choose a month to see its flights.</li>
 </ul>
+<p>For a fare you like, <b>Same dates, other airports</b> compares the same dates from each of your departure airports to each of the country's main airports, with the cheapest route marked.</p>
 <p>A deal is rated against a rough fare for the distance, about €120 plus 7 cents a km per person for a return economy ticket. It points out unusual prices; it is not a forecast.</p>
 <h2>Add Pinroute to Claude</h2>
 <ol>
