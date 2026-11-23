@@ -269,14 +269,15 @@ function flightsStep() {
   const key = { deal: (x) => (x.best ? dealRatio(x.best) ?? dealPP(x.best) / 1000 : 9), price: (x) => (x.best ? dealPP(x.best) : 9e9), weather: (x) => -x.fit };
   rows.sort((a, b) => key[N.sort](a) - key[N.sort](b));
   const top = bestDeal(rows);
-  const quick = N.flights.live ? 'Quick check: airline fares' : 'Quick check: demo fares';
   const scanning = rows.some((x) => N.scan[x.d.id] === 'loading');
+  const ids = rows.map((x) => x.d.id), off = scanning || !N.homes.length || !rows.length;
   return [
     head('Find a flight deal', `Return flights from ${N.homes.map((a) => a.code).join(' or ') || 'your airport'} for ${nightsRange()} nights between ${dm(d.from)} and ${dm(d.until)}, ${plural(d.adults, 'traveller')}. Choose one to start planning that country.`),
     h('div', { class: 'toolbar' },
       h('div', { class: 'acts' },
         h('button', { class: top ? '' : 'primary', disabled: !rows.length, onclick: askDeals }, icon(MessageSquare), 'Ask Claude to find deals'),
-        h('button', { disabled: scanning || !N.homes.length || !rows.length, onclick: () => quickAll(rows.map((x) => x.d.id)) }, scanning ? 'Checking…' : quick)),
+        N.flights.recent ? h('button', { disabled: off, title: 'Fares Aviasales travellers found in the last days, low-cost airlines included', onclick: () => quickAll(ids, 'recent') }, scanning ? 'Checking…' : 'Quick check: recent prices') : null,
+        h('button', { disabled: off, onclick: () => quickAll(ids, 'live') }, scanning && !N.flights.recent ? 'Checking…' : liveLabel())),
       h('div', { class: 'sorter', role: 'group', 'aria-label': 'Sort' }, h('span', { class: 'small', text: 'Sort' }),
         [['deal', 'Deal'], ['price', 'Price'], ['weather', 'Weather']].map(([k, l]) => h('button', { 'aria-pressed': String(N.sort === k), onclick: () => { N.sort = k; render(); } }, l)))),
     waiting.deals ? h('p', { class: 'note' }, 'Claude is searching with your flight tools; fares appear here as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
@@ -284,7 +285,8 @@ function flightsStep() {
     top ? bestBanner(top) : null,
     rows.length ? h('div', { class: 'deal-rows' }, rows.map(countryDeals))
       : h('div', { class: 'empty' }, h('p', { text: 'No countries to compare yet.' }), h('button', { onclick: () => goStep(d.way === 'where' ? 'country' : 'where') }, 'Choose countries')),
-    h('p', { class: 'small foot', text: 'Ratings compare the price per person with a rough guide for the distance, about €120 plus 7 cents a km for a return economy ticket. They point out unusual prices; they are not a forecast. Fares change quickly.' }),
+    h('p', { class: 'small foot', text: `Ratings compare the price per person with a rough guide for the distance, about €120 plus 7 cents a km for a return economy ticket. They point out unusual prices; they are not a forecast. Fares change quickly${N.flights.recent ? '; recent prices are what Aviasales travellers found in the last days, so check them before booking' : ''}.` }),
+    N.flights.partnerLinks ? commissionNote() : null,
     stepNav([d.way === 'where' ? 'Best time' : 'Where', () => goStep(d.way === 'where' ? 'season' : 'where')], null),
   ];
 }
@@ -306,10 +308,11 @@ function countryDeals({ d, list, fit }) {
     body = [dealItem(d, list[0], true),
       compareBlock(d, list[0]),
       list.length > 1 ? h('details', {}, h('summary', { text: `${plural(list.length - 1, 'more fare')}` }), list.slice(1, 8).map((x) => dealItem(d, x, false))) : null];
-  } else if (st === 'loading') body = h('p', { class: 'meta busy', text: 'Checking airline fares…' });
+  } else if (st === 'loading') body = h('p', { class: 'meta busy', text: 'Checking fares…' });
   else if (waiting.deals) body = h('p', { class: 'meta busy', text: 'Claude is searching…' });
   else body = h('div', { class: 'acts' }, h('span', { class: 'meta', text: 'No fares yet.' }),
-    h('button', { class: 'ghost', disabled: !N.homes.length, onclick: () => quickAll([d.id]) }, N.flights.live ? 'Check airline fares' : 'Check demo fares'));
+    N.flights.recent ? h('button', { class: 'ghost', disabled: !N.homes.length, onclick: () => quickAll([d.id], 'recent') }, 'Check recent prices') : null,
+    h('button', { class: 'ghost', disabled: !N.homes.length, onclick: () => quickAll([d.id], 'live') }, N.flights.live ? 'Check airline fares' : 'Check demo fares'));
   return h('article', { class: 'country', id: `deals-${d.id}` },
     h('header', {}, h('div', {}, h('h3', { text: d.name }), h('p', { class: 'small', text: `${d.region} · arrive at ${d.gw} or another airport` })),
       h('span', { class: 'fit' }, h('i', { class: `sw f${level(fit)}` }), fl)),
@@ -388,23 +391,31 @@ function dealItem(d, x, main) {
       h('span', { class: 'meta', text: `per person${x.adults > 1 ? ` · ${money(x.price, x.currency)} for ${x.adults}` : ''}` }),
       dl ? h('span', { class: `badge ${dl[0]}`, text: dl[1] }) : null),
     h('p', { class: 'meta', text: `${day(x.depart)} → ${day(x.return)} · ${nightsTxt(dealNights(x))}${x.fits ? '' : ', outside your trip length'} · ${x.from} → ${x.to}${x.back_from && x.back_from !== x.to ? `, home from ${x.back_from}` : ''}` }),
-    h('p', { class: 'small', text: [x.airline, x.stops == null ? null : x.stops ? plural(x.stops, 'change') : 'Direct', `via ${x.source}`, `checked ${time(x.at)}`].filter(Boolean).join(' · ') }),
+    h('p', { class: 'small', text: [x.airline, x.stops == null ? null : x.stops ? plural(x.stops, 'change') : 'Direct', `via ${x.source}`, x.recent ? 'a recent price, check it before booking' : `checked ${time(x.at)}`].filter(Boolean).join(' · ') }),
     x.out ? h('p', { class: 'small', text: `Out: ${x.out}` }) : null,
     x.back ? h('p', { class: 'small', text: `Back: ${x.back}` }) : null,
     bf ? h('p', { class: `small bud ${bf[0]}`, text: `${bf[1]}: about ${money(cost.total)} with ${money(cost.ground)} on the ground` }) : null,
     h('div', { class: 'acts' },
       h('button', { disabled: ui.busy, onclick: () => startFrom(d, x) }, `Plan ${d.name} with this flight`, icon(ArrowRight)),
-      x.link ? h('button', { class: 'ghost', onclick: () => app.openLink({ url: x.link }) }, icon(ExternalLink), 'Booking page') : null));
+      x.link ? h('button', { class: 'ghost', onclick: () => app.openLink({ url: x.link }) }, icon(ExternalLink), x.recent ? 'Check on Aviasales' : 'Booking page') : null,
+      x.recent ? null : h('button', { class: 'ghost', onclick: () => openFlightLink({ from: x.from, to: x.to, depart: x.depart, return: x.return, adults: x.adults }) }, icon(ExternalLink), 'Compare on Aviasales')));
+}
+const liveLabel = () => (N.flights.live ? (N.flights.recent ? 'Live airline fares' : 'Quick check: airline fares') : 'Quick check: demo fares');
+export const commissionNote = () => h('p', { class: 'small foot', text: 'Aviasales links carry Pinroute\'s partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.' });
+// A link to compare and book any flight on Aviasales, made on the server (with the partner ID when it has one)
+export async function openFlightLink(args) {
+  try { const r = await call('flight_link', args); await app.openLink({ url: r.structuredContent.url }); }
+  catch (e) { showError(e.message || String(e)); }
 }
 
-async function quickAll(ids) {
+async function quickAll(ids, source) {
   const queue = [...ids];
   ids.forEach((id) => { N.scan[id] = 'loading'; });
   render();
   const worker = async () => {
     while (queue.length) {
       const id = queue.shift();
-      try { await call('scan_flight_deals', { country: id }); N.scan[id] = null; }
+      try { await call('scan_flight_deals', { country: id, ...(source ? { source } : {}) }); N.scan[id] = null; }
       catch (e) { N.scan[id] = { error: e.message || String(e) }; }
       await refresh(true);
     }
@@ -458,8 +469,7 @@ function seasonStep() {
   const priced = ms.filter(cheapest);
   const byPrice = (a, b) => dealPP(cheapest(a)) - dealPP(cheapest(b));
   const best = priced.filter((mo) => d.months[mo.m] === 'G').sort(byPrice)[0] || priced.filter((mo) => d.months[mo.m] === 'o').sort(byPrice)[0] || null;
-  const quick = N.flights.live ? 'Quick check: airline fares' : 'Quick check: demo fares';
-  const scanning = check.some((mo) => N.scan[`m|${mo.ym}`] === 'loading');
+  const scanning = check.some((mo) => N.scan[`m|${mo.ym}`] === 'loading') || N.scan[`y|${d.id}`] === 'loading';
   return [
     head(`When is best for ${d.name}?`, `${d.why} Weather by month for the next year, and fares from ${N.homes.map((a) => a.code).join(' or ') || 'your airport'} for the good months.`),
     h('section', { class: 'months', 'aria-label': 'Weather and fares by month' },
@@ -468,13 +478,15 @@ function seasonStep() {
         return h('button', { class: `mcell${best === mo ? ' sel' : ''}`, 'aria-label': `${MONTHS[mo.m]} ${mo.year}: ${W[c][1].toLowerCase()} weather${x ? `, from ${money(dealPP(x), x.currency)} per person` : ''}`, onclick: () => pickMonth(d, mo) },
           h('span', { class: `mbar w${c}` }, h('span', { style: `height:${W[c][0]}%` })),
           h('span', { class: 'mlbl', text: MON[mo.m] }),
-          h('span', { class: 'mprice', text: st === 'loading' ? '…' : x ? money(dealPP(x), x.currency) : '' }),
+          h('span', { class: 'mprice', text: st === 'loading' || N.scan[`y|${d.id}`] === 'loading' ? '…' : x ? money(dealPP(x), x.currency) : '' }),
           dl && (dl[0] === 'deal3' || dl[0] === 'deal2') ? h('span', { class: 'mdeal', text: 'Deal' }) : h('span', { class: 'mdeal' }));
       })),
       h('p', { class: 'small', text: `Bars show the weather, taller is better; under each month, the cheapest return per person found for ${nightsRange()} nights. Choose a month to see its flights.` })),
     h('div', { class: 'acts' },
       h('button', { class: best ? '' : 'primary', disabled: !N.homes.length, onclick: () => askMonths(d, check) }, icon(MessageSquare), `Ask Claude for fares in ${check.map((mo) => MON[mo.m]).join(', ')}`),
-      h('button', { disabled: scanning || !N.homes.length, onclick: () => quickMonths(d, check) }, scanning ? 'Checking…' : quick)),
+      N.flights.recent ? h('button', { disabled: scanning || !N.homes.length, title: 'The cheapest fare Aviasales travellers found for each month ahead', onclick: () => quickYear(d) }, scanning ? 'Checking…' : 'Quick check: recent prices') : null,
+      h('button', { disabled: scanning || !N.homes.length, onclick: () => quickMonths(d, check) }, scanning && !N.flights.recent ? 'Checking…' : N.flights.recent ? `Live airline fares (${check.map((mo) => MON[mo.m]).join(', ')})` : liveLabel())),
+    N.scan[`y|${d.id}`]?.error ? h('p', { class: 'note warn', text: N.scan[`y|${d.id}`].error }) : null,
     waiting.months ? h('p', { class: 'note' }, 'Claude is searching with your flight tools; fares appear under each month as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
     ...check.map((mo) => N.scan[`m|${mo.ym}`]?.error ? h('p', { class: 'note warn', text: `${MONTHS[mo.m]}: ${N.scan[`m|${mo.ym}`].error}` }) : null),
     best ? h('section', { class: 'banner' },
@@ -497,11 +509,19 @@ async function quickMonths(d, check) {
   for (const mo of check) {
     // back by the month's last day plus the usual trip length, so every departure tried falls inside the month
     const latest = addDays(mo.to, Math.round((N.d.minNights + N.d.maxNights) / 2));
-    try { await call('scan_flight_deals', { country: d.id, earliest: mo.from, latest, dates: 2 }); N.scan[`m|${mo.ym}`] = null; }
+    try { await call('scan_flight_deals', { country: d.id, earliest: mo.from, latest, dates: 2, source: 'live' }); N.scan[`m|${mo.ym}`] = null; }
     catch (e) { N.scan[`m|${mo.ym}`] = { error: e.message || String(e) }; }
     await refresh(true);
   }
   render();
+}
+// Recent prices: the cheapest fare for every month of the coming year in one look-up
+async function quickYear(d) {
+  N.scan[`y|${d.id}`] = 'loading';
+  render();
+  try { await call('scan_flight_deals', { country: d.id, by_month: true }); N.scan[`y|${d.id}`] = null; }
+  catch (e) { N.scan[`y|${d.id}`] = { error: e.message || String(e) }; }
+  await refresh(true);
 }
 function askMonths(d, check) {
   const since = new Date().toISOString();

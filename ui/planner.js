@@ -10,7 +10,7 @@ import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft
 import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting } from './core.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
 import { takeHome, homeCard, homeScreen } from './home.js';
-import { takeNew, newCard, newSteps, newScreen, newKey } from './newtrip.js';
+import { takeNew, newCard, newSteps, newScreen, newKey, openFlightLink, commissionNote } from './newtrip.js';
 import { navBar, navTabs } from './nav.js';
 import { airMapDialog } from './airmap.js';
 
@@ -306,6 +306,13 @@ function legDetail(l) {
 
 const bookedButton = (l) => h('button', { 'aria-pressed': String(l.booked), disabled: ui.busy, onclick: () => setBooked(l, !l.booked) }, icon(Check), l.booked ? 'Booked' : 'Mark booked');
 
+// A leg as an Aviasales search: the flight out of a return fare is searched as the return trip it is
+const leg = (l) => {
+  const t = V.trip.ticket;
+  if (l.kind === 'out' && t && l.chosen?.part === 'out') return { from: t.from, to: t.to, depart: t.depart, return: t.return, adults: V.trip.adults };
+  return { from: l.from, to: l.to, depart: l.date, adults: V.trip.adults };
+};
+
 function flightBlock(l) {
   if (l.chosen) {
     return [ticket(l.chosen),
@@ -313,8 +320,10 @@ function flightBlock(l) {
       h('div', { class: 'acts' },
         bookedButton(l),
         l.chosen.link ? h('button', { onclick: () => app.openLink({ url: l.chosen.link }) }, icon(ExternalLink), 'Booking page') : null,
+        l.chosen.part === 'return' ? null : h('button', { class: 'ghost', onclick: () => openFlightLink(leg(l)) }, icon(ExternalLink), 'Compare on Aviasales'),
         h('button', { class: 'ghost', onclick: () => askFlights(l) }, icon(MessageSquare), 'Ask Claude again'),
-        h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove'))].filter(Boolean);
+        h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove')),
+      V.flights.partnerLinks && l.chosen.part !== 'return' ? commissionNote() : null].filter(Boolean);
   }
   const st = fares[l.key] || {};
   const label = st.state === 'loading' ? 'Searching…' : st.state === 'done' ? 'Search again' : V.flights.live ? 'Airline fares' : 'Demo fares';
@@ -323,7 +332,9 @@ function flightBlock(l) {
       h('button', { class: 'link', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove it')) : null,
     h('div', { class: 'acts' },
       h('button', { class: 'primary', onclick: () => askFlights(l) }, icon(MessageSquare), 'Ask Claude to find flights'),
-      h('button', { disabled: st.state === 'loading', onclick: () => findFlights(l) }, label)),
+      h('button', { disabled: st.state === 'loading', onclick: () => findFlights(l) }, label),
+      h('button', { class: 'ghost', onclick: () => openFlightLink(leg(l)) }, icon(ExternalLink), 'Compare on Aviasales')),
+    V.flights.partnerLinks ? commissionNote() : null,
     waiting[`flights|${l.key}`] ? h('p', { class: 'small' }, 'Claude is searching with your flight tools; the flight you pick appears here. ', h('button', { class: 'link', text: 'Refresh', onclick: () => refresh() })) : null,
     st.state === 'error' ? h('p', { class: 'note warn', text: st.error }) : null,
     st.state === 'done' ? faresBlock(l, st) : null,

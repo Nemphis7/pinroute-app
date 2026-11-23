@@ -14,8 +14,9 @@ import {
 } from './discover.mjs';
 import { tripMap, regionMap } from './map.mjs';
 import { flightProvider } from './providers/index.mjs';
+import * as tp from './providers/travelpayouts.mjs';
 
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.0';
 export const PLANNER_URI = 'ui://pinroute/planner';
 
 const realDate = (s) => { const d = new Date(`${s}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
@@ -54,6 +55,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   const server = new McpServer({ name: 'pinroute', version: VERSION });
   const limits = {
     searchesPerDay: Number(env.SEARCH_LIMIT_PER_DAY) || 50,
+    recentPerDay: Number(env.RECENT_LIMIT_PER_DAY) || 200,
     trips: Number(env.TRIP_LIMIT) || 200,
     picksPerPlace: 60,
   };
@@ -83,7 +85,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       stops: rows.map((s, i) => ({ index: i, place: s.place, nights: s.nights, arrive: s.arrive, depart: s.depart, iata: s.iata, region: s.region, island: !!s.island })),
       legs: legList,
       picks,
-      flights: { provider: provider.name, live: provider.name !== 'Demo data' },
+      flights: { provider: provider.name, live: provider.name !== 'Demo data', partnerLinks: tp.linksOn(env) },
     };
   }
   // The map goes in _meta: the planner draws it, the model never needs the coastline
@@ -371,7 +373,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       top: ranked.slice(0, 8).map((r) => ({ id: r.d.id, name: r.d.name, fit: fitLabel(r.fit)[1], hours: r.hours, cost: r.cost.total, budget: budgetFit(r.cost, dr.budget)?.[1] || null })),
       deals,
       arrivals: Object.fromEntries([...new Set([...dr.compare, dr.country].filter(Boolean))].map((id) => [id, arrivalsOf(destById(id))])),
-      flights: { provider: provider.name, live: provider.name !== 'Demo data', searchesLeft: Math.max(0, limits.searchesPerDay - store.usage(owner, 'search')), searchesPerDay: limits.searchesPerDay },
+      flights: { provider: provider.name, live: provider.name !== 'Demo data', searchesLeft: Math.max(0, limits.searchesPerDay - store.usage(owner, 'search')), searchesPerDay: limits.searchesPerDay,
+        recent: tp.configured(env), partnerLinks: tp.linksOn(env) },
       warnings,
     };
     const name = (id) => destById(id)?.name;
@@ -496,9 +499,55 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     return out;
   }
 
+  // Recent prices from Aviasales (Travelpayouts Data API): one request per route and month, per route and pair of dates,
+  // or per route for a whole year by month. They don't use the airline searches; they have a daily count of their own.
+  async function scanRecent({ d, dr, froms, tos, routes, depart, ret, lo, hi, by_month }) {
+    const months = [];
+    for (let m = lo.slice(0, 7); m <= hi.slice(0, 7) && months.length < 12; m = addDays(`${m}-28`, 7).slice(0, 7)) months.push(m);
+    const jobs = by_month ? routes.slice(0, 4).map(([f, t]) => ({ f, t }))
+      : depart ? routes.map(([f, t]) => ({ f, t, departure: depart, ret }))
+        : routes.flatMap(([f, t]) => months.map((m) => ({ f, t, departure: m }))).slice(0, 16);
+    const left = limits.recentPerDay - store.usage(owner, 'recent');
+    if (left < jobs.length) return fail(`Pinroute's ${limits.recentPerDay} look-ups of recent prices for today are used up${left > 0 ? ` (${left} left, ${jobs.length} needed)` : ''}. The count starts again at 00:00 UTC.`);
+    const runs = await inTurn(jobs.map((j) => async () => {
+      store.bumpUsage(owner, 'recent');
+      const list = by_month
+        ? await tp.monthlyPrices({ origin: j.f, destination: j.t, minDays: dr.minNights, maxDays: dr.maxNights }, { env })
+        : await tp.pricesForDates({ origin: j.f, destination: j.t, departure: j.departure, ret: j.ret }, { env });
+      const nights = (x) => diffDays(x.depart, x.return);
+      const fit = by_month ? list : depart ? list.filter((x) => x.depart === depart && x.return === ret)
+        : list.filter((x) => x.depart >= lo && x.return <= hi && nights(x) >= dr.minNights - 1 && nights(x) <= dr.maxNights + 1);
+      return fit.slice(0, by_month ? 12 : depart ? 2 : 4);
+    }));
+    const failed = runs.filter((r) => !r.ok).map((r) => r.error);
+    const fares = runs.filter((r) => r.ok).flatMap((r) => r.value);
+    if (!fares.length && failed.length === runs.length) return fail(failed[0]);
+    const links = await tp.partnerLinks(fares.map((x) => x.url), { env });
+    const now = new Date().toISOString();
+    const found = fares.map((x, i) => ({
+      id: store.newId('dl'), country: d.id, from: x.from, to: x.to, back_from: x.to, depart: x.depart, arrive: x.depart, return: x.return,
+      price: Math.round(x.pricePerAdult * dr.adults), currency: x.currency, adults: dr.adults, airline: x.airline, out: x.out, back: x.back,
+      stops: x.stops, minutes: x.minutes, link: links[i], source: tp.name, recent: true, at: now, km: distOf(x.from, x.to),
+    }));
+    const next = store.updateDraft(owner, (cur) => ({ ...cur, deals: found.length ? keepDeals(cur.deals || {}, d.id, tp.name, found) : cur.deals || {} }), freshDraft);
+    const searched = jobs.map((j, i) => {
+      const r = runs[i], best = r.ok && r.value.length ? Math.min(...r.value.map((x) => x.pricePerAdult)) * dr.adults : null;
+      return { from: j.f, to: j.t, depart: j.departure || null, return: j.ret || null, fares: r.ok ? r.value.length : 0, best, error: r.ok ? null : r.error };
+    });
+    const shown = by_month || depart ? found.slice().sort((a, b) => a.price - b.price) : dealsFor(next.deals[d.id], { ...next, from: lo, until: hi }).filter((x) => x.source === tp.name);
+    const what = by_month ? `the cheapest each month from ${froms[0]} to ${tos[0]}` : depart ? `${froms.join(', ')} → ${tos.join(', ')}, ${shortDate(depart)} to ${shortDate(ret)}` : `${froms.join(', ')} → ${tos.join(', ')}, ${months.join(', ')}`;
+    const head = found.length
+      ? `Recent prices on Aviasales (found by travellers in the last days, check before booking): ${found.length} fare${found.length === 1 ? '' : 's'} saved for ${d.name}, ${what}.`
+      : `Aviasales has no recent prices for ${d.name}, ${what}. Live airline fares (source "live") or the traveller's own flight tools may still find some.`;
+    return {
+      content: [text([head, ...shown.slice(0, by_month ? 12 : 3).map(dealLine), failed.length ? `${failed.length} of the look-ups failed: ${failed[0]}` : null].filter(Boolean).join('\n'))],
+      structuredContent: { country: d.id, source: 'recent', searched, deals: shown.slice(0, by_month ? 12 : MAX_DEALS), failed, recent_left: limits.recentPerDay - store.usage(owner, 'recent') },
+    };
+  }
+
   server.registerTool('scan_flight_deals', {
     title: 'Scan for flight deals',
-    description: `${provider.name === 'Demo data' ? 'Looks up sample return fares (demo data, not real prices)' : `Searches ${provider.name} for return fares`} to a country and saves the cheapest to the new-trip draft. By default it goes from the traveller's main departure airport to the country's main airport on a few dates spread over the draft's window; with origins, destinations and exact dates it compares those airports for those dates instead. Each route and date searched counts as one search toward the daily limit.${provider.name === 'Demo data' ? '' : ` ${provider.name} covers mostly full-service airlines, so low-cost fares are often missing.`}`,
+    description: `Looks up return fares to a country and saves the cheapest to the new-trip draft. By default it goes from the traveller's main departure airport to the country's main airport across the draft's window; with origins, destinations and exact dates it compares those airports for those dates instead. ${tp.configured(env) ? 'Recent prices come from Aviasales (what travellers found in the last days, low-cost airlines included, to be checked before booking); live fares ' : 'Live fares '}${provider.name === 'Demo data' ? 'are sample data, not real prices' : `come from ${provider.name}, mostly full-service airlines`}, and each route and date searched live counts as one search toward the daily limit.`,
     inputSchema: {
       country: z.string().min(2).max(60),
       origin: IATA.optional().describe('Departure airport; the draft\'s main one if left out'),
@@ -509,9 +558,11 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       earliest: DATE.optional().describe('First departure day; the draft\'s window if left out'),
       latest: DATE.optional().describe('Last day to be back'),
       dates: z.number().int().min(1).max(4).optional().describe('How many departure dates to try in the window, 3 if left out'),
+      source: z.enum(['recent', 'live']).optional().describe('"recent": prices Aviasales travellers found in the last days, low-cost airlines included (when the server has Travelpayouts); "live": airline fares now. Recent for a window, live for exact dates, if left out'),
+      by_month: z.boolean().optional().describe('With recent prices: the cheapest fare for each month of the coming year, instead of the window'),
     },
     annotations: { title: 'Scan for flight deals', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-  }, mine(async ({ country, origin, origins, destinations, depart, return: ret, earliest: e, latest, dates }) => {
+  }, mine(async ({ country, origin, origins, destinations, depart, return: ret, earliest: e, latest, dates, source, by_month }) => {
     const d = findDest(country);
     if (!d) return fail(destIds([country]).error);
     const dr = draftOf();
@@ -525,10 +576,13 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     if (depart && (depart < tomorrow || ret <= depart)) return fail(`Exact dates need a departure from ${tomorrow} on and a return after it.`);
     const lo = [e || dr.from, tomorrow].sort()[1], hi = latest || dr.until;
     if (!depart && hi <= lo) return fail(`Nothing to search between ${lo} and ${hi}.`);
-    const left = limits.searchesPerDay - store.usage(owner, 'search');
-    if (left <= 0) return fail(`You have used today's ${limits.searchesPerDay} flight searches in Pinroute. The count starts again at 00:00 UTC.`);
     const routes = froms.flatMap((f) => tos.map((t) => [f, t]));
     if (routes.length > 16) return fail(`${routes.length} routes is more than one comparison takes; choose up to 16.`);
+    if (source === 'recent' && !tp.configured(env)) return fail('Recent prices need Travelpayouts on the server (TRAVELPAYOUTS_TOKEN). source "live" searches airline fares.');
+    if (by_month && (source === 'live' || !tp.configured(env))) return fail('by_month works with recent prices, which need Travelpayouts on the server.');
+    if (tp.configured(env) && (source === 'recent' || by_month || (!source && !depart))) return scanRecent({ d, dr, froms, tos, routes, depart, ret, lo, hi, by_month });
+    const left = limits.searchesPerDay - store.usage(owner, 'search');
+    if (left <= 0) return fail(`You have used today's ${limits.searchesPerDay} flight searches in Pinroute. The count starts again at 00:00 UTC.`);
     if (depart && routes.length > left) return fail(`Comparing ${routes.length} routes needs ${routes.length} searches and ${left} are left today. Switch some airports off.`);
     const pairs = depart ? [[depart, ret]] : datePairs(lo, hi, dr.minNights, dr.maxNights, Math.max(1, Math.min(dates || 3, Math.floor(left / routes.length))));
     const jobs = routes.flatMap(([f, t]) => pairs.map(([out, back]) => ({ f, t, out, back }))).slice(0, left);
@@ -629,6 +683,17 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     if (home) trip.choices[home.key] = { ...base, summary: x.back || `${x.airline}, ${x.back_from || x.to} → ${x.from}`, price: 0, part: 'return' };
     const saved = store.putTrip(owner, trip);
     return viewResult(saved, `Created "${saved.name}" (${saved.id}): ${start} to ${x.return}, ${nights} nights, landing at ${a.code} and flying home from ${(b || a).code}. The return fare is saved on both flights. The route is still one stop; update_trip with the stops in travel order plans it.`);
+  }));
+
+  server.registerTool('flight_link', {
+    title: 'Flight link on Aviasales',
+    description: `Makes a link to an Aviasales search for a route and dates, where the traveller can compare live prices from airlines and agencies and book.${tp.linksOn(env) ? ' The link carries Pinroute\'s Travelpayouts partner ID, so Pinroute may earn a commission on a booking; the price is the same either way.' : ''}`,
+    inputSchema: { from: IATA, to: IATA, depart: DATE, return: DATE.optional(), adults: z.number().int().min(1).max(9).optional() },
+    annotations: { title: 'Flight link on Aviasales', readOnlyHint: true, openWorldHint: true },
+  }, mine(async ({ from, to, depart, return: back, adults }) => {
+    if (back && back < depart) return fail('The return date is before the departure date.');
+    const [url] = await tp.partnerLinks([tp.searchUrl({ from, to, depart, ret: back, adults: adults || 1 })], { env });
+    return { content: [text(url)], structuredContent: { url, partner: tp.linksOn(env) } };
   }));
 
   // ---- local picks: Claude researches on the traveller's own plan, this server keeps the result
