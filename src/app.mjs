@@ -16,7 +16,7 @@ import { tripMap, regionMap } from './map.mjs';
 import { flightProvider } from './providers/index.mjs';
 import * as tp from './providers/travelpayouts.mjs';
 
-export const VERSION = '0.6.0';
+export const VERSION = '0.7.0';
 export const PLANNER_URI = 'ui://pinroute/planner';
 
 const realDate = (s) => { const d = new Date(`${s}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
@@ -81,7 +81,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const d = trip.country ? destById(trip.country) : null;
     return {
       screen: 'trip',
-      trip: { id: trip.id, name: trip.name, start: trip.start, end: endDate(trip), adults: trip.adults, home: trip.home || null, choices, country: d ? d.name : null, ticket: trip.ticket || null },
+      trip: { id: trip.id, name: trip.name, start: trip.start, end: endDate(trip), adults: trip.adults, home: trip.home || null, choices, country: d ? d.name : null, countryId: trip.country || null,
+        ticket: trip.ticket || null, wishes: trip.wishes || null, area: trip.area || null },
       stops: rows.map((s, i) => ({ index: i, place: s.place, nights: s.nights, arrive: s.arrive, depart: s.depart, iata: s.iata, region: s.region, island: !!s.island })),
       legs: legList,
       picks,
@@ -341,7 +342,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const last = store.listTrips(owner).find((t) => t.home);
     const from = addDays(today, 30);
     return { way: 'when', step: 'when', from, until: addDays(from, 20), minNights: 9, maxNights: 12, adults: last?.adults || 2, budget: 0,
-      homes: last ? [last.home] : [], regions: [], interests: [], compare: [], country: null, deals: {} };
+      homes: last ? [last.home] : [], regions: [], interests: [], compare: [], country: null, deals: {}, wishes: '', focus: {} };
   }
   const draftOf = () => store.getDraft(owner) || { ...freshDraft(), updated: null };
   const homesOf = (dr) => dr.homes.map((c) => airport(c)).filter(Boolean).map((a) => ({ code: a.code, city: cityOf(a), country: a.country, lat: a.lat, lon: a.lon }));
@@ -351,8 +352,10 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   };
 
   // Where a trip to a country can land: its main airport first, then its busiest others with flights abroad
-  function arrivalsOf(d) {
+  function arrivalsOf(d, focus) {
     if (!d) return [];
+    const f = focus?.[d.id];
+    if (f?.airports?.length) return f.airports.map((c) => airport(c)).filter(Boolean).map((a) => ({ code: a.code, city: cityOf(a), served: a.served }));
     const list = countryAirports(d.cc, 6).filter((a) => a.code !== d.gw);
     return [airport(d.gw), ...list].filter(Boolean).slice(0, 5).map((a) => ({ code: a.code, city: cityOf(a), served: a.served }));
   }
@@ -368,11 +371,11 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const view = {
       screen: 'new',
       draft: { way: dr.way, step: dr.step, from: dr.from, until: dr.until, minNights: dr.minNights, maxNights: dr.maxNights, adults: dr.adults, budget: dr.budget,
-        homes: dr.homes, regions: dr.regions, interests: dr.interests, compare: dr.compare, country: dr.country, updated: dr.updated },
+        homes: dr.homes, regions: dr.regions, interests: dr.interests, compare: dr.compare, country: dr.country, wishes: dr.wishes || '', focus: dr.focus || {}, updated: dr.updated },
       homes,
       top: ranked.slice(0, 8).map((r) => ({ id: r.d.id, name: r.d.name, fit: fitLabel(r.fit)[1], hours: r.hours, cost: r.cost.total, budget: budgetFit(r.cost, dr.budget)?.[1] || null })),
       deals,
-      arrivals: Object.fromEntries([...new Set([...dr.compare, dr.country].filter(Boolean))].map((id) => [id, arrivalsOf(destById(id))])),
+      arrivals: Object.fromEntries([...new Set([...dr.compare, dr.country].filter(Boolean))].map((id) => [id, arrivalsOf(destById(id), dr.focus)])),
       flights: { provider: provider.name, live: provider.name !== 'Demo data', searchesLeft: Math.max(0, limits.searchesPerDay - store.usage(owner, 'search')), searchesPerDay: limits.searchesPerDay,
         recent: tp.configured(env), partnerLinks: tp.linksOn(env) },
       warnings,
@@ -384,6 +387,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       line,
       `New-trip draft (${dr.way === 'where' ? 'I know where' : 'I know when'}, at ${dr.step}): free ${dr.from} to ${dr.until}, ${dr.minNights}–${dr.maxNights} nights, ${dr.adults} adult${dr.adults === 1 ? '' : 's'}${dr.budget ? `, budget ${eur(dr.budget)}` : ''}, from ${dr.homes.join(', ') || 'no airport yet'}.`,
       target ? `Country: ${target.name}, best ${bestMonthsText(target)}.` : `Best matches for ${months.map((m) => MONTHS[m]).join(' and ')}: ${view.top.slice(0, 6).map((t) => `${t.name} (${t.fit.toLowerCase()}${t.hours ? `, about ${t.hours} h` : ''})`).join(', ')}.`,
+      dr.wishes ? `The traveller's wishes: "${dr.wishes}"` : null,
+      ...Object.entries(dr.focus || {}).map(([id, f]) => `Focus for ${name(id)}: ${f.area} (fares to ${f.airports.join(', ')}).`),
       dr.compare.length ? `Comparing: ${dr.compare.map(name).join(', ')}.` : null,
       ...best.map(([id, x]) => `Best fare for ${name(id)}: ${dealLine(x)}.`),
       ...warnings,
@@ -404,7 +409,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   registerAppTool(server, 'plan_new_trip', {
     title: 'Plan a new trip',
-    description: 'Shows Pinroute\'s new-trip planner and saves what the traveller said to their draft: when they are free, how many nights, how many travel, a budget, the airports they can fly from, regions, interests and countries to compare. The planner ranks 60 countries by the weather in those months, the flight time and the budget, and shows the flight deals saved for each. With country set it shows that country\'s best months and the fares found in each. Fields left out stay as they were.',
+    description: 'Shows Pinroute\'s new-trip planner and saves what the traveller said to their draft: when they are free, how many nights, how many travel, a budget, the airports they can fly from, regions, interests, countries to compare, their wishes in their own words, and a focus on part of a country with that area\'s airports. The planner ranks 60 countries by the weather in those months, the flight time and the budget, and shows the flight deals saved for each; with a focus, fares are looked up to that area\'s airports. With country set it shows that country\'s best months and the fares found in each. Fields left out stay as they were.',
     inputSchema: {
       way: z.enum(['when', 'where']).optional().describe('"when": the traveller knows their free dates; "where": they know the country'),
       step: z.enum(['when', 'where', 'flights', 'country', 'season']).optional().describe('Screen to show: when, where, flights; or country, season for the "where" way'),
@@ -420,6 +425,12 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       compare: z.array(z.string().min(2).max(60)).max(8).optional().describe('Countries to compare flights for'),
       country: z.string().min(2).max(60).optional().describe('The country, when the traveller knows where to go'),
       reset: z.boolean().optional().describe('Start a new draft, keeping only the departure airports and travellers'),
+      wishes: z.string().max(500).optional().describe('What the traveller has in mind, in their own words; empty to clear'),
+      focus: z.array(z.object({
+        country: z.string().min(2).max(60),
+        area: z.string().max(60).describe('The part of the country, e.g. "Sulawesi"; empty to clear the focus'),
+        airports: z.array(IATA).max(5).describe('That area\'s main airports with scheduled flights, busiest first; fares are searched to these'),
+      })).max(8).optional().describe('A part of a country to travel in, with its airports'),
     },
     annotations: { title: 'Plan a new trip', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     _meta: { ui: { resourceUri: PLANNER_URI } },
@@ -434,6 +445,16 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     if (cmp.error) return fail(cmp.error);
     const target = a.country ? findDest(a.country) : null;
     if (a.country && !target) return fail(destIds([a.country]).error);
+    const focus = [];
+    for (const f of a.focus || []) {
+      const fd = findDest(f.country);
+      if (!fd) return fail(destIds([f.country]).error);
+      const codes = [...new Set(f.airports.map((c) => c.toUpperCase()))];
+      const missing = codes.find((c) => !airport(c));
+      if (missing) return fail(`No airport with the code ${missing}. find_airports looks codes up.`);
+      if (f.area.trim() && !codes.length) return fail(`Give ${f.area}'s airports for the focus, so fares can be looked up to them.`);
+      focus.push({ id: fd.id, area: f.area.trim(), airports: codes });
+    }
     let bad = null;
     const dr = store.updateDraft(owner, (cur) => {
       let d = a.reset ? { ...freshDraft(), homes: cur.homes?.length ? cur.homes : freshDraft().homes, adults: cur.adults || 2 } : { ...freshDraft(), ...cur };
@@ -448,6 +469,11 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       if (a.regions) d.regions = a.regions;
       if (a.interests) d.interests = a.interests;
       if (cmp.ids) d.compare = cmp.ids;
+      if (a.wishes !== undefined) d.wishes = a.wishes.trim();
+      if (focus.length) {
+        d.focus = { ...(d.focus || {}) };
+        for (const f of focus) { if (f.area && f.airports.length) d.focus[f.id] = { area: f.area, airports: f.airports }; else delete d.focus[f.id]; }
+      }
       if (target) { d.country = target.id; d.way = 'where'; }
       if (a.way) { d.way = a.way; if (!a.step && !target) d.step = a.way === 'where' ? 'country' : 'when'; }
       if (target && !a.step) d.step = 'season';
@@ -568,7 +594,9 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const dr = draftOf();
     const froms = [...new Set((origins || [origin || dr.homes[0]]).filter(Boolean).map((c) => c.toUpperCase()))];
     if (!froms.length) return fail('The draft has no departure airport; set home_airports with plan_new_trip, or give origin.');
-    const tos = [...new Set((destinations || [d.gw]).map((c) => c.toUpperCase()))];
+    const fa = dr.focus?.[d.id]?.airports;          // a focus on part of the country: fares to its airports
+    const recentScan = tp.configured(env) && (source === 'recent' || by_month || (!source && !depart));
+    const tos = [...new Set((destinations || (fa?.length ? fa.slice(0, recentScan && !by_month ? 3 : 1) : [d.gw])).map((c) => c.toUpperCase()))];
     const bad = [...froms, ...tos].find((c) => !airport(c));
     if (bad) return fail(`No airport with the code ${bad}.`);
     if (!depart !== !ret) return fail('Give both depart and return for exact dates, or neither.');
@@ -580,7 +608,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     if (routes.length > 16) return fail(`${routes.length} routes is more than one comparison takes; choose up to 16.`);
     if (source === 'recent' && !tp.configured(env)) return fail('Recent prices need Travelpayouts on the server (TRAVELPAYOUTS_TOKEN). source "live" searches airline fares.');
     if (by_month && (source === 'live' || !tp.configured(env))) return fail('by_month works with recent prices, which need Travelpayouts on the server.');
-    if (tp.configured(env) && (source === 'recent' || by_month || (!source && !depart))) return scanRecent({ d, dr, froms, tos, routes, depart, ret, lo, hi, by_month });
+    if (recentScan) return scanRecent({ d, dr, froms, tos, routes, depart, ret, lo, hi, by_month });
     const left = limits.searchesPerDay - store.usage(owner, 'search');
     if (left <= 0) return fail(`You have used today's ${limits.searchesPerDay} flight searches in Pinroute. The count starts again at 00:00 UTC.`);
     if (depart && routes.length > left) return fail(`Comparing ${routes.length} routes needs ${routes.length} searches and ${left} are left today. Switch some airports off.`);
@@ -655,34 +683,80 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     return { content: [text([`Saved ${saved.length} fare${saved.length === 1 ? '' : 's'} for ${d.name} to the Pinroute draft.`, ...saved.slice(0, 5).map(dealLine)].join('\n'))], structuredContent: { country: d.id, deals: saved } };
   }));
 
+  // Fits a trip to a return fare: it starts the day the flight lands and ends the day the flight home leaves. Nights
+  // are added to the longest stay or taken from the longest stays first (each keeps at least one). When the fare lands
+  // or leaves at another airport than the route's first or last stop, that city joins the route with no nights, so
+  // the legs still join up. The fare goes on both flights; flights chosen for the legs in between stay.
+  function fitToFare(trip, x) {
+    const start = x.arrive || x.depart, total = diffDays(start, x.return);
+    if (total < 1) return { error: 'This fare leaves no night at the destination.' };
+    const a = airport(x.to), b = airport(x.back_from || x.to);
+    let stops = (trip.stops || []).map((s) => ({ ...s }));
+    if (!stops.length) stops = [{ ...resolvePlace(cityOf(a), a.code), nights: 0 }];
+    if (stops[0].iata !== a.code) stops.unshift({ ...resolvePlace(cityOf(a), a.code), nights: 0 });
+    if (b && stops.at(-1).iata !== b.code) stops.push({ ...resolvePlace(cityOf(b), b.code), nights: 0 });
+    let diff = total - stops.reduce((n, st) => n + st.nights, 0);
+    while (diff > 0) {
+      const stays = stops.map((st, i) => [st.nights, i]).filter(([n]) => n > 0).sort((p, q) => q[0] - p[0]);
+      stops[stays.length ? stays[0][1] : 0].nights += diff;
+      diff = 0;
+    }
+    while (diff < 0) {
+      const can = stops.map((st, i) => [st.nights, i]).filter(([n]) => n > 1).sort((p, q) => q[0] - p[0]);
+      if (!can.length) return { error: `This fare gives ${total} night${total === 1 ? '' : 's'}; the route needs at least ${stops.filter((st) => st.nights > 0).length}, one for each stay. Remove a stop first.` };
+      stops[can[0][1]].nights -= 1;
+      diff += 1;
+    }
+    const next = {
+      ...trip, start, stops, home: x.from, adults: x.adults || trip.adults,
+      ticket: { from: x.from, to: x.to, back_from: x.back_from || x.to, depart: x.depart, arrive: start, return: x.return, price: x.price, currency: x.currency, airline: x.airline, out: x.out || null, back: x.back || null, link: x.link || null, source: x.source },
+      choices: Object.fromEntries(Object.entries(trip.choices || {}).filter(([, c]) => !c.part)),
+    };
+    const ls = legs(next);
+    const out = ls.find((l) => l.kind === 'out'), home = ls.find((l) => l.kind === 'home');
+    const base = { currency: x.currency, link: x.link || null, source: x.source, at: new Date().toISOString() };
+    if (out) next.choices[out.key] = { ...base, summary: x.out || `${x.airline}, ${x.from} → ${x.to}`, price: x.price, part: 'out' };
+    if (home) next.choices[home.key] = { ...base, summary: x.back || `${x.airline}, ${x.back_from || x.to} → ${x.from}`, price: 0, part: 'return' };
+    return { trip: next, total };
+  }
+  const fareById = (dr, id) => Object.values(dr.deals || {}).flat().find((y) => y.id === id);
+
   registerAppTool(server, 'start_trip_from_flight', {
     title: 'Start a trip from a flight',
-    description: 'Creates a trip from a return fare saved in the new-trip draft: it starts the day the flight lands at its airport and ends the day the flight home leaves, and keeps the fare as the trip\'s outbound and home flights. The route between can then be planned with update_trip. Shows the trip in the planner.',
+    description: 'Creates a trip from a return fare saved in the new-trip draft: it starts the day the flight lands at its airport and ends the day the flight home leaves, and keeps the fare as the trip\'s outbound and home flights. The traveller\'s wishes and focus area from the draft go with it. The route between can then be planned with update_trip. Shows the trip in the planner.',
     inputSchema: { deal_id: z.string().max(40).describe('Deal id from the draft'), name: z.string().min(1).max(80).optional() },
     annotations: { title: 'Start a trip from a flight', readOnlyHint: false, destructiveHint: false },
     _meta: { ui: { resourceUri: PLANNER_URI } },
   }, mine(async ({ deal_id, name }) => {
     if (store.countTrips(owner) >= limits.trips) return fail(`Your Pinroute account already has ${limits.trips} trips, the most it keeps. Delete one with delete_trip first.`);
     const dr = draftOf();
-    const x = Object.values(dr.deals || {}).flat().find((y) => y.id === deal_id);
+    const x = fareById(dr, deal_id);
     if (!x) return fail(`No fare with id ${deal_id} in the draft. plan_new_trip lists the fares saved for each country.`);
     const d = destById(x.country);
-    const start = x.arrive || x.depart;
-    const nights = diffDays(start, x.return);
-    if (nights < 1) return fail('This fare leaves no night at the destination.');
-    const a = airport(x.to), b = airport(x.back_from || x.to);
-    const stops = [{ ...resolvePlace(cityOf(a), a.code), nights }];
-    if (b && b.code !== a.code) stops.push({ ...resolvePlace(cityOf(b), b.code), nights: 0 });
-    const trip = { id: store.newId('trp'), name: name || `${d?.name || cityOf(a)} · ${MONTHS[monthOf(start)]} ${start.slice(0, 4)}`, start, adults: x.adults || dr.adults, home: x.from,
-      stops, country: d?.id || null, choices: {}, created: new Date().toISOString(),
-      ticket: { from: x.from, to: x.to, back_from: x.back_from || x.to, depart: x.depart, arrive: start, return: x.return, price: x.price, currency: x.currency, airline: x.airline, out: x.out || null, back: x.back || null, link: x.link || null, source: x.source } };
-    const ls = legs(trip);
-    const out = ls.find((l) => l.kind === 'out'), home = ls.find((l) => l.kind === 'home');
-    const base = { currency: x.currency, link: x.link || null, source: x.source, at: new Date().toISOString() };
-    if (out) trip.choices[out.key] = { ...base, summary: x.out || `${x.airline}, ${x.from} → ${x.to}`, price: x.price, part: 'out' };
-    if (home) trip.choices[home.key] = { ...base, summary: x.back || `${x.airline}, ${x.back_from || x.to} → ${x.from}`, price: 0, part: 'return' };
+    const start = x.arrive || x.depart, focus = dr.focus?.[x.country];
+    const fit = fitToFare({ stops: [], choices: {} }, x);
+    if (fit.error) return fail(fit.error);
+    const trip = { ...fit.trip, id: store.newId('trp'), name: name || `${focus?.area || d?.name || cityOf(airport(x.to))} · ${MONTHS[monthOf(start)]} ${start.slice(0, 4)}`,
+      country: d?.id || null, wishes: dr.wishes || null, area: focus?.area || null, created: new Date().toISOString() };
     const saved = store.putTrip(owner, trip);
-    return viewResult(saved, `Created "${saved.name}" (${saved.id}): ${start} to ${x.return}, ${nights} nights, landing at ${a.code} and flying home from ${(b || a).code}. The return fare is saved on both flights. The route is still one stop; update_trip with the stops in travel order plans it.`);
+    return viewResult(saved, `Created "${saved.name}" (${saved.id}): ${start} to ${x.return}, ${fit.total} nights, landing at ${x.to} and flying home from ${x.back_from || x.to}. The return fare is saved on both flights.${trip.wishes ? ` The traveller's wishes: "${trip.wishes}".` : ''} The route is still one stop; update_trip with the stops in travel order plans it.`);
+  }));
+
+  server.registerTool('set_trip_fare', {
+    title: 'Change a trip\'s flights',
+    description: 'Moves a trip to another return fare saved in the new-trip draft: the trip then starts the day that flight lands and ends the day the flight home leaves. Nights are added to the longest stay, or taken from the longest stays; an arrival or departure airport that isn\'t on the route joins it as a stop with no nights. The fare replaces the trip\'s outbound and home flights.',
+    inputSchema: { trip_id: z.string().max(40), deal_id: z.string().max(40).describe('Deal id from the draft') },
+    annotations: { title: 'Change a trip\'s flights', readOnlyHint: false, destructiveHint: true },
+  }, mine(async ({ trip_id, deal_id }) => {
+    const t = store.getTrip(owner, trip_id);
+    if (!t) return noTrip(trip_id);
+    const x = fareById(draftOf(), deal_id);
+    if (!x) return fail(`No fare with id ${deal_id} in the draft. plan_new_trip lists the fares saved for each country.`);
+    const fit = fitToFare(t, x);
+    if (fit.error) return fail(fit.error);
+    const saved = store.putTrip(owner, { ...fit.trip, country: t.country || x.country });
+    const moved = saved.start !== t.start || endDate(saved) !== endDate(t);
+    return viewResult(saved, `"${saved.name}" now flies ${x.from} → ${x.to} on ${x.depart} and home from ${x.back_from || x.to} on ${x.return} (${x.airline}, ${x.currency} ${Math.round(x.price)} for ${x.adults || saved.adults}).${moved ? ` The trip now runs ${saved.start} to ${endDate(saved)}, ${fit.total} nights.` : ''}`);
   }));
 
   server.registerTool('flight_link', {

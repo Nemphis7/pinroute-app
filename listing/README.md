@@ -12,13 +12,13 @@ Everything the submission portal at [claude.ai/directory/manage](https://claude.
 - **One-liner (≤200):** Plan trips in Claude from the days you're free or the place you dream of: where the weather is good, flight deals, then the route, flights and local favourites in one planner.
 - **Description (≤2,000):**
 
-  Pinroute turns a trip idea into a day-by-day route you can see and change in the conversation. Start from the days you are free: Pinroute ranks 60 countries by the weather in those months, the flight time and your budget, and compares flight deals for the ones you like. Or start from a country and see its best months, with what flights cost in each. Pick a fare and Pinroute starts the trip around it.
+  Pinroute turns a trip idea into a day-by-day route you can see and change in the conversation. Start from the days you are free: Pinroute ranks 60 countries by the weather in those months, the flight time and your budget, and compares flight deals for the ones you like. Or start from a country, or part of one such as Sulawesi, and see its best months, with what flights cost in each. Pick a fare and Pinroute starts the trip around it.
 
   Tell Claude where you want to go and for how many nights; Pinroute works out the dates, spots which hops are flights and which are a ferry or a drive, and shows it all in an interactive planner.
 
   For each flight, ask Claude to search with the flight tools you already use, or check airline fares directly, then save the one you pick to your trip with its price and booking link. For each place, Claude can gather what locals and recent visitors recommend, from restaurants to beaches and viewpoints, and save each pick to the planner with its source.
 
-  Your trips are saved to your own Pinroute account, so you can come back to them in any chat and on any device, including the Claude mobile apps. Pinroute never books or pays for anything: booking happens on the airline's or booking site. Delete a trip or all your data at any time by asking Claude.
+  Your trips are saved to your own Pinroute account, so you can come back to them in any chat and on any device, including the Claude mobile apps. Pinroute never books or pays for anything: booking happens on the airline's or booking site. Rename a trip, move it to other flights or delete it from the planner's Trip menu, or delete all your data at any time by asking Claude.
 
 - **Categories:** Travel; Productivity (pick what the portal offers closest to these)
 - **Documentation URL:** `https://<your domain>/help`

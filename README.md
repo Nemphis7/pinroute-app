@@ -20,10 +20,11 @@ Claude (the traveller's own plan)
 | Tool | What it does | Data |
 | --- | --- | --- |
 | `open_planner` | The start screen, or a trip (the MCP App screen) | reads |
-| `plan_new_trip` | The new-trip planner; saves free dates, length, travellers, budget, airports, regions, interests and countries to compare | writes |
+| `plan_new_trip` | The new-trip planner; saves free dates, length, travellers, budget, airports, regions, interests, countries to compare, the traveller's wishes and a focus on part of a country (its airports are used for fares) | writes |
 | `scan_flight_deals` | Return fares to a country: recent prices across the window or by month (Travelpayouts), or live fares (Amadeus) including one pair of dates across several departure and arrival airports; keeps the cheapest | writes |
 | `save_flight_deals` | Keeps fares Claude found with any flight search, per country | writes |
 | `start_trip_from_flight` | A trip from a saved fare: from landing to the flight home, the fare on both flights | writes |
+| `set_trip_fare` | Moves a trip to another saved fare: dates follow the flights, nights go to or come from the longest stays, a new arrival or departure airport joins the route | changes |
 | `create_trip` / `update_trip` / `delete_trip` / `list_trips` | Multi-stop trips with nights per stop; dates and legs are worked out; stops anywhere by coordinates | writes / changes / deletes / reads |
 | `set_nights` / `mark_leg` | Nights at one stop; a leg booked, with a note | writes |
 | `choose_flight` / `clear_flight` | Saves or removes the flight picked for a leg, from any flight search | writes / deletes |
@@ -41,7 +42,7 @@ Node 22.13 or later (the database uses Node's built-in `node:sqlite`).
 
 ```bash
 npm install
-npm test             # builds the planner, then 50 tests: tools, sign-in, separate data per person, limits, map, pages, planner
+npm test             # builds the planner, then the tests: tools, sign-in, separate data per person, limits, map, pages, planner
 npm run dev          # http://127.0.0.1:3000/mcp
 npm run screenshots  # directory images in listing/ (needs Playwright)
 ```

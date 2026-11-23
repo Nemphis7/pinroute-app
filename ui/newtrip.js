@@ -3,7 +3,7 @@
 //   I know where: Country → Best time (weather and fares by month) → Flights
 // Both end with "Plan <country> with this flight", which creates the trip from the fare. Fares come from Pinroute's
 // own airline search (a quick check) or from Claude, searching with the traveller's own flight tools.
-import { ArrowLeft, ArrowRight, MessageSquare, ExternalLink, X, Building2, Landmark, Trees, Waves, Search, MapPin } from 'lucide';
+import { ArrowLeft, ArrowRight, MessageSquare, ExternalLink, X, Building2, Landmark, Trees, Waves, Search, MapPin, RotateCcw } from 'lucide';
 import {
   REGIONS, DESTS, INTERESTS, INTEREST_NAME, LENGTHS, MONTHS, MON, destById, windowMonths, seasonFit, fitLabel, rankDests,
   addDays, diffDays, dealPP, dealRatio, dealLabel, dealsFor, dealNights, budgetFit, roughCost, bestMonthsText, nextMonths, monthsToCheck,
@@ -12,6 +12,7 @@ import { app, ui, call, go, render, showError, tell, ask, waiting, narrow } from
 import { h, icon, day, dm, longDay, span, money, nightsTxt, plural, today } from './dom.js';
 import { worldSvg, legend } from './world.js';
 import { openAirMap } from './airmap.js';
+import { openConfirm } from './tripmenu.js';
 
 const N = { view: null, d: null, homes: [], deals: {}, flights: {}, seq: 0, all: false, sort: 'deal', scan: {}, q: '', air: { q: '', list: [] }, regionsOpen: false, mx: {} };
 const ICON = { city: Building2, culture: Landmark, nature: Trees, beach: Waves };
@@ -30,7 +31,7 @@ export const newState = N;
 
 // ---------------------------------------------------------------- saving the draft
 const ARGS = { from: 'free_from', until: 'free_until', minNights: 'min_nights', maxNights: 'max_nights', adults: 'adults', budget: 'budget',
-  homes: 'home_airports', regions: 'regions', interests: 'interests', compare: 'compare', country: 'country', way: 'way', step: 'step' };
+  homes: 'home_airports', regions: 'regions', interests: 'interests', compare: 'compare', country: 'country', way: 'way', step: 'step', wishes: 'wishes', focus: 'focus' };
 async function save(patch, line) {
   Object.assign(N.d, patch);
   render();
@@ -79,9 +80,46 @@ export function newCard() {
 // ---------------------------------------------------------------- the step bar (full screen)
 export function newSteps() {
   const list = STEPS[N.d.way] || STEPS.when;
-  return h('ol', { class: 'steps', 'aria-label': N.d.way === 'where' ? 'I know where' : 'I know when' },
+  return [h('ol', { class: 'steps', 'aria-label': N.d.way === 'where' ? 'I know where' : 'I know when' },
     list.map(([id, label], i) => h('li', {}, h('button', { class: 'step', 'aria-current': N.d.step === id ? 'step' : null, onclick: () => goStep(id) },
-      h('span', { class: 'n', text: String(i + 1) }), h('span', { class: 'lbl', text: label })))));
+      h('span', { class: 'n', text: String(i + 1) }), h('span', { class: 'lbl', text: label }))))),
+  h('button', { class: `ghost${narrow() ? ' icon' : ''}`, 'aria-label': 'Start over', title: 'Start over', onclick: startOver }, icon(RotateCcw), narrow() ? null : 'Start over')];
+}
+// A fresh draft: dates, countries, wishes and fares go; the airports and travellers stay
+function startOver() {
+  openConfirm({
+    title: 'Start this new trip over?',
+    text: 'The dates, countries, wishes and fares saved for it go. Your departure airports and travellers stay, and your trips are not touched.',
+    action: 'Start over',
+    run: async () => { N.wish = null; N.scan = {}; N.mx = {}; takeNew((await call('plan_new_trip', { reset: true })).structuredContent); render(); tell('the traveller started the new trip over.'); },
+  });
+}
+
+// ---------------------------------------------------------------- "What do you have in mind?": a quick chat with Claude
+// The traveller says it in their own words ("Indonesia, but only Sulawesi"); Claude sets up the draft from it: countries,
+// interests, length, and for part of a country a focus with that area's airports, which the fare look-ups then use.
+function wishBox() {
+  const text = N.wish ?? N.d.wishes ?? '';
+  const focus = Object.entries(N.d.focus || {});
+  return h('section', { class: 'wish' },
+    h('label', { class: 'wish-l', for: 'wish' }, h('b', { text: 'What do you have in mind?' }), h('span', { class: 'small', text: ' Optional. Claude sets up the planner from it.' })),
+    h('textarea', { id: 'wish', rows: 2, maxlength: 500, value: text, placeholder: 'e.g. Indonesia, but only Sulawesi · diving and quiet beaches · no more than two flights inside the country',
+      oninput: (e) => { N.wish = e.target.value; const b = document.getElementById('wish-go'); if (b) b.disabled = !e.target.value.trim(); } }),
+    focus.length ? h('div', { class: 'chips' }, focus.map(([id, f]) => h('span', { class: 'token' }, h('b', { text: `${destById(id)?.name}: ${f.area}` }), ` ${f.airports.join(', ')}`,
+      h('button', { class: 'icon ghost', 'aria-label': `Remove the focus on ${f.area}`, onclick: () => save({ focus: [{ country: id, area: '', airports: [] }] }) }, icon(X))))) : null,
+    h('div', { class: 'acts' },
+      h('button', { id: 'wish-go', disabled: !text.trim(), onclick: askWishes }, icon(MessageSquare), 'Ask Claude to set this up'),
+      waiting.wish ? h('span', { class: 'small busy', text: 'Claude is setting up your trip; the planner follows.' }) : null));
+}
+async function askWishes() {
+  const text = (N.wish ?? N.d.wishes ?? '').trim();
+  if (!text) return;
+  await save({ wishes: text });
+  N.wish = null;
+  const since = N.d.updated;
+  const where = N.d.way === 'where';
+  ask('wish', `Here is what I have in mind for my new trip in Pinroute: "${text}". Set up my Pinroute draft to match with plan_new_trip: ${where ? 'the country (country)' : 'the countries worth comparing (compare)'}, and the regions, interests, trip length (min_nights, max_nights), dates and travellers if I said them. For a part of a country I named, such as an island or a region, add a focus with its name and its main airports with scheduled flights (IATA codes, busiest first), so Pinroute looks up fares to those airports. Leave my wishes as they are. Then tell me in two or three lines what you set.`,
+    { poll: refresh, done: () => (N.d.updated || '') > (since || ''), tries: 45 });
 }
 
 // ---------------------------------------------------------------- the screen
@@ -134,6 +172,7 @@ function whenStep() {
   const d = N.d, width = diffDays(d.from, d.until), bad = width < d.minNights;
   return [
     head('When are you free?', 'The days you could be away, how long the trip should be and where you can fly from. Flights are searched for any dates that fit.'),
+    wishBox(),
     box(
       h('div', { class: 'grid2' },
         field('Free from', dateInput('w-from', d.from, today(), (v) => save({ from: v, ...(d.until <= v ? { until: addDays(v, Math.max(d.maxNights, 7)) } : {}) })), 'w-from'),
@@ -314,7 +353,8 @@ function countryDeals({ d, list, fit }) {
     N.flights.recent ? h('button', { class: 'ghost', disabled: !N.homes.length, onclick: () => quickAll([d.id], 'recent') }, 'Check recent prices') : null,
     h('button', { class: 'ghost', disabled: !N.homes.length, onclick: () => quickAll([d.id], 'live') }, N.flights.live ? 'Check airline fares' : 'Check demo fares'));
   return h('article', { class: 'country', id: `deals-${d.id}` },
-    h('header', {}, h('div', {}, h('h3', { text: d.name }), h('p', { class: 'small', text: `${d.region} · arrive at ${d.gw} or another airport` })),
+    h('header', {}, h('div', {}, h('h3', { text: N.d.focus?.[d.id] ? `${d.name}: ${N.d.focus[d.id].area}` : d.name }),
+      h('p', { class: 'small', text: N.d.focus?.[d.id] ? `${d.region} · fares to ${N.d.focus[d.id].airports.join(', ')}` : `${d.region} · arrive at ${d.gw} or another airport` })),
       h('span', { class: 'fit' }, h('i', { class: `sw f${level(fit)}` }), fl)),
     st?.error ? h('p', { class: 'note warn', text: st.error }) : null,
     body);
@@ -442,6 +482,7 @@ function countryStep() {
   const list = h('div', { class: 'regions', id: 'c-list' }, countryGroups());
   return [
     head('Where do you want to go?', 'Pick the country. Next you see the best months to go and what flights cost in each.'),
+    wishBox(),
     h('div', { class: 'acwrap' }, icon(Search), h('input', { id: 'c-q', type: 'search', placeholder: 'Vietnam, Japan, Peru…', value: N.q, autocomplete: 'off', 'aria-label': 'Find a country',
       oninput: (e) => { N.q = e.target.value; list.replaceChildren(...countryGroups()); } })),
     list,
@@ -471,7 +512,7 @@ function seasonStep() {
   const best = priced.filter((mo) => d.months[mo.m] === 'G').sort(byPrice)[0] || priced.filter((mo) => d.months[mo.m] === 'o').sort(byPrice)[0] || null;
   const scanning = check.some((mo) => N.scan[`m|${mo.ym}`] === 'loading') || N.scan[`y|${d.id}`] === 'loading';
   return [
-    head(`When is best for ${d.name}?`, `${d.why} Weather by month for the next year, and fares from ${N.homes.map((a) => a.code).join(' or ') || 'your airport'} for the good months.`),
+    head(`When is best for ${N.d.focus?.[d.id] ? `${N.d.focus[d.id].area}, ${d.name}` : d.name}?`, `${d.why} Weather by month for the next year, and fares from ${N.homes.map((a) => a.code).join(' or ') || 'your airport'}${N.d.focus?.[d.id] ? ` to ${N.d.focus[d.id].airports[0]}` : ''} for the good months.`),
     h('section', { class: 'months', 'aria-label': 'Weather and fares by month' },
       h('div', { class: 'mgrid' }, ms.map((mo) => {
         const c = d.months[mo.m], x = cheapest(mo), dl = x && dealLabel(dealRatio(x)), st = N.scan[`m|${mo.ym}`];

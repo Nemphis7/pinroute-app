@@ -1,9 +1,10 @@
 // The start screen: the two ways to plan a new trip, the draft to carry on with, and the trips, the one under way
 // first. In the chat it is a small card; full screen it is Pinroute's home.
-import { CalendarDays, Globe, ArrowRight, Maximize2 } from 'lucide';
-import { go, setMode, canFull, isFull, render } from './core.js';
+import { CalendarDays, Globe, ArrowRight, Maximize2, Pencil, Trash2 } from 'lucide';
+import { go, setMode, canFull, isFull, render, call, show } from './core.js';
 import { h, icon, span, days, today, plural, nightsTxt } from './dom.js';
 import { startWay, continueDraft } from './newtrip.js';
+import { openEdit, openDelete } from './tripmenu.js';
 
 const H = { view: null };
 export function takeHome(sc) { H.view = sc; }
@@ -16,6 +17,7 @@ const when = (t) => {
   return n <= 1 ? 'Starts tomorrow' : n < 14 ? `Starts in ${n} days` : n < 60 ? `Starts in ${Math.round(n / 7)} weeks` : `Starts in ${Math.round(n / 30)} months`;
 };
 const openTrip = (id) => go('open_planner', { trip_id: id });
+const reload = async () => show(await call('open_planner', {}));
 
 export function homeCard() {
   const v = H.view, lead = v.trips[0] && v.trips[0].state !== 'done' ? v.trips[0] : null;
@@ -45,9 +47,12 @@ export function homeScreen() {
         h('p', { class: 'small', text: [`free ${span(d.from, d.until)}`, `${d.minNights}–${d.maxNights} nights`, d.compare.length && !d.country ? `comparing ${d.compare.join(', ')}` : null, d.deals ? plural(d.deals, 'fare') + ' saved' : null].filter(Boolean).join(' · ') })),
       h('button', { onclick: continueDraft }, 'Continue', icon(ArrowRight))) : null,
     h('h3', { class: 'sect', text: 'Your trips' }),
-    v.trips.length ? h('ul', { class: 'trips' }, v.trips.map((t) => h('li', {}, h('button', { class: `row trip ${t.state}`, onclick: () => openTrip(t.id) },
+    v.trips.length ? h('ul', { class: 'trips' }, v.trips.map((t) => h('li', { class: 'trip-li' }, h('button', { class: `row trip ${t.state}`, onclick: () => openTrip(t.id) },
       h('span', { class: 'main' }, h('span', { class: 'place', text: t.name }),
         h('span', { class: 'sub', text: `${span(t.start, t.end)} · ${nightsTxt(days(t.start, t.end))} · ${t.places.join(', ')}${t.stops > t.places.length ? '…' : ''}` })),
-      h('span', { class: `state ${t.state === 'now' ? 'done' : 'todo'}`, text: when(t) })))))
+      h('span', { class: `state ${t.state === 'now' ? 'done' : 'todo'}`, text: when(t) })),
+      h('span', { class: 'row-acts' },
+        h('button', { class: 'ghost icon', 'aria-label': `Rename ${t.name}`, title: 'Rename', onclick: () => openEdit({ id: t.id, name: t.name }, reload) }, icon(Pencil)),
+        h('button', { class: 'ghost icon', 'aria-label': `Delete ${t.name}`, title: 'Delete', onclick: () => openDelete(t, reload) }, icon(Trash2))))))
       : h('p', { class: 'empty', text: 'No trips yet. Both ways above end with a trip you can plan here.' }));
 }
