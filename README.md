@@ -21,7 +21,7 @@ Claude (the traveller's own plan)
 | --- | --- | --- |
 | `open_planner` | The start screen, or a trip (the MCP App screen) | reads |
 | `plan_new_trip` | The new-trip planner; saves free dates, length, travellers, budget, airports, regions, interests and countries to compare | writes |
-| `scan_flight_deals` | Return fares to a country on a few dates spread over the window, or one pair of dates across several departure and arrival airports; keeps the cheapest | writes |
+| `scan_flight_deals` | Return fares to a country: recent prices across the window or by month (Travelpayouts), or live fares (Amadeus) including one pair of dates across several departure and arrival airports; keeps the cheapest | writes |
 | `save_flight_deals` | Keeps fares Claude found with any flight search, per country | writes |
 | `start_trip_from_flight` | A trip from a saved fare: from landing to the flight home, the fare on both flights | writes |
 | `create_trip` / `update_trip` / `delete_trip` / `list_trips` | Multi-stop trips with nights per stop; dates and legs are worked out; stops anywhere by coordinates | writes / changes / deletes / reads |
@@ -29,6 +29,7 @@ Claude (the traveller's own plan)
 | `choose_flight` / `clear_flight` | Saves or removes the flight picked for a leg, from any flight search | writes / deletes |
 | `search_flights` | Airline fares for one day or a return, cheapest first; daily limit per person | reads |
 | `find_airports` | Airports by city, name or code, or within a distance of a point (with a map for the picker); works without signing in | reads |
+| `flight_link` | A link to compare and book a flight on Aviasales, as a partner link when Travelpayouts is set up | reads |
 | `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link | writes / reads |
 | `delete_my_data` | Deletes everything the person saved | deletes |
 
@@ -54,6 +55,8 @@ All settings are environment variables: on Railway under **Variables**, locally 
 | Variable | What it does |
 | --- | --- |
 | `AMADEUS_API_KEY` | Live fares from Amadeus Travel Builder. Without it, demo fares. |
+| `TRAVELPAYOUTS_TOKEN` | Recent prices from Aviasales (Travelpayouts Data API), low-cost airlines included, and the Links API. Profile → API token. |
+| `TRAVELPAYOUTS_MARKER`, `TRAVELPAYOUTS_TRS` | Your Travelpayouts partner ID and project ID: links to Aviasales become your partner links. `RECENT_LIMIT_PER_DAY`: look-ups of recent prices per person per day (default 200). |
 | `AUTH_ISSUER` | Turns sign-in on: the sign-in service's issuer URL, e.g. `https://<name>.authkit.app`. |
 | `PUBLIC_URL` | The server's public address, e.g. `https://pinroute.app`. On Railway, the generated domain is used until you set this. |
 | `MCP_SECRET` | Without sign-in only: makes the address `/mcp/<secret>`, so only people with the link can connect. Ignored once sign-in is on. |
@@ -72,6 +75,16 @@ npm run check:amadeus LHR CDG    # any other pair
 ```
 
 Amadeus Travel Builder covers a set of mostly full-service airlines; many regional low-cost airlines aren't in it (Krabi → Bangkok returns nothing, for example). That is why the planner's **Ask Claude** buttons exist: Claude searches with whatever flight tools the traveller has connected (LetsFG's flexible-date search fits the new-trip flow best) and saves deals with `save_flight_deals` or a leg's pick with `choose_flight`. The planner's **Quick check** is the server's own Amadeus search: three departure dates per country, each counted toward the daily limit.
+
+## Travelpayouts: recent prices and partner links
+
+Amadeus has no low-cost airlines. Travelpayouts, Aviasales's partner network, fills that gap for prices and pays a commission on bookings:
+
+- **Recent prices** (`/aviasales/v3/prices_for_dates`, `/aviasales/v3/grouped_prices`): the cheapest fares Aviasales travellers found in the last days, per adult, low-cost airlines included. Pinroute uses them for the deal scan across a window and for "Best time" (the cheapest fare for each month ahead, in one look-up). They are a guide, not live; every fare links to Aviasales to check it. They don't use the 50 daily airline searches.
+- **Partner links** (`/links/v1/create`): every Aviasales link (fares, and **Compare on Aviasales** on deals and flight legs) becomes your partner link, ten to a request and each made once. If the API can't be reached, the link carries your partner ID as `marker=`.
+- The planner says next to these links that Pinroute may earn a commission; so do `/help`, `/privacy` and the listing answers.
+
+Set it up: create a Travelpayouts account, join the Aviasales program, then set `TRAVELPAYOUTS_TOKEN`, `TRAVELPAYOUTS_MARKER` and `TRAVELPAYOUTS_TRS` in Railway. The status page at `/` says when recent prices and partner links are on.
 
 ## Sign-in with WorkOS AuthKit
 
@@ -143,7 +156,7 @@ src/app.mjs           tools and the planner resource, scoped to one owner per re
 src/discover.mjs      the new-trip rules, shared with the planner: seasons, ranking, rough costs, deal ratings
 src/store.mjs         SQLite on the volume: trips, drafts, picks and search counts per owner; imports 0.1's store.json
 src/pages.mjs         /help, /privacy and the icon
-src/providers/        amadeus.mjs, demo.mjs, index.mjs (picks the source)
+src/providers/        amadeus.mjs (live fares), travelpayouts.mjs (recent prices, partner links), demo.mjs, index.mjs
 src/geo.mjs           airports (OurAirports, public domain), Pinroute's Thailand places, airports near a point and per country
 src/data/             airports.json, places-th.json, destinations.json (60 countries: seasons, gateway, price level)
 src/trips.mjs         dates and legs of a trip

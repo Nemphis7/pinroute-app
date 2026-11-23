@@ -21,7 +21,7 @@ export const EXAMPLE_PROMPTS = [
 const TOOLS = [
   ['open_planner', 'Shows the start screen, or the planner for a saved trip', 'Reads'],
   ['plan_new_trip', 'Shows the new-trip planner and saves your free dates, length, travellers, budget, airports and countries to compare; ranks 60 countries by the weather then', 'Writes'],
-  ['scan_flight_deals', 'Looks up return fares to a country on a few dates in your window, or compares departure and arrival airports for one pair of dates (Amadeus Travel Builder), and keeps the cheapest; counts toward the daily limit', 'Writes'],
+  ['scan_flight_deals', 'Looks up return fares to a country across your window or by month (recent prices from Aviasales), or live airline fares, also comparing departure and arrival airports for one pair of dates (Amadeus Travel Builder); keeps the cheapest', 'Writes'],
   ['save_flight_deals', 'Keeps return fares Claude found with any flight search, for one country', 'Writes'],
   ['start_trip_from_flight', 'Creates a trip from a saved fare: from landing to the flight home, with the fare on both flights', 'Writes'],
   ['create_trip', 'Saves a new multi-stop trip; dates and legs are worked out', 'Writes'],
@@ -33,6 +33,7 @@ const TOOLS = [
   ['clear_flight', 'Removes the flight saved for a leg', 'Deletes'],
   ['mark_leg', 'Marks a flight, ferry or drive as booked, with an optional note', 'Writes'],
   ['search_flights', 'Searches airline fares (Amadeus Travel Builder); daily limit per person', 'Reads'],
+  ['flight_link', 'Makes a link to compare and book a flight on Aviasales (with Pinroute\'s partner ID when set up)', 'Reads'],
   ['find_airports', 'Finds airports by city, name or code, or all airports within a distance of a point; works without signing in', 'Reads'],
   ['save_local_picks', 'Saves local favourites for a place, each with its source link', 'Writes'],
   ['get_local_picks', 'Returns the local favourites saved for a place', 'Reads'],
@@ -91,7 +92,8 @@ export function helpPage(env = process.env) {
 <h2>Try these</h2>
 <ul class="prompts">${EXAMPLE_PROMPTS.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
 <h2>Flights</h2>
-<p>${live ? 'Fare search uses Amadeus Travel Builder, which covers a set of mostly full-service airlines and links to their own sites. Many regional low-cost airlines are not included.' : 'This server shows demo fares, not real prices.'} The planner's <b>Ask Claude</b> button lets Claude search with any other flight tools you have connected in Claude, and save the flight you pick to your trip. Booking always happens on the airline's or booking site.</p>
+<p>${env.TRAVELPAYOUTS_TOKEN ? '<b>Recent prices</b> come from Aviasales: the cheapest fares its travellers found in the last days, low-cost airlines included. They are a guide, not live: check the price on Aviasales before booking. ' : ''}${live ? `${env.TRAVELPAYOUTS_TOKEN ? '<b>Live airline fares</b> come from' : 'Fare search uses'} Amadeus Travel Builder, which covers a set of mostly full-service airlines and links to their own sites. Many regional low-cost airlines are not included.` : 'This server shows demo fares, not real prices.'} The planner's <b>Ask Claude</b> button lets Claude search with any other flight tools you have connected in Claude, and save the flight you pick to your trip. Booking always happens on the airline's or booking site.</p>
+<p><b>Compare on Aviasales</b> opens a search for the route and dates on Aviasales, where airlines and agencies show live prices.${env.TRAVELPAYOUTS_MARKER ? ' These links carry Pinroute\'s partner ID with Travelpayouts, Aviasales\'s partner network: if you book through one, Pinroute may earn a commission. The price you pay is the same, and fares are never ranked by commission.' : ''}</p>
 <h2>What Pinroute can do</h2>
 <div class="table"><table><thead><tr><th>Tool</th><th>What it does</th><th>Data</th></tr></thead><tbody>
 ${TOOLS.map(([n, d, k]) => `<tr><td><code>${n}</code></td><td>${esc(d)}</td><td>${k}</td></tr>`).join('')}
@@ -117,7 +119,7 @@ export function privacyPage(env = process.env) {
 <li><b>Local picks</b> saved for places: name, type, a short note, area and source link.</li>
 <li><b>A count of your flight searches per day</b>, kept for seven days, to apply the daily limit.</li>
 </ul>
-<p>Pinroute uses this data only to provide the planner you asked for. It has no ads, does not sell or share your data for marketing, does not track you across sites and sets no cookies.</p>
+<p>Pinroute uses this data only to provide the planner you asked for. It has no ads, does not sell or share your data for marketing, does not track you across sites and sets no cookies.${env.TRAVELPAYOUTS_MARKER ? ' Links to Aviasales carry Pinroute\'s partner ID, so a booking made through one can earn Pinroute a commission; the partner ID identifies Pinroute, not you.' : ''}</p>
 <h2>What Pinroute does not keep</h2>
 <ul>
 <li><b>Your conversations with Claude.</b> Pinroute only receives what Claude sends to its tools, such as the places and dates of a trip.</li>
@@ -128,7 +130,8 @@ export function privacyPage(env = process.env) {
 <li><b>Anthropic</b> runs Claude, through which you use Pinroute. Your conversations are covered by Anthropic's privacy policy.</li>
 ${auth ? '<li><b>WorkOS</b> runs sign-in. It handles your login details under its own privacy policy; of what it sends, Pinroute uses only your account id.</li>' : ''}
 <li><b>Railway</b> hosts the Pinroute server and its database in ${esc(region)}.</li>
-<li><b>Amadeus</b> receives each flight search: airports, dates, number of travellers and cabin, without your account id.</li>
+<li><b>Amadeus</b> receives each live flight search: airports, dates, number of travellers and cabin, without your account id.</li>
+${env.TRAVELPAYOUTS_TOKEN || env.TRAVELPAYOUTS_MARKER ? '<li><b>Travelpayouts</b> (Aviasales\'s partner network) receives the routes and months of recent-price look-ups and the Aviasales links Pinroute turns into partner links (route, dates, number of travellers), without your account id. When you open such a link, Aviasales\'s and Travelpayouts\'s own policies apply.</li>' : ''}
 <li><b>Airlines and booking sites</b>: when you open a booking link, their own policies apply.</li>
 </ul>
 <h2>How long it is kept</h2>
