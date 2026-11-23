@@ -188,10 +188,10 @@ test('a host without full screen shows the planner in place, one pane at a time'
   assert.equal(await f.locator('#app').getAttribute('data-layout'), 'stacked');
   assert.ok(await f.locator('.list').isVisible());
   await f.locator('.row.stop', { hasText: 'Koh Lanta' }).click();
-  await f.getByRole('button', { name: 'Route' }).waitFor();
+  await f.getByRole('button', { name: 'Route', exact: true }).waitFor();
   assert.ok(await f.locator('.list').isHidden());
   assert.equal(await f.locator('.detail h2').textContent(), 'Koh Lanta');
-  await f.getByRole('button', { name: 'Route' }).click();
+  await f.getByRole('button', { name: 'Route', exact: true }).click();
   assert.ok(await f.locator('.list').isVisible());
   await p.close();
 });

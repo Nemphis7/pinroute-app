@@ -8,15 +8,22 @@ import { flightProvider } from './providers/index.mjs';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export const EXAMPLE_PROMPTS = [
+  'I\'m free from 1 to 24 March for about two weeks, flying from Frankfurt. Where is good then? Plan a new trip in Pinroute.',
+  'In Pinroute, find flight deals for Vietnam, Sri Lanka and Mexico for my new trip and save the best ones.',
+  'When is the best time to go to Japan, and what do flights cost in those months? Use Pinroute.',
+  'Plan the route for my Pinroute trip between the flights and save it.',
   'Plan a trip in Pinroute: Bangkok 2 nights, Khao Sok 2, Koh Lanta 4 and Ao Nang 3, for 2 adults from 14 November, then open the planner.',
   'Find flights for the Krabi to Bangkok leg of my Pinroute trip and save the one I pick.',
   'Find local favourites for Koh Lanta from recent posts and save them to my Pinroute trip.',
-  'Move my Pinroute trip to start on 20 November and add a night in Khao Lak.',
   'Delete my Pinroute data.',
 ];
 
 const TOOLS = [
-  ['open_planner', 'Shows the planner for a saved trip', 'Reads'],
+  ['open_planner', 'Shows the start screen, or the planner for a saved trip', 'Reads'],
+  ['plan_new_trip', 'Shows the new-trip planner and saves your free dates, length, travellers, budget, airports and countries to compare; ranks 60 countries by the weather then', 'Writes'],
+  ['scan_flight_deals', 'Looks up return fares to a country on a few dates in your window (Amadeus Travel Builder) and keeps the cheapest; counts toward the daily limit', 'Writes'],
+  ['save_flight_deals', 'Keeps return fares Claude found with any flight search, for one country', 'Writes'],
+  ['start_trip_from_flight', 'Creates a trip from a saved fare: from landing to the flight home, with the fare on both flights', 'Writes'],
   ['create_trip', 'Saves a new multi-stop trip; dates and legs are worked out', 'Writes'],
   ['update_trip', 'Changes a trip: name, start, travellers, home airport or route', 'Changes'],
   ['delete_trip', 'Deletes one trip', 'Deletes'],
@@ -66,7 +73,13 @@ export function helpPage(env = process.env) {
   const address = auth || !env.MCP_SECRET ? `${base}/mcp` : `${base}/mcp/<the secret you were given>`;
   const live = flightProvider(env).name !== 'Demo data';
   return page('Pinroute', `
-<p>Plan multi-stop trips inside Claude: the route and dates, the flight or ferry between stops, and local favourites for each place, together in one planner. Claude does the thinking on your own Claude plan; Pinroute keeps your trips.</p>
+<p>Plan trips inside Claude, starting from the days you are free or from where you want to go: see where the weather is good, compare flight deals, then plan the route and dates, the flight or ferry between stops, and local favourites for each place, together in one planner. Claude does the thinking on your own Claude plan; Pinroute keeps your trips.</p>
+<h2>Two ways to start</h2>
+<ul>
+<li><b>I know when:</b> give your free days, how long to go and where you fly from. Pinroute ranks 60 countries by the weather in those months, the flight time and your budget; tick a few and compare flight deals; plan the trip from the fare you like.</li>
+<li><b>I know where:</b> pick a country and see its weather month by month for the next year, with the cheapest fares found for the good months; choose a month to see its flights.</li>
+</ul>
+<p>A deal is rated against a rough fare for the distance, about €120 plus 7 cents a km per person for a return economy ticket. It points out unusual prices; it is not a forecast.</p>
 <h2>Add Pinroute to Claude</h2>
 <ol>
 <li>In Claude, open <b>Settings → Connectors</b> and choose <b>Add custom connector</b>.</li>
@@ -83,7 +96,7 @@ export function helpPage(env = process.env) {
 ${TOOLS.map(([n, d, k]) => `<tr><td><code>${n}</code></td><td>${esc(d)}</td><td>${k}</td></tr>`).join('')}
 </tbody></table></div>
 <h2>Your data</h2>
-<p>Pinroute keeps the trips, chosen flights and local picks you save, and nothing from your conversations. Ask Claude to <i>delete my Pinroute data</i> at any time. Details are in the <a href="${esc(base)}/privacy">privacy policy</a>.</p>
+<p>Pinroute keeps the trips, chosen flights, new-trip draft and local picks you save, and nothing from your conversations. Ask Claude to <i>delete my Pinroute data</i> at any time. Details are in the <a href="${esc(base)}/privacy">privacy policy</a>.</p>
 <h2>Support</h2>
 <p>Run by ${operator(env)}. Questions and problems: ${contact(env)}.</p>`, env);
 }
@@ -91,7 +104,7 @@ ${TOOLS.map(([n, d, k]) => `<tr><td><code>${n}</code></td><td>${esc(d)}</td><td>
 export function privacyPage(env = process.env) {
   const auth = authConfig(env);
   const region = env.HOSTING_REGION || 'the United States';
-  const updated = env.PRIVACY_UPDATED || '22 November 2026';
+  const updated = env.PRIVACY_UPDATED || '23 November 2026';
   return page('Pinroute privacy policy', `
 <p class="muted">Last updated ${esc(updated)}.</p>
 <p>Pinroute is a trip planner that runs inside Claude. This page explains what Pinroute keeps about you, why, who else is involved and how to delete it. Pinroute is run by ${operator(env)}; you can reach us at ${contact(env)}.</p>
@@ -99,6 +112,7 @@ export function privacyPage(env = process.env) {
 <ul>
 <li><b>An account id.</b> ${auth ? 'When you sign in, the sign-in service gives Pinroute a random id for your account, and your data is stored under it. Pinroute never sees your password and does not store your name or email address.' : 'This server has no sign-in; everything is stored under one shared account.'}</li>
 <li><b>Your trips:</b> their names, dates, places and nights, the number of travellers, your home airport, the flights you chose (a one-line summary, price, booking link and where it was found), which legs you marked as booked, and any short note you added to a leg.</li>
+<li><b>Your new-trip draft:</b> the days you are free, the trip length, the number of travellers, a budget if you gave one, your departure airports, the regions, interests and countries you chose, and the return fares saved for them (airports, dates, price, airline, booking link and where it was found).</li>
 <li><b>Local picks</b> saved for places: name, type, a short note, area and source link.</li>
 <li><b>A count of your flight searches per day</b>, kept for seven days, to apply the daily limit.</li>
 </ul>
@@ -106,7 +120,7 @@ export function privacyPage(env = process.env) {
 <h2>What Pinroute does not keep</h2>
 <ul>
 <li><b>Your conversations with Claude.</b> Pinroute only receives what Claude sends to its tools, such as the places and dates of a trip.</li>
-<li><b>Flight search results.</b> They are passed back to Claude and not stored, unless you choose a flight.</li>
+<li><b>Flight search results.</b> They are passed back to Claude and not stored, unless you choose a flight or they are saved as fares for your new-trip draft.</li>
 </ul>
 <h2>Who else is involved</h2>
 <ul>
@@ -117,7 +131,7 @@ ${auth ? '<li><b>WorkOS</b> runs sign-in. It handles your login details under it
 <li><b>Airlines and booking sites</b>: when you open a booking link, their own policies apply.</li>
 </ul>
 <h2>How long it is kept</h2>
-<p>Your trips and picks are kept until you delete them. Ask Claude to delete a trip, or to <i>delete my Pinroute data</i> to remove everything at once; it is gone immediately and Pinroute keeps no backup copy. The hosting service keeps technical logs (time, address requested, response code) for a short period; they do not contain your trips.</p>
+<p>Your trips, draft and picks are kept until you delete them; fares in the draft whose departure has passed are dropped when new ones are saved. Ask Claude to delete a trip, or to <i>delete my Pinroute data</i> to remove everything at once; it is gone immediately and Pinroute keeps no backup copy. The hosting service keeps technical logs (time, address requested, response code) for a short period; they do not contain your trips.</p>
 <h2>Your rights</h2>
 <p>You can see your data in the planner, change it through Claude, delete it at any time as described above, and ask us for a copy or with any other request at ${contact(env)}. If you are in the EU or UK, you also have the right to complain to your data protection authority.</p>
 <h2>Changes</h2>

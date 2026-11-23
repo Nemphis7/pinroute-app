@@ -7,9 +7,10 @@ let srv, client, trip;
 before(async () => { srv = await startServer(null, { SEARCH_LIMIT_PER_DAY: '6' }); client = await connect(srv.url); });
 after(async () => { await client.close(); srv.server.close(); });
 
-const TOOLS = ['choose_flight', 'clear_flight', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'get_local_picks', 'list_trips', 'mark_leg', 'open_planner', 'save_local_picks', 'search_flights', 'set_nights', 'update_trip'];
+const TOOLS = ['choose_flight', 'clear_flight', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'get_local_picks', 'list_trips', 'mark_leg', 'open_planner',
+  'plan_new_trip', 'save_flight_deals', 'save_local_picks', 'scan_flight_deals', 'search_flights', 'set_nights', 'start_trip_from_flight', 'update_trip'];
 
-test('lists fourteen tools, each with a title and the right read or write annotation', async () => {
+test('lists eighteen tools, each with a title and the right read or write annotation', async () => {
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((t) => t.name).sort(), TOOLS);
   for (const t of tools) {
@@ -21,7 +22,7 @@ test('lists fourteen tools, each with a title and the right read or write annota
     if (/^(set_nights|mark_leg)$/.test(t.name)) assert.deepEqual([t.annotations.readOnlyHint, t.annotations.destructiveHint], [false, false], `${t.name} writes but takes nothing away`);
     if (/^(get|list|find|open|search)_/.test(t.name)) assert.equal(read, true, `${t.name} is read-only`);
   }
-  assert.equal(tools.find((t) => t.name === 'open_planner')._meta.ui.resourceUri, 'ui://pinroute/planner');
+  for (const name of ['open_planner', 'plan_new_trip', 'start_trip_from_flight']) assert.equal(tools.find((t) => t.name === name)._meta.ui.resourceUri, 'ui://pinroute/planner', `${name} shows the planner`);
 });
 
 test('tool descriptions describe what a tool does, without steering Claude', async () => {
@@ -63,8 +64,8 @@ test('refuses impossible input with a message that says what to fix', async () =
   assert.match(JSON.stringify(bad.content), /calendar date/);
 });
 
-test('opens the planner on the newest trip, with its map for the view only', async () => {
-  const r = await client.callTool({ name: 'open_planner', arguments: {} });
+test('opens the planner on a trip, with its map for the view only', async () => {
+  const r = await client.callTool({ name: 'open_planner', arguments: { trip_id: trip.id } });
   assert.equal(r.structuredContent.trip.id, trip.id);
   assert.equal(r.structuredContent.flights.live, false);
   const { map, mini } = r._meta;

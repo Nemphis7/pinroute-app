@@ -1,112 +1,112 @@
-// The Pinroute planner, shown inside Claude. In the chat it is a compact trip card: the nights strip, how much is
-// settled, a small map and one action, Open planner. Full screen it is the planner itself: the route on the left, the
-// selected stop or leg on the right (one pane at a time on phones), where nights, flights and bookings can be changed.
-// It talks to the Pinroute server through the host (callServerTool) and asks Claude, on the traveller's own plan,
-// for the work that needs a model (sendMessage), then tells Claude what changed (updateModelContext).
-import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, Maximize2, Minimize2, MessageSquare } from 'lucide';
+// The Pinroute planner, shown inside Claude. Three screens share one view:
+//   the start screen (home.js): the two ways to plan a new trip and the traveller's trips;
+//   the new-trip planner (newtrip.js): When → Where → Flights, or Country → Best time → Flights;
+//   a trip (this file): in the chat a compact card with the nights strip, how much is settled, a small map and one
+//   action; full screen the route on the left and the selected stop or leg on the right (one pane on phones).
+// It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
+// work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
+import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, Maximize2, Minimize2, MessageSquare, House, Route } from 'lucide';
+import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, tell, ask, waiting } from './core.js';
+import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
+import { takeHome, homeCard, homeScreen } from './home.js';
+import { takeNew, newCard, newSteps, newScreen, newKey } from './newtrip.js';
 
-// Size reports start once the host has answered (see connect below), so none is sent into a closed channel
-const app = new App({ name: 'Pinroute planner', version: '0.3.0' }, {}, { autoResize: false });
-const $ = (id) => document.getElementById(id);
-const SVG = 'http://www.w3.org/2000/svg';
-
+let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
 let MAP = null;            // its map (coastline and stop positions), from the result's _meta, shaped like the trip
 let MINI = null;           // the same, small and wide, for the card in the chat
-let ctx = {};              // what the host told us: theme, display mode, the modes it offers
 let sel = null;            // { kind: 'stop', index } or { kind: 'leg', key }
 let pane = 'list';         // one-pane layouts: 'list' or 'detail'
-let busy = false;          // a change is being saved
 const fares = {};          // leg key → { state, fares, note, live, error, direct, sort }
-const waiting = {};        // what Claude was asked to do and the view is watching for
 
-// ---------------------------------------------------------------- small helpers
-// DOM helper: text always goes through textContent, never through HTML
-function h(tag, props = {}, ...kids) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) {
-    if (v == null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k === 'text') el.textContent = v;
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? '' : v);
-  }
-  for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(String(c)));
-  return el;
-}
-function s(tag, attrs = {}, text) {
-  const el = document.createElementNS(SVG, tag);
-  for (const [k, v] of Object.entries(attrs)) if (v != null) el.setAttribute(k, v);
-  if (text != null) el.textContent = text;
-  return el;
-}
-// Lucide line icons, one size and one stroke
-function icon(node) {
-  const svg = s('svg', { class: 'i', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.75', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' });
-  for (const [tag, attrs] of node) svg.append(s(tag, attrs));
-  return svg;
-}
-
-const UTC = { timeZone: 'UTC' };
-const DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', ...UTC });
-const DM = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', ...UTC });
-const LONG = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', ...UTC });
-const date = (iso) => new Date(`${iso}T00:00:00Z`);
-const day = (iso) => DAY.format(date(iso));
-const longDay = (iso) => LONG.format(date(iso));
-const span = (a, b) => {
-  const A = date(a), B = date(b);
-  if (a === b) return DM.format(A);
-  return A.getUTCMonth() === B.getUTCMonth() ? `${A.getUTCDate()}–${DM.format(B)}` : `${DM.format(A)} – ${DM.format(B)}`;
-};
-const days = (a, b) => Math.round((date(b) - date(a)) / 864e5);
-const nightsTxt = (n) => `${n} night${n === 1 ? '' : 's'}`;
-const money = (n, c) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: c || 'EUR', maximumFractionDigits: 0 }).format(n);
-const hm = (m) => (m == null ? '' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`);
-const clock = (iso) => String(iso || '').slice(11, 16);            // times are local at each airport, shown as given
-const textOf = (r) => (r?.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const KIND = { food: 'Food', drink: 'Drinks', beach: 'Beach', view: 'View', activity: 'Activity', stay: 'Stay', shop: 'Shopping', other: 'Other' };
 const MODE = { flight: Plane, ferry: Ship, road: Car };
-
-const canFull = () => (ctx.availableDisplayModes || []).includes('fullscreen');
-const isFull = () => ctx.displayMode === 'fullscreen';
-const layout = () => (isFull() ? 'app' : canFull() ? 'card' : 'stacked');
-const narrow = () => layout() === 'stacked' || window.innerWidth < 720;
 const legByKey = (k) => V.legs.find((l) => l.key === k);
 const route = (k) => String(k).split('|').slice(0, 3).join('|');          // a leg without its date
 const isSel = (kind, id) => sel && sel.kind === kind && (kind === 'stop' ? sel.index === id : sel.key === id);
 
 // ---------------------------------------------------------------- the whole view
+// Each screen and layout has its own frame, built once; renders fill it, so scroll positions and focus stay put.
+function frame(kind, build) {
+  const el = $('screen');
+  if (el.dataset.kind !== kind) { el.dataset.kind = kind; el.replaceChildren(...build()); }
+  return el;
+}
+const cardFrame = () => [
+  h('header', { class: 'top' }, h('div', { class: 'titles' }, h('h1', { id: 'name' }), h('p', { id: 'sub', class: 'meta' }), h('p', { id: 'status', class: 'meta', hidden: true })), h('div', { id: 'side', class: 'side' })),
+  h('div', { id: 'strip' }), h('div', { id: 'open-row', class: 'open-row', hidden: true }),
+];
+
 function render() {
-  if (!V) return;
-  // A leg whose date moved keeps its selection; anything else that's gone falls back to the starting point
-  if (sel?.kind === 'leg' && !legByKey(sel.key)) { const same = V.legs.find((l) => route(l.key) === route(sel.key)); sel = same ? { kind: 'leg', key: same.key } : null; }
-  if (!sel || (sel.kind === 'stop' && !V.stops[sel.index])) sel = startingPoint();
+  if (!screen) return;
+  const focus = document.activeElement?.id, caret = document.activeElement?.selectionStart;
   const L = layout();
   const root = $('app');
   root.dataset.layout = L;
+  root.dataset.screen = screen;
   root.dataset.narrow = String(L !== 'card' && narrow());
   root.dataset.pane = pane;
+  bar(L);
+  if (screen === 'trip') renderTrip(L);
+  else if (L === 'card') fillCard(screen === 'home' ? homeCard() : newCard());
+  else {
+    frame(`${screen}|${L}`, () => [h('div', { id: 'body', class: 'body' })]);
+    const body = $('body'), key = screen === 'home' ? 'home' : newKey();
+    body.replaceChildren(screen === 'home' ? homeScreen() : newScreen());
+    if (body.dataset.key !== key) { body.dataset.key = key; body.scrollTop = 0; if (L === 'stacked') $('app').scrollIntoView?.({ block: 'start' }); }
+  }
+  const f = focus && document.getElementById(focus);
+  if (f && f !== document.activeElement) { f.focus(); try { if (caret != null) f.setSelectionRange(caret, caret); } catch { /* not a text field */ } }
+}
+onRender(render);
 
+// Full screen and in hosts without it: a bar to the start screen, the new-trip steps, and back to the chat
+function bar(L) {
+  const el = $('bar');
+  el.hidden = L === 'card';
+  if (el.hidden) return;
+  const small = window.innerWidth < 720;
+  el.replaceChildren(
+    h('button', { class: `ghost brand${small ? ' icon' : ''}`, 'aria-label': 'Pinroute', 'aria-current': screen === 'home' ? 'page' : null, title: 'Start screen', onclick: () => go('open_planner', {}) }, icon(House), small ? null : 'Pinroute'),
+    screen === 'new' ? newSteps() : h('span', { class: 'grow' }),
+    L === 'app' ? h('button', { class: small ? 'ghost icon' : 'ghost', 'aria-label': 'Back to chat', title: 'Back to chat', onclick: () => setMode('inline') }, icon(Minimize2), small ? null : 'Back to chat') : null);
+}
+
+// The start screen and the new-trip planner in the chat: a title, a line or two, a small map and one main action
+function fillCard(c) {
+  frame(`${screen}|card`, cardFrame);
+  $('name').textContent = c.title;
+  $('sub').textContent = c.sub;
+  $('status').textContent = c.status || '';
+  $('status').hidden = !c.status;
+  $('side').replaceChildren(...[c.side].filter(Boolean));
+  $('strip').replaceChildren();
+  $('open-row').hidden = false;
+  $('open-row').replaceChildren(h('div', { class: 'acts' }, ...(c.actions || [h('button', { class: 'primary', onclick: () => (canFull() ? setMode('fullscreen') : render()) }, icon(Maximize2), 'Open planner')])));
+}
+
+function renderTrip(L) {
+  // A leg whose date moved keeps its selection; anything else that's gone falls back to the starting point
+  if (sel?.kind === 'leg' && !legByKey(sel.key)) { const same = V.legs.find((l) => route(l.key) === route(sel.key)); sel = same ? { kind: 'leg', key: same.key } : null; }
+  if (!sel || (sel.kind === 'stop' && !V.stops[sel.index])) sel = startingPoint();
+  frame(`trip|${L}`, () => [...cardFrame(), h('main', { id: 'panes', class: 'panes', hidden: true }, h('nav', { id: 'list', class: 'list', 'aria-label': 'Route' }), h('section', { id: 'detail', class: 'detail', 'aria-live': 'polite' }))]);
   $('name').textContent = V.trip.name;
   const total = days(V.trip.start, V.trip.end);
   $('sub').textContent = `${span(V.trip.start, V.trip.end)} · ${V.trip.adults} traveller${V.trip.adults === 1 ? '' : 's'} · ${nightsTxt(total)}`;
   const st = $('status');
-  st.textContent = [L === 'card' ? nowAndNext() : null, tally()].filter(Boolean).join('\n');
+  st.textContent = [L === 'card' ? nowAndNext() : null, tally(), unplanned() && L === 'card' ? 'Route not planned yet' : null].filter(Boolean).join('\n');
   st.hidden = !st.textContent;
-
-  const small = window.innerWidth < 720;
-  $('side').replaceChildren(...(L === 'card'
-    ? [mapSvg({ mini: true })]
-    : L === 'app' ? [h('button', { class: small ? 'ghost icon' : 'ghost', 'aria-label': 'Back to chat', title: 'Back to chat', onclick: () => setMode('inline') }, icon(Minimize2), small ? null : 'Back to chat')] : []).filter(Boolean));
+  $('side').replaceChildren(...(L === 'card' ? [mapSvg({ mini: true })] : []).filter(Boolean));
   $('strip').replaceChildren(strip());
   $('open-row').hidden = L !== 'card';
   $('open-row').replaceChildren(h('button', { class: 'primary', onclick: () => openAt(sel) }, icon(Maximize2), 'Open planner'));
   $('panes').hidden = L === 'card';
   if (L !== 'card') { $('list').replaceChildren(...listView()); $('detail').replaceChildren(...detailView()); }
 }
+
+// A trip started from a flight is one stop (or two) until its route is planned
+const unplanned = () => !!V.trip.ticket && V.stops.filter((x) => x.nights > 0).length <= 1;
 
 // Where the planner opens: the stop the traveller is at today, else the first stop
 function startingPoint() {
@@ -198,8 +198,22 @@ function listView() {
     rows.push(stopRow(x));
     for (const l of V.legs.filter((m) => m.after === x.index)) rows.push(legRow(l));
   }
-  return [h('ol', { onkeydown: moveWithKeys }, rows),
+  return [unplanned() ? planCallout() : null, h('ol', { onkeydown: moveWithKeys }, rows),
     narrow() ? null : h('p', { class: 'hint small' }, h('kbd', { text: '↑' }), ' ', h('kbd', { text: '↓' }), ' move along the route')].filter(Boolean);
+}
+
+function planCallout() {
+  const t = V.trip.ticket;
+  return h('div', { class: 'callout' },
+    h('p', { class: 'meta', text: `You land in ${V.stops[0].place} and fly home from ${V.stops.at(-1).place}. Claude can suggest the stops in between.` }),
+    waiting.plan ? h('p', { class: 'small' }, 'Claude is planning; the route appears here once saved. ', h('button', { class: 'link', text: 'Refresh', onclick: () => refresh() })) : null,
+    h('button', { class: 'primary', disabled: !t, onclick: askPlan }, icon(Route), 'Ask Claude to plan the route'));
+}
+function askPlan() {
+  const t = V.trip.ticket, first = V.stops[0].place, last = V.stops.at(-1).place;
+  const before = V.stops.map((x) => `${x.place}:${x.nights}`).join();
+  return ask('plan', `Plan the route for my Pinroute trip "${V.trip.name}" (trip_id "${V.trip.id}")${V.trip.country ? ` in ${V.trip.country}` : ''}: I land in ${first} (${t.to}) on ${longDay(V.trip.start)} and fly home from ${last} (${t.back_from || t.to}) on ${longDay(V.trip.end)}, ${nightsTxt(days(V.trip.start, V.trip.end))}, ${V.trip.adults} adult${V.trip.adults === 1 ? '' : 's'}. Suggest the stops in travel order with the nights at each, at a relaxed pace, and say in a few lines why. Then save it with update_trip: keep ${first} first, end with ${last} with 0 nights, and give every stop its nearest airport code, its lat and lon, and island true for islands.`,
+    { poll: refresh, done: () => V.stops.map((x) => `${x.place}:${x.nights}`).join() !== before, tries: 60 });
 }
 
 function stopRow(x) {
@@ -260,9 +274,9 @@ function stopDetail(x) {
       h('h2', { text: x.place }),
       h('p', { class: 'meta', text: x.nights ? `${day(x.arrive)} to ${day(x.depart)}` : `Arrive ${day(x.arrive)}` }),
       h('div', { class: 'stepper', role: 'group', 'aria-label': `Nights in ${x.place}` },
-        h('button', { class: 'icon', 'aria-label': 'One night fewer', disabled: busy || x.nights === 0, onclick: () => setNights(x, x.nights - 1) }, icon(Minus)),
+        h('button', { class: 'icon', 'aria-label': 'One night fewer', disabled: ui.busy || x.nights === 0, onclick: () => setNights(x, x.nights - 1) }, icon(Minus)),
         h('span', { class: 'val', text: nightsTxt(x.nights) }),
-        h('button', { class: 'icon', 'aria-label': 'One night more', disabled: busy || x.nights >= 60, onclick: () => setNights(x, x.nights + 1) }, icon(Plus))),
+        h('button', { class: 'icon', 'aria-label': 'One night more', disabled: ui.busy || x.nights >= 60, onclick: () => setNights(x, x.nights + 1) }, icon(Plus))),
       where ? h('p', { class: 'small', text: where }) : null),
     h('section', { class: 'block' },
       h('h3', { text: picks.length ? `Local picks (${picks.length})` : 'Local picks' }),
@@ -281,7 +295,7 @@ function legDetail(l) {
     ...(l.mode === 'flight' ? flightBlock(l) : transferBlock(l))];
 }
 
-const bookedButton = (l) => h('button', { 'aria-pressed': String(l.booked), disabled: busy, onclick: () => setBooked(l, !l.booked) }, icon(Check), l.booked ? 'Booked' : 'Mark booked');
+const bookedButton = (l) => h('button', { 'aria-pressed': String(l.booked), disabled: ui.busy, onclick: () => setBooked(l, !l.booked) }, icon(Check), l.booked ? 'Booked' : 'Mark booked');
 
 function flightBlock(l) {
   if (l.chosen) {
@@ -291,13 +305,13 @@ function flightBlock(l) {
         bookedButton(l),
         l.chosen.link ? h('button', { onclick: () => app.openLink({ url: l.chosen.link }) }, icon(ExternalLink), 'Booking page') : null,
         h('button', { class: 'ghost', onclick: () => askFlights(l) }, icon(MessageSquare), 'Ask Claude again'),
-        h('button', { class: 'ghost', disabled: busy, onclick: () => clearFlight(l) }, 'Remove'))].filter(Boolean);
+        h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove'))].filter(Boolean);
   }
   const st = fares[l.key] || {};
   const label = st.state === 'loading' ? 'Searching…' : st.state === 'done' ? 'Search again' : V.flights.live ? 'Airline fares' : 'Demo fares';
   return [
     l.stale ? h('div', { class: 'note warn' }, `A flight was chosen for ${day(l.stale.date)}, before the dates moved: ${l.stale.summary}, ${money(l.stale.price, l.stale.currency)}. Choose one for ${day(l.date)}. `,
-      h('button', { class: 'link', disabled: busy, onclick: () => clearFlight(l) }, 'Remove it')) : null,
+      h('button', { class: 'link', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove it')) : null,
     h('div', { class: 'acts' },
       h('button', { class: 'primary', onclick: () => askFlights(l) }, icon(MessageSquare), 'Ask Claude to find flights'),
       h('button', { disabled: st.state === 'loading', onclick: () => findFlights(l) }, label)),
@@ -318,7 +332,9 @@ function ticket(c) {
         h('span', { class: 'line' }, icon(Plane)),
         h('span', { class: 'code' }, h('b', { text: m[4] }), h('span', { class: 'time', text: m[3] }))) : h('p', { class: 'tsum', text: c.summary }),
       h('p', { class: 'small', text: [m ? airline : null, c.source ? `via ${c.source}` : null].filter(Boolean).join(' · ') || ' ' })),
-    h('div', { class: 'tside' }, h('span', { class: 'price', text: money(c.price, c.currency) }), h('span', { class: 'small', text: `for ${V.trip.adults}` })));
+    c.part === 'return'
+      ? h('div', { class: 'tside' }, h('span', { class: 'small', text: 'In the return fare' }))
+      : h('div', { class: 'tside' }, h('span', { class: 'price', text: money(c.price, c.currency) }), h('span', { class: 'small', text: c.part === 'out' ? `for ${V.trip.adults}, return` : `for ${V.trip.adults}` })));
 }
 
 function transferBlock(l) {
@@ -363,7 +379,7 @@ function fareCard(l, f) {
       h('div', { class: 'small', text: b.bags || 'Checked bags not stated' })),
     h('div', { class: 'price' }, money(f.total, f.currency), V.trip.adults > 1 && f.perAdult ? h('div', { class: 'small', text: `${money(f.perAdult, f.currency)} each` }) : null),
     h('div', { class: 'acts' },
-      h('button', { disabled: busy, onclick: () => choose(l, f, line) }, 'Choose'),
+      h('button', { disabled: ui.busy, onclick: () => choose(l, f, line) }, 'Choose'),
       f.link ? h('button', { class: 'link', onclick: () => app.openLink({ url: f.link }) }, f.demo ? 'Check on Google Flights' : 'Book on the airline’s site') : null));
 }
 
@@ -382,25 +398,16 @@ async function openAt(next) {
   else render();
 }
 
-async function setMode(mode) {
-  try {
-    const r = await app.requestDisplayMode({ mode });
-    ctx = { ...ctx, displayMode: r?.mode || mode };
-  } catch (e) { showError(e.message || String(e)); }
-  render();
-}
-
 async function save(name, args, told) {
-  busy = true; render();
+  ui.busy = true; render();
   try {
-    const r = await app.callServerTool({ name, arguments: args });
-    if (r.isError) throw new Error(textOf(r) || 'That change could not be saved.');
+    const r = await call(name, args);
     take(r);
     showError('');
-    if (told) await app.updateModelContext({ content: [{ type: 'text', text: `In the Pinroute planner, ${told}` }] }).catch(() => {});
+    if (told) await tell(told);
     return r;
   } catch (e) { showError(e.message || String(e)); return null; }
-  finally { busy = false; render(); }
+  finally { ui.busy = false; render(); }
 }
 
 const setNights = (x, n) => save('set_nights', { trip_id: V.trip.id, stop: x.index, nights: n }, `the traveller changed ${x.place} to ${nightsTxt(n)}; the later dates moved with it.`);
@@ -424,26 +431,12 @@ async function findFlights(l) {
   render();
 }
 
-// Asking Claude: a message in the conversation, then this view watches the server for what Claude saves
-async function ask(key, message, done) {
-  waiting[key] = true;
-  render();
-  await app.sendMessage({ role: 'user', content: [{ type: 'text', text: message }] }).catch((e) => showError(e.message || String(e)));
-  if (!done) return;
-  let tries = 0;
-  const timer = setInterval(async () => {
-    tries += 1;
-    await refresh(true);
-    if (done() || tries >= 30) { clearInterval(timer); if (done()) delete waiting[key]; render(); }
-  }, 8000);
-}
-
 function askFlights(l) {
   const n = V.trip.adults;
   const before = JSON.stringify(l.chosen);
   return ask(`flights|${l.key}`,
     `Find flights from ${l.fromName} (${l.from}) to ${l.toName} (${l.to} or another airport nearby) on ${longDay(l.date)} for ${n} adult${n === 1 ? '' : 's'}, using my flight search tools. Show me the best options, and when I pick one, save it to Pinroute with choose_flight (trip_id "${V.trip.id}", leg_key "${l.key}").`,
-    () => JSON.stringify(legByKey(l.key)?.chosen) !== before);
+    { poll: refresh, done: () => JSON.stringify(legByKey(l.key)?.chosen) !== before });
 }
 
 function askPicks(x) {
@@ -451,7 +444,7 @@ function askPicks(x) {
   const where = x.region ? `${x.place} (${x.region})` : x.place;
   return ask(`picks|${x.place}`,
     `Find local favourites in ${where} for my trip: what recent Reddit threads, TikTok and Instagram posts, and food and travel blogs recommend. Choose up to 10, each with its source link, then save them with save_local_picks (place: "${x.place}").`,
-    () => (V.picks[x.place] || []).length > before);
+    { poll: refresh, done: () => (V.picks[x.place] || []).length > before });
 }
 
 function askRoute(l) {
@@ -461,9 +454,7 @@ function askRoute(l) {
 
 async function refresh(quiet) {
   try {
-    const r = await app.callServerTool({ name: 'open_planner', arguments: { trip_id: V.trip.id } });
-    if (r.isError) throw new Error(textOf(r));
-    take(r);
+    take(await call('open_planner', { trip_id: V.trip.id }));
     render();
   } catch (e) { if (!quiet) showError(e.message || String(e)); }
 }
@@ -474,23 +465,34 @@ function take(r) {
   if (r._meta?.mini) MINI = r._meta.mini;
 }
 
-function showError(msg) { const el = $('error'); el.textContent = msg; el.hidden = !msg; }
+// A tool result picks the screen: the start screen, the new-trip planner, or a trip
+function showResult(r) {
+  const sc = r.structuredContent || {};
+  if (sc.screen === 'home') { takeHome(sc); screen = 'home'; }
+  else if (sc.screen === 'new') { takeNew(sc); screen = 'new'; }
+  else if (sc.trip) {
+    if (V?.trip.id !== sc.trip.id) { sel = null; pane = 'list'; }
+    take(r); screen = 'trip';
+  }
+  render();
+}
+onShow(showResult);
 
 // ---------------------------------------------------------------- host context: theme, fonts, display mode
 function applyContext(next) {
   if (!next) return;
-  ctx = { ...ctx, ...next };
-  if (ctx.theme) applyDocumentTheme(ctx.theme);
-  if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
-  if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
+  ui.ctx = { ...ui.ctx, ...next };
+  if (ui.ctx.theme) applyDocumentTheme(ui.ctx.theme);
+  if (ui.ctx.styles?.variables) applyHostStyleVariables(ui.ctx.styles.variables);
+  if (ui.ctx.styles?.css?.fonts) applyHostFonts(ui.ctx.styles.css.fonts);
   render();
 }
 
 // ---------------------------------------------------------------- start
 app.ontoolinput = () => {};
 app.ontoolresult = (r) => {
-  if (r.isError) { $('sub').textContent = ''; showError(textOf(r)); return; }
-  take(r); showError(''); render();
+  if (r.isError) { $('screen').replaceChildren(); showError(textOf(r)); return; }
+  showError(''); showResult(r);
 };
 app.onhostcontextchanged = (next) => applyContext(next);
 window.addEventListener('resize', () => render());
@@ -500,4 +502,4 @@ app.connect()
   .catch((e) => showError(`Could not connect to Claude: ${e.message || e}`));
 
 // For tests: let a harness look at the state
-window.__pinroute = { get view() { return V; }, get map() { return MAP; }, get selection() { return sel; }, fares };
+window.__pinroute = { get screen() { return screen; }, get view() { return V; }, get map() { return MAP; }, get selection() { return sel; }, fares };

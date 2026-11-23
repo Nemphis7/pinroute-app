@@ -1,6 +1,6 @@
 # Pinroute app
 
-Pinroute as an **MCP App**: a trip planner that runs inside Claude. Each traveller uses their own Claude plan for the AI work; this server keeps each person's trips, finds airports, searches airline fares and stores the local picks Claude researched.
+Pinroute as an **MCP App**: a trip planner that runs inside Claude. A trip starts from the days the traveller is free (**I know when**: When → Where → Flights) or from a country (**I know where**: Country → Best time → Flights) and ends with a trip planned around the fare they picked. Each traveller uses their own Claude plan for the AI work; this server keeps each person's trips and new-trip draft, ranks 60 countries by season, finds airports, searches airline fares, keeps the flight deals found and stores the local picks Claude researched.
 
 Why inside Claude: Anthropic does not allow other apps to offer a Claude login or to run on people's Claude plans ([policy](https://code.claude.com/docs/en/legal-and-compliance)). An app that runs inside Claude, as a connector with its own screen, is the supported way.
 
@@ -8,39 +8,29 @@ Why inside Claude: Anthropic does not allow other apps to offer a Claude login o
 
 ```
 Claude (the traveller's own plan)
- ├─ talks with the traveller; researches local picks and flights with its own tools
+ ├─ talks with the traveller; researches flights, routes and local picks with its own tools
  ├─ calls this server's tools ──── token from the sign-in service ────► Pinroute server (this repo)
- └─ shows the planner screen (ui/, one HTML)                              ├─ checks the token (src/auth.mjs)
-      ├─ "Ask Claude": Claude searches with the traveller's tools         ├─ trips, choices, picks per person (SQLite on the volume)
-      └─ the planner calls the same tools through Claude ───────────────► ├─ airports and Thailand places (src/data)
-                                                                          └─ fares: Amadeus Travel Builder, or demo
+ └─ shows the planner (ui/, one HTML)                                     ├─ checks the token (src/auth.mjs)
+      ├─ start screen: I know when / I know where, the trips              ├─ trips, draft, fares, picks per person (SQLite on the volume)
+      ├─ new trip: When → Where → Flights, Country → Best time → Flights  ├─ 60 countries by season and price level (src/discover.mjs)
+      ├─ a trip: route, flights, ferries, local picks                     ├─ airports and Thailand places (src/data)
+      └─ "Ask Claude": Claude searches with the traveller's tools ──────► └─ fares: Amadeus Travel Builder, or demo
 ```
 
 | Tool | What it does | Data |
 | --- | --- | --- |
-| `open_planner` | Shows the planner for a trip (the MCP App screen) | reads |
-| `create_trip` / `update_trip` / `delete_trip` / `list_trips` | Multi-stop trips with nights per stop; dates and legs are worked out | writes / changes / deletes / reads |
-| `set_nights` | Changes the nights at one stop; later dates move with it | writes |
-| `choose_flight` / `clear_flight` | Saves the flight picked for a leg, from any flight search, or removes it | writes / deletes |
-| `mark_leg` | Marks a flight, ferry or drive as booked, with an optional note | writes |
+| `open_planner` | The start screen, or a trip (the MCP App screen) | reads |
+| `plan_new_trip` | The new-trip planner; saves free dates, length, travellers, budget, airports, regions, interests and countries to compare | writes |
+| `scan_flight_deals` | Return fares to a country on a few dates spread over the window; keeps the cheapest | writes |
+| `save_flight_deals` | Keeps fares Claude found with any flight search, per country | writes |
+| `start_trip_from_flight` | A trip from a saved fare: from landing to the flight home, the fare on both flights | writes |
+| `create_trip` / `update_trip` / `delete_trip` / `list_trips` | Multi-stop trips with nights per stop; dates and legs are worked out; stops anywhere by coordinates | writes / changes / deletes / reads |
+| `set_nights` / `mark_leg` | Nights at one stop; a leg booked, with a note | writes |
+| `choose_flight` / `clear_flight` | Saves or removes the flight picked for a leg, from any flight search | writes / deletes |
 | `search_flights` | Airline fares for one day or a return, cheapest first; daily limit per person | reads |
 | `find_airports` | Airports by city, name or code; works without signing in | reads |
 | `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link | writes / reads |
 | `delete_my_data` | Deletes everything the person saved | deletes |
-
-## The planner
-
-- **In the chat:** a trip card. It shows the nights strip (one segment per stay, sized by its nights, with today marked), where you are today and what's next, how many flights are chosen and transfers booked, a small map, and one action: **Open planner**.
-- **Full screen:**
-  - The route on the left (stops, and the flight, ferry or drive between them, each with its state); the selected stop or leg on the right, with the map beside it. Phones show one pane at a time.
-  - Change nights with plus and minus. Choose, book or remove flights, and mark ferries booked.
-  - Ask Claude for flights (with whatever flight tools the traveller has connected), for local picks, or for how to get between two places.
-  - Every change saves through the tools above, and Claude is told about it.
-- **Map:** drawn on the server from Natural Earth's 1:50m coastline (`src/map.mjs`). It travels in the result's `_meta`, so the model never reads it.
-- **Design:** audited with the /unslop process.
-  - A 4 px spacing grid, neutrals from Claude's theme, and one accent used only for the selection and the single main action.
-  - Two font weights, sentence case and tabular figures.
-  - Lucide line icons at one size and one stroke.
 
 Every tool has a title and a read-only or destructive annotation, and its description says what it does without steering Claude, as the [directory review](https://claude.com/docs/connectors/building/review-criteria) asks.
 
@@ -81,7 +71,7 @@ npm run check:amadeus            # one real search, BKK → FRA in 30 days; prin
 npm run check:amadeus LHR CDG    # any other pair
 ```
 
-Amadeus Travel Builder covers a set of mostly full-service airlines; many regional low-cost airlines aren't in it (Krabi → Bangkok returns nothing, for example). That is why the planner's **Ask Claude** button exists: Claude searches with whatever flight tools the traveller has connected and saves the pick with `choose_flight`.
+Amadeus Travel Builder covers a set of mostly full-service airlines; many regional low-cost airlines aren't in it (Krabi → Bangkok returns nothing, for example). That is why the planner's **Ask Claude** buttons exist: Claude searches with whatever flight tools the traveller has connected (LetsFG's flexible-date search fits the new-trip flow best) and saves deals with `save_flight_deals` or a leg's pick with `choose_flight`. The planner's **Quick check** is the server's own Amadeus search: three departure dates per country, each counted toward the daily limit.
 
 ## Sign-in with WorkOS AuthKit
 
@@ -150,16 +140,19 @@ Claude connects from Anthropic's servers, so the server needs a public HTTPS add
 src/server.mjs        HTTP entry: sign-in check before the MCP SDK, public pages, status
 src/auth.mjs          token checks (JWT, any OAuth issuer), protected resource metadata, which tools need sign-in
 src/app.mjs           tools and the planner resource, scoped to one owner per request
-src/store.mjs         SQLite on the volume: trips, picks and search counts per owner; imports 0.1's store.json
+src/discover.mjs      the new-trip rules, shared with the planner: seasons, ranking, rough costs, deal ratings
+src/store.mjs         SQLite on the volume: trips, drafts, picks and search counts per owner; imports 0.1's store.json
 src/pages.mjs         /help, /privacy and the icon
-src/map.mjs           each trip's map: coastline (Natural Earth via world-atlas) and stop positions
 src/providers/        amadeus.mjs, demo.mjs, index.mjs (picks the source)
-src/geo.mjs           airports (OurAirports, public domain) and Pinroute's Thailand places
+src/geo.mjs           airports (OurAirports, public domain), Pinroute's Thailand places, nearest airport to a point
+src/data/             airports.json, places-th.json, destinations.json (60 countries: seasons, gateway, price level)
 src/trips.mjs         dates and legs of a trip
-ui/                   the planner: planner.js, planner.css, planner.html → dist/planner.html (npm run build)
+src/map.mjs           a trip's coastline map; src/world.mjs the world map, drawn at build time
+ui/                   the planner: planner.js (screens, trip), home.js, newtrip.js, world.js, core.js, dom.js,
+                      planner.css, planner.html → dist/planner.html (npm run build)
 scripts/              build-ui, check-amadeus, screenshots
 listing/              directory listing: draft answers, screenshots, icon
-test/                 tools, sign-in, store, pages, hosting, Amadeus, planner; test/host is the stand-in host
+test/                 tools, new trips, sign-in, store, pages, hosting, Amadeus, both planner flows; test/host is the stand-in host
 ```
 
 Versions are pinned to the stack Claude's MCP Apps quickstart is verified with (`@modelcontextprotocol/ext-apps` 1.7.5). `@modelcontextprotocol/sdk` 1.32.2 and `zod` 4.6.7 are raised from the quickstart's 1.30.1 and 4.6.5 for their security fixes; ext-apps 1.7.5 accepts both. `jose` 6.2.18 checks tokens; `d3-geo`, `topojson-client` and `world-atlas` draw the maps; `lucide` provides the icons. Run `npm audit --omit=dev` after any change.

@@ -7,7 +7,7 @@ import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/
 
 window.__messages = []; window.__links = []; window.__context = []; window.__modes = [];
 
-// opts: { inline: [w, h], full: [w, h], modes: ['inline', 'fullscreen'] }
+// opts: { inline: [w, h], full: [w, h], modes: ['inline', 'fullscreen'], tool: 'open_planner' }
 window.startHost = async (mcpUrl, args, theme = 'light', opts = {}) => {
   const inline = opts.inline || [760, 1500], full = opts.full || [1100, 760];
   const client = new Client({ name: 'test-host', version: '1.0.0' });
@@ -37,7 +37,7 @@ window.startHost = async (mcpUrl, args, theme = 'light', opts = {}) => {
   };
   bridge.oninitialized = async () => {
     await bridge.sendToolInput({ arguments: args });
-    const result = await client.callTool({ name: 'open_planner', arguments: args });
+    const result = await client.callTool({ name: opts.tool || 'open_planner', arguments: args });
     await bridge.sendToolResult(result);
   };
   // Listen before the page loads, so the planner's first handshake is not missed
