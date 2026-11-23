@@ -3,7 +3,7 @@
 //   I know where: Country → Best time (weather and fares by month) → Flights
 // Both end with "Plan <country> with this flight", which creates the trip from the fare. Fares come from Pinroute's
 // own airline search (a quick check) or from Claude, searching with the traveller's own flight tools.
-import { ArrowLeft, ArrowRight, MessageSquare, ExternalLink, X, Building2, Landmark, Trees, Waves, Search } from 'lucide';
+import { ArrowLeft, ArrowRight, MessageSquare, ExternalLink, X, Building2, Landmark, Trees, Waves, Search, MapPin } from 'lucide';
 import {
   REGIONS, DESTS, INTERESTS, INTEREST_NAME, LENGTHS, MONTHS, MON, destById, windowMonths, seasonFit, fitLabel, rankDests,
   addDays, diffDays, dealPP, dealRatio, dealLabel, dealsFor, dealNights, budgetFit, roughCost, bestMonthsText, nextMonths, monthsToCheck,
@@ -11,8 +11,9 @@ import {
 import { app, ui, call, go, render, showError, tell, ask, waiting, narrow } from './core.js';
 import { h, icon, day, dm, longDay, span, money, nightsTxt, plural, today } from './dom.js';
 import { worldSvg, legend } from './world.js';
+import { openAirMap } from './airmap.js';
 
-const N = { view: null, d: null, homes: [], deals: {}, flights: {}, seq: 0, all: false, sort: 'deal', scan: {}, q: '', air: { q: '', list: [] }, regionsOpen: false };
+const N = { view: null, d: null, homes: [], deals: {}, flights: {}, seq: 0, all: false, sort: 'deal', scan: {}, q: '', air: { q: '', list: [] }, regionsOpen: false, mx: {} };
 const ICON = { city: Building2, culture: Landmark, nature: Trees, beach: Waves };
 const STEPS = { when: [['when', 'When'], ['where', 'Where'], ['flights', 'Flights']], where: [['country', 'Country'], ['season', 'Best time'], ['flights', 'Flights']] };
 const time = (iso) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -162,8 +163,17 @@ function fromField(p) {
     h('span', { text: 'Flying from' }),
     N.homes.length ? h('div', { class: 'tokens' }, N.homes.map((a, i) => h('span', { class: 'token' }, h('b', { text: a.code }), ` ${a.city}`, i === 0 && N.homes.length > 1 ? h('span', { class: 'small', text: ' · main' }) : null,
       h('button', { class: 'icon ghost', 'aria-label': `Remove ${a.city} (${a.code})`, onclick: () => save({ homes: N.d.homes.filter((c) => c !== a.code) }) }, icon(X))))) : null,
-    h('div', { class: 'acwrap' }, icon(Search), input, list),
+    h('div', { class: 'airrow' }, h('div', { class: 'acwrap' }, icon(Search), input, list),
+      h('button', { disabled: N.homes.length >= 6, onclick: pickOnMap }, icon(MapPin), 'Pick on a map')),
     N.homes.length ? null : h('p', { class: 'small', text: 'Add an airport to see flight times and to search fares.' }));
+}
+function pickOnMap() {
+  openAirMap(N.homes, (list) => {
+    const add = list.filter((a) => !N.d.homes.includes(a.code)).slice(0, 6 - N.d.homes.length);
+    if (!add.length) { render(); return; }
+    N.homes = [...N.homes, ...add.map((a) => ({ code: a.code, city: String(a.city).replace(/\s*\(.*\)\s*$/, ''), country: a.country, lat: a.lat, lon: a.lon }))];
+    save({ homes: [...N.d.homes, ...add.map((a) => a.code)] }, `the traveller added ${add.map((a) => a.code).join(', ')} as departure airports.`);
+  });
 }
 let airTimer = null;
 function findAir(q, list) {
@@ -294,6 +304,7 @@ function countryDeals({ d, list, fit }) {
   let body;
   if (list.length) {
     body = [dealItem(d, list[0], true),
+      compareBlock(d, list[0]),
       list.length > 1 ? h('details', {}, h('summary', { text: `${plural(list.length - 1, 'more fare')}` }), list.slice(1, 8).map((x) => dealItem(d, x, false))) : null];
   } else if (st === 'loading') body = h('p', { class: 'meta busy', text: 'Checking airline fares…' });
   else if (waiting.deals) body = h('p', { class: 'meta busy', text: 'Claude is searching…' });
@@ -304,6 +315,68 @@ function countryDeals({ d, list, fit }) {
       h('span', { class: 'fit' }, h('i', { class: `sw f${level(fit)}` }), fl)),
     st?.error ? h('p', { class: 'note warn', text: st.error }) : null,
     body);
+}
+
+// ---------------------------------------------------------------- the same dates from other airports, to other airports
+// A table of departure airports (rows) and the country's arrival airports (columns), each switchable; a cell holds the
+// cheapest fare per person on that route for the fare's dates. Each route switched on is one search.
+function compareBlock(d, x) {
+  if (!N.homes.length) return null;
+  const arrivals = N.view.arrivals?.[d.id] || [];
+  const tos = arrivals.some((a) => a.code === x.to) ? arrivals : [{ code: x.to, city: x.to }, ...arrivals];
+  const key = `${x.depart}|${x.return}`;
+  let m = N.mx[d.id];
+  if (!m || m.key !== key) m = N.mx[d.id] = { open: !!m?.open, key, homes: N.homes.slice(0, 4).map((a) => a.code), tos: [x.to], pick: null };
+  m.homes = m.homes.filter((c) => N.homes.some((a) => a.code === c));
+  const fares = (N.deals[d.id] || []).filter((y) => y.depart === x.depart && y.return === x.return);
+  const cell = (f, t) => fares.filter((y) => y.from === f && y.to === t).sort((a, b) => dealPP(a) - dealPP(b))[0] || null;
+  const st = N.scan[`c|${d.id}`];
+  const searched = (f, t) => (st?.searched || []).find((r) => r.from === f && r.to === t);
+  const cheapest = fares.slice().sort((a, b) => dealPP(a) - dealPP(b))[0] || null;
+  const picked = fares.find((y) => y.id === m.pick) || cheapest;
+  const routes = m.homes.length * m.tos.length;
+  const flip = (list, c) => (list.includes(c) ? list.filter((v) => v !== c) : [...list, c]);
+  const head = (a, on, onclick, scope) => h('th', { scope }, h('button', { class: 'mx-h', 'aria-pressed': String(on), title: `${on ? 'Leave out' : 'Include'} ${a.city} (${a.code})`, onclick },
+    h('b', { text: a.code }), h('span', { class: 'small', text: a.city })));
+  const table = h('div', { class: 'mx-wrap' }, h('table', { class: 'mx' },
+    h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, h('span', { class: 'small', text: 'From ↓ to →' })),
+      tos.map((a) => head(a, m.tos.includes(a.code), () => { m.tos = flip(m.tos, a.code); render(); }, 'col')))),
+    h('tbody', {}, N.homes.map((a) => h('tr', {},
+      head(a, m.homes.includes(a.code), () => { m.homes = flip(m.homes, a.code); render(); }, 'row'),
+      tos.map((t) => {
+        const on = m.homes.includes(a.code) && m.tos.includes(t.code), f = cell(a.code, t.code), r = searched(a.code, t.code);
+        const text = f ? money(dealPP(f), f.currency) : on && st === 'loading' ? '…' : r ? (r.error ? '!' : 'none') : '';
+        return h('td', { class: [on ? '' : 'off', f && f === cheapest ? 'win' : '', f && f === picked ? 'picked' : ''].filter(Boolean).join(' ') },
+          f ? h('button', { class: 'mx-c', 'aria-pressed': String(f === picked), title: `${a.code} → ${t.code}: ${money(dealPP(f), f.currency)} per person, ${f.airline}`, onclick: () => { m.pick = f.id; render(); } }, text)
+            : h('span', { class: 'mx-c', title: r?.error || (r ? 'No fares on this route' : on ? 'Not searched yet' : 'Switched off'), text }));
+      }))))));
+  return h('details', { class: 'compare', open: m.open, ontoggle: (e) => { m.open = e.target.open; } },
+    h('summary', { text: 'Same dates, other airports' }),
+    h('p', { class: 'small', text: `${day(x.depart)} → ${day(x.return)}, per person. Switch airports on or off; each route is one search.` }),
+    table,
+    picked && picked.id !== x.id ? dealItem(d, picked, false) : null,
+    st?.error ? h('p', { class: 'note warn', text: st.error }) : null,
+    waiting[`cmp|${d.id}`] ? h('p', { class: 'note' }, 'Claude is comparing the routes; fares appear in the table as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
+    h('div', { class: 'acts' },
+      h('button', { disabled: !routes || st === 'loading' || routes > (N.flights.searchesLeft ?? 99), onclick: () => compareRoutes(d, x, m) },
+        st === 'loading' ? 'Comparing…' : `Compare ${plural(routes, 'route')}`),
+      h('button', { class: 'ghost', disabled: !routes, onclick: () => askCompare(d, x, m) }, icon(MessageSquare), 'Ask Claude'),
+      N.flights.searchesLeft != null ? h('span', { class: 'small', text: `${N.flights.searchesLeft} of ${N.flights.searchesPerDay} searches left today` }) : null));
+}
+async function compareRoutes(d, x, m) {
+  N.scan[`c|${d.id}`] = 'loading';
+  render();
+  try {
+    const r = await call('scan_flight_deals', { country: d.id, origins: m.homes, destinations: m.tos, depart: x.depart, return: x.return });
+    N.scan[`c|${d.id}`] = { searched: r.structuredContent?.searched || [] };
+    m.pick = null;
+  } catch (e) { N.scan[`c|${d.id}`] = { error: e.message || String(e) }; }
+  await refresh(true);
+}
+function askCompare(d, x, m) {
+  const since = new Date().toISOString(), n = m.homes.length * m.tos.length;
+  ask(`cmp|${d.id}`, `For my new Pinroute trip to ${d.name}, compare return flights for ${plural(N.d.adults, 'adult')} leaving ${longDay(x.depart)} and coming back ${longDay(x.return)}: from ${m.homes.join(', ')} to ${m.tos.join(', ')} (${plural(n, 'route')}). Use my flight search tools. Save the best fare for each route with Pinroute's save_flight_deals (country "${d.name}"): the airports, dates, total price for all travellers, airline, flight numbers and times, the booking link and where you found it.`,
+    { poll: refresh, done: () => (N.deals[d.id] || []).filter((y) => y.at > since && y.depart === x.depart).length >= n, tries: 75 });
 }
 
 function dealItem(d, x, main) {
