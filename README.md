@@ -49,6 +49,8 @@ npm run screenshots  # directory images in listing/ (needs Playwright)
 
 The planner tests need Playwright (`npm i -D playwright && npx playwright install chromium`); without it they're skipped.
 
+GitHub Actions runs the same tests on every pull request and on `main` (`.github/workflows/test.yml`), and Railway deploys `main` when it changes.
+
 ## Settings
 
 All settings are environment variables: on Railway under **Variables**, locally in `.env` (see `.env.example`). Keys never go in code, a repository or a chat.
