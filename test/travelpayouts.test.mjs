@@ -34,6 +34,24 @@ test('an Aviasales search link, and its partner link made once, ten to a request
   assert.deepEqual(await tp.partnerLinks(['https://x.test/a'], { env: { TRAVELPAYOUTS_TOKEN: 'tp-test' } }), ['https://x.test/a'], 'no partner ID, no change');
 });
 
+test('a fallback to marker= links logs one warning with its reason, never a secret, and not on every call', async () => {
+  tp._forget();
+  const lines = [], log = (l) => lines.push(l);
+  const env = { ...TP('http://127.0.0.1:9'), TRAVELPAYOUTS_TOKEN: 'tp-secret-token' };
+  await tp.partnerLinks(['https://www.aviasales.com/search/MUC0103BKK15031'], { env, log });
+  await tp.partnerLinks(['https://www.aviasales.com/search/MUC0103BKK16031'], { env, log });
+  assert.equal(lines.length, 1, 'the same reason is logged once');
+  assert.match(lines[0], /fell back to marker= \(could not reach the Links API/);
+  const slow = async (_, { signal }) => new Promise((_, no) => signal.addEventListener('abort', () => no(signal.reason)));
+  await tp.partnerLinks(['https://x.test/b'], { env, log, fetchImpl: slow, timeoutMs: 50 });
+  assert.match(lines[1], /took over 0.05s/);
+  await tp.partnerLinks(['https://x.test/c'], { env, log, fetchImpl: async () => new Response('', { status: 500 }) });
+  assert.match(lines[2], /Links API answered 500/);
+  await tp.partnerLinks(['https://x.test/d'], { env: { ...env, TRAVELPAYOUTS_TRS: '' }, log });
+  assert.match(lines[3], /TRAVELPAYOUTS_TRS is not set/);
+  for (const l of lines) assert.ok(!/tp-secret-token|123456|987|x\.test|aviasales\.com/.test(l), l);
+});
+
 test('a window is scanned from recent prices: low-cost fares, per adult times travellers, without airline searches', async () => {
   await call('plan_new_trip', { free_from: FROM, free_until: UNTIL, min_nights: 9, max_nights: 12, adults: 2, home_airports: ['FRA'], compare: ['Vietnam'], step: 'flights' });
   const before = (await call('plan_new_trip')).structuredContent.flights;

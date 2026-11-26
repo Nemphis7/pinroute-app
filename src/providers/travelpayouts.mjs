@@ -69,26 +69,45 @@ export function searchUrl({ from, to, depart, ret, adults = 1 }) {
 
 const made = new Map();                        // Aviasales link → partner link, the last 2000
 const withMarker = (url, env) => `${url}${url.includes('?') ? '&' : '?'}marker=${encodeURIComponent(env.TRAVELPAYOUTS_MARKER)}`;
+// One warning line when links fall back to marker=, at most once per reason every 10 minutes so the logs stay readable.
+// The reason names what went wrong, never a token, ID or link.
+const warned = new Map();                      // reason → when it was last logged
+function warnFallback(reason, count, log) {
+  const now = Date.now();
+  if (now - (warned.get(reason) || 0) < 10 * 60_000) return;
+  warned.set(reason, now);
+  log(`Travelpayouts partner links: ${count} link${count === 1 ? '' : 's'} fell back to marker= (${reason}).`);
+}
 // Partner links for up to any number of Aviasales links, ten to a request, in the same order
-export async function partnerLinks(urls, { env = process.env, fetchImpl = fetch, timeoutMs = 4000 } = {}) {
+export async function partnerLinks(urls, { env = process.env, fetchImpl = fetch, timeoutMs = 4000, log = console.warn } = {}) {
   if (!linksOn(env)) return urls.slice();
   const todo = [...new Set(urls.filter((u) => u && !made.has(u)))];
-  if (todo.length && env.TRAVELPAYOUTS_TOKEN && env.TRAVELPAYOUTS_TRS) {
+  if (todo.length && !(env.TRAVELPAYOUTS_TOKEN && env.TRAVELPAYOUTS_TRS)) {
+    warnFallback(`${env.TRAVELPAYOUTS_TOKEN ? 'TRAVELPAYOUTS_TRS' : 'TRAVELPAYOUTS_TOKEN'} is not set`, todo.length, log);
+  } else if (todo.length) {
     for (let i = 0; i < todo.length; i += 10) {
       const batch = todo.slice(i, i + 10);
+      let reason = null;
       try {
         const res = await fetchImpl(`${base(env)}/links/v1/create`, {
           method: 'POST', signal: AbortSignal.timeout(timeoutMs),
           headers: { 'X-Access-Token': env.TRAVELPAYOUTS_TOKEN, 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ trs: Number(env.TRAVELPAYOUTS_TRS), marker: Number(env.TRAVELPAYOUTS_MARKER), shorten: true, links: batch.map((url) => ({ url, sub_id: 'pinroute' })) }),
         });
-        if (!res.ok) break;
-        const j = await res.json();
-        for (const l of j.result?.links || []) if (l.code === 'success' && l.partner_url) made.set(l.url, l.partner_url);
-      } catch { break; }
+        if (!res.ok) reason = `Links API answered ${res.status}`;
+        else {
+          const j = await res.json();
+          for (const l of j.result?.links || []) if (l.code === 'success' && l.partner_url) made.set(l.url, l.partner_url);
+          const missed = batch.filter((u) => !made.has(u)).length;
+          if (missed) warnFallback('Links API did not return a partner link for them', missed, log);
+        }
+      } catch (e) {
+        reason = e?.name === 'TimeoutError' ? `Links API took over ${timeoutMs / 1000}s` : `could not reach the Links API (${e?.cause?.code || e?.name || 'error'})`;
+      }
+      if (reason) { warnFallback(reason, todo.length - i, log); break; }
     }
     while (made.size > 2000) made.delete(made.keys().next().value);
   }
   return urls.map((u) => (u ? made.get(u) || withMarker(u, env) : u));
 }
-export const _forget = () => made.clear();      // for tests
+export const _forget = () => { made.clear(); warned.clear(); };      // for tests
