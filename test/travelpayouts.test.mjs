@@ -44,7 +44,7 @@ test('a window is scanned from recent prices: low-cost fares, per adult times tr
   const { deals, source, searched } = r.structuredContent;
   assert.equal(source, 'recent');
   assert.equal(searched[0].from, 'FRA');
-  assert.ok(deals.length >= 3 && deals.every((x) => x.source === 'Aviasales' && x.recent && x.airline === 'VJ'));
+  assert.ok(deals.length >= 3 && deals.every((x) => x.source === 'Aviasales' && x.recent && x.airline === 'VietJet Air'), 'the airline by name, not its code');
   assert.ok(deals.every((x) => x.depart >= FROM && x.return <= UNTIL), 'inside the window');
   assert.ok(deals.every((x) => { const n = (Date.parse(x.return) - Date.parse(x.depart)) / 864e5; return n >= 8 && n <= 13; }), 'the 3-night trip is left out');
   assert.equal(deals[0].price, 580, '€290 per adult, two adults');

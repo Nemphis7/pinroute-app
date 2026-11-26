@@ -87,6 +87,10 @@ Amadeus has no low-cost airlines. Travelpayouts, Aviasales's partner network, fi
 - **Partner links** (`/links/v1/create`): every Aviasales link (fares, and **Compare on Aviasales** on deals and flight legs) becomes your partner link, ten to a request and each made once. If the API can't be reached, the link carries your partner ID as `marker=`.
 - The planner says next to these links that Pinroute may earn a commission; so do `/help`, `/privacy` and the listing answers.
 
+## Airline names
+
+Aviasales's recent prices name the airline by its IATA code ("VJ"), and so do some flight tools Claude uses. Pinroute shows the name instead ("VietJet Air", "VietJet Air VJ 58") wherever a fare appears: the planner, the tool results Claude reads, and fares and flights saved with a code before. The names come from `src/airlines.mjs`, a curated list of about 240 airlines flying today; a code that isn't on it stays a code rather than risk a wrong name. Add an airline there when a code shows up in the planner.
+
 Set it up: create a Travelpayouts account, join the Aviasales program, then set `TRAVELPAYOUTS_TOKEN`, `TRAVELPAYOUTS_MARKER` and `TRAVELPAYOUTS_TRS` in Railway. The status page at `/` says when recent prices and partner links are on.
 
 ## Sign-in with WorkOS AuthKit

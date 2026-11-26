@@ -2,6 +2,8 @@
 // Rules from Amadeus's own guide: times are shown as returned (local, with offset); door-to-door time is first departure to
 // last arrival using the offsets (bound.duration can be an hour off over a clock change); results are sorted here; deep links
 // are used as returned and never stored, because prices are live.
+import { airlineName } from '../airlines.mjs';
+
 export const name = 'Amadeus Travel Builder';
 
 const CABIN = { economy: 'ECONOMY', premium: 'PREMIUM_ECONOMY', business: 'BUSINESS', first: 'FIRST' };
@@ -52,7 +54,7 @@ export function mapResult(r, i, merchants = {}) {
     id: `am_${i}_${r.merchant}`,
     provider: 'amadeus',
     merchant: r.merchant,
-    airline: merchants[r.merchant]?.name || r.merchant,
+    airline: merchants[r.merchant]?.name || airlineName(r.merchant),     // the carrier list names most; a code left over gets its name here
     total: r.fare?.itinerary_price?.total_fare ?? null,
     perAdult: r.fare?.price_per_adult?.total_fare ?? null,
     currency: r.fare?.currency || 'EUR',
