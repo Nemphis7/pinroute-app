@@ -346,7 +346,7 @@ function flightBlock(l) {
 // A chosen flight as a stub: codes and times when the summary carries them ("11:40 KBV → 12:55 DMK")
 function ticket(c) {
   const m = /(\d{1,2}:\d{2})\s*([A-Z]{3})\s*→\s*(\d{1,2}:\d{2})\s*([A-Z]{3})/.exec(c.summary || '');
-  const airline = (c.summary || '').split(',')[0].trim();
+  const airline = (c.summary || '').split(',')[0].trim().replace(/\b([A-Z0-9]{2}) (\d)/g, '$1\u00a0$2');   // "Thai AirAsia FD 3104": the flight number never breaks
   return h('div', { class: 'ticket' },
     h('div', { class: 'tmain' },
       m ? h('div', { class: 'troute' },

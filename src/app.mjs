@@ -15,6 +15,7 @@ import {
 import { tripMap, regionMap } from './map.mjs';
 import { flightProvider } from './providers/index.mjs';
 import * as tp from './providers/travelpayouts.mjs';
+import { airlineName, withAirlineName, namedFare } from './airlines.mjs';
 
 export const VERSION = '0.7.0';
 export const PLANNER_URI = 'ui://pinroute/planner';
@@ -69,10 +70,12 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   // Everything the planner needs for one trip, kept small: this also goes to the model. Each leg carries its state:
   // the flight chosen, whether it's booked (with a note), or a flight chosen before its date moved ("stale").
+  // Airlines show by name, also for flights saved with a bare code before names were added.
   function tripView(trip) {
     const rows = schedule(trip);
     const picks = Object.fromEntries(rows.map((s) => [s.place, store.getPicks(owner, s.place)]));
-    const choices = trip.choices || {}, marks = trip.marks || {};
+    const marks = trip.marks || {};
+    const choices = Object.fromEntries(Object.entries(trip.choices || {}).map(([k, c]) => [k, { ...c, summary: withAirlineName(c.summary) }]));
     const legList = legs(trip).map((l) => {
       const chosen = choices[l.key] || null;
       const old = chosen ? null : Object.entries(choices).find(([k]) => k !== l.key && legRoute(k) === legRoute(l.key));
@@ -82,7 +85,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     return {
       screen: 'trip',
       trip: { id: trip.id, name: trip.name, start: trip.start, end: endDate(trip), adults: trip.adults, home: trip.home || null, choices, country: d ? d.name : null, countryId: trip.country || null,
-        ticket: trip.ticket || null, wishes: trip.wishes || null, area: trip.area || null },
+        ticket: trip.ticket ? namedFare(trip.ticket) : null, wishes: trip.wishes || null, area: trip.area || null },
       stops: rows.map((s, i) => ({ index: i, place: s.place, nights: s.nights, arrive: s.arrive, depart: s.depart, iata: s.iata, region: s.region, island: !!s.island })),
       legs: legList,
       picks,
@@ -242,8 +245,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const cur = currency.toUpperCase();
     // A choice for the same hop on an earlier date gives way to this one
     const choices = Object.fromEntries(Object.entries(t.choices || {}).filter(([k]) => legRoute(k) !== legRoute(leg_key)));
-    choices[leg_key] = { summary: line, price, currency: cur, link: link || null, source: source || null, at: new Date().toISOString() };
-    return viewResult(store.putTrip(owner, { ...t, choices }), `Saved for ${leg_key}: ${line} (${cur} ${price}).`);
+    choices[leg_key] = { summary: withAirlineName(line), price, currency: cur, link: link || null, source: source || null, at: new Date().toISOString() };
+    return viewResult(store.putTrip(owner, { ...t, choices }), `Saved for ${leg_key}: ${choices[leg_key].summary} (${cur} ${price}).`);
   }));
 
   server.registerTool('clear_flight', {
@@ -346,8 +349,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   }
   const draftOf = () => store.getDraft(owner) || { ...freshDraft(), updated: null };
   const homesOf = (dr) => dr.homes.map((c) => airport(c)).filter(Boolean).map((a) => ({ code: a.code, city: cityOf(a), country: a.country, lat: a.lat, lon: a.lon }));
-  const dealLine = (x) => {
-    const dl = dealLabel(dealRatio(x));
+  const dealLine = (y) => {
+    const x = namedFare(y), dl = dealLabel(dealRatio(x));
     return `${eur(dealPP(x))} pp${x.adults > 1 ? ` (${eur(x.price)} for ${x.adults})` : ''}, ${x.from} → ${x.to} ${shortDate(x.depart)}, back ${shortDate(x.return)} (${diffDays(x.depart, x.return)} nights), ${x.airline}${x.stops != null ? `, ${x.stops ? `${x.stops} change${x.stops > 1 ? 's' : ''}` : 'direct'}` : ''}, via ${x.source}${dl ? `, ${dl[1].toLowerCase()}` : ''}; deal id ${x.id}`;
   };
 
@@ -367,7 +370,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const warnings = [];
     if (diffDays(dr.from, dr.until) < dr.minNights) warnings.push(`The window is ${diffDays(dr.from, dr.until)} days, shorter than the ${dr.minNights} nights wanted.`);
     if (!homes.length) warnings.push('No departure airport yet.');
-    const deals = Object.fromEntries(Object.entries(dr.deals || {}).map(([id, l]) => [id, l.slice(0, MAX_DEALS)]));
+    const deals = Object.fromEntries(Object.entries(dr.deals || {}).map(([id, l]) => [id, l.slice(0, MAX_DEALS).map(namedFare)]));
     const view = {
       screen: 'new',
       draft: { way: dr.way, step: dr.step, from: dr.from, until: dr.until, minNights: dr.minNights, maxNights: dr.maxNights, adults: dr.adults, budget: dr.budget,
@@ -567,7 +570,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       : `Aviasales has no recent prices for ${d.name}, ${what}. Live airline fares (source "live") or the traveller's own flight tools may still find some.`;
     return {
       content: [text([head, ...shown.slice(0, by_month ? 12 : 3).map(dealLine), failed.length ? `${failed.length} of the look-ups failed: ${failed[0]}` : null].filter(Boolean).join('\n'))],
-      structuredContent: { country: d.id, source: 'recent', searched, deals: shown.slice(0, by_month ? 12 : MAX_DEALS), failed, recent_left: limits.recentPerDay - store.usage(owner, 'recent') },
+      structuredContent: { country: d.id, source: 'recent', searched, deals: shown.slice(0, by_month ? 12 : MAX_DEALS).map(namedFare), failed, recent_left: limits.recentPerDay - store.usage(owner, 'recent') },
     };
   }
 
@@ -633,7 +636,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const head = found.length ? `${provider.name}: ${found.length} fare${found.length === 1 ? '' : 's'} saved for ${d.name}, ${what}.` : `${provider.name} had no return fares for ${d.name}, ${what}.`;
     return {
       content: [text([head, ...shown.slice(0, 3).map(dealLine), failed.length ? `${failed.length} of the searches failed: ${failed[0]}` : null].filter(Boolean).join('\n'))],
-      structuredContent: { country: d.id, searched, deals: shown.slice(0, MAX_DEALS), failed, searches_left: limits.searchesPerDay - store.usage(owner, 'search') },
+      structuredContent: { country: d.id, searched, deals: shown.slice(0, MAX_DEALS).map(namedFare), failed, searches_left: limits.searchesPerDay - store.usage(owner, 'search') },
     };
   }));
 
@@ -645,7 +648,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     price: z.number().positive().max(1e6).describe('Total for all travellers, both ways'),
     currency: CURRENCY,
     adults: z.number().int().min(1).max(9).optional(),
-    airline: z.string().min(1).max(80),
+    airline: z.string().min(1).max(80).describe('The airline\'s name; a 2-letter IATA code is turned into the name'),
     out: z.string().max(160).optional().describe('Outbound flight: numbers and times, e.g. "QR 70, 21:10 FRA → 13:40 SGN"'),
     back: z.string().max(160).optional().describe('Flight home: numbers and times'),
     stops: z.number().int().min(0).max(6).optional().describe('Most changes in either direction'),
@@ -670,7 +673,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const now = new Date().toISOString();
     const bySource = new Map();
     for (const x of deals) {
-      const item = { ...x, id: store.newId('dl'), country: d.id, from: x.from.toUpperCase(), to: x.to.toUpperCase(), back_from: (x.back_from || x.to).toUpperCase(),
+      const item = { ...namedFare(x), id: store.newId('dl'), country: d.id, from: x.from.toUpperCase(), to: x.to.toUpperCase(), back_from: (x.back_from || x.to).toUpperCase(),
         arrive: x.arrive && x.arrive >= x.depart ? x.arrive : x.depart, currency: x.currency.toUpperCase(), adults: x.adults || dr.adults, at: now, km: distOf(x.from, x.to) };
       bySource.set(item.source, [...(bySource.get(item.source) || []), item]);
     }
@@ -719,7 +722,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     if (home) next.choices[home.key] = { ...base, summary: x.back || `${x.airline}, ${x.back_from || x.to} → ${x.from}`, price: 0, part: 'return' };
     return { trip: next, total };
   }
-  const fareById = (dr, id) => Object.values(dr.deals || {}).flat().find((y) => y.id === id);
+  const fareById = (dr, id) => namedFare(Object.values(dr.deals || {}).flat().find((y) => y.id === id));
 
   registerAppTool(server, 'start_trip_from_flight', {
     title: 'Start a trip from a flight',

@@ -6,6 +6,8 @@
 //   it counts for them. Each link is made once and remembered; if the API can't be reached, the link carries the
 //   partner ID as marker= instead, the form Travelpayouts's own links take.
 // Settings: TRAVELPAYOUTS_TOKEN (Data and Links API), TRAVELPAYOUTS_MARKER (partner ID), TRAVELPAYOUTS_TRS (project ID).
+import { airlineName, withAirlineName } from '../airlines.mjs';
+
 export const name = 'Aviasales';
 export const configured = (env = process.env) => !!env.TRAVELPAYOUTS_TOKEN;
 export const linksOn = (env = process.env) => !!(env.TRAVELPAYOUTS_MARKER);
@@ -27,12 +29,13 @@ async function get(path, params, { env = process.env, fetchImpl = fetch } = {}) 
 
 const day = (s) => (s ? String(s).slice(0, 10) : null);
 const clock = (s) => String(s || '').slice(11, 16);
-// One Data API entry as a fare: per adult, both directions, with the Aviasales link it came with
+// One Data API entry as a fare: per adult, both directions, with the Aviasales link it came with. The API names the
+// airline by its IATA code ("VJ"); the fare carries the name, and the flight number keeps the code ("VietJet Air VJ 58").
 export function mapEntry(x) {
-  const flight = x.airline && x.flight_number ? `${x.airline} ${x.flight_number}` : x.airline || null;
+  const flight = x.airline && x.flight_number ? withAirlineName(`${x.airline} ${x.flight_number}`) : x.airline ? airlineName(x.airline) : null;
   return {
     from: x.origin_airport || x.origin, to: x.destination_airport || x.destination, depart: day(x.departure_at), return: day(x.return_at),
-    pricePerAdult: Number(x.price), currency: String(x.currency || 'eur').toUpperCase(), airline: x.airline || 'Several airlines',
+    pricePerAdult: Number(x.price), currency: String(x.currency || 'eur').toUpperCase(), airline: x.airline ? airlineName(x.airline) : 'Several airlines',
     out: `${flight ? `${flight}, ` : ''}${clock(x.departure_at)} ${x.origin_airport || x.origin} → ${x.destination_airport || x.destination}${x.transfers ? `, ${x.transfers} change${x.transfers > 1 ? 's' : ''}` : ', direct'}`,
     back: x.return_at ? `${clock(x.return_at)} ${x.destination_airport || x.destination} → ${x.origin_airport || x.origin}${x.return_transfers ? `, ${x.return_transfers} change${x.return_transfers > 1 ? 's' : ''}` : x.return_transfers === 0 ? ', direct' : ''}` : null,
     stops: Math.max(x.transfers ?? 0, x.return_transfers ?? 0), minutes: x.duration_to ?? null,
