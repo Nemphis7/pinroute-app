@@ -35,7 +35,7 @@ export const resourceMetadata = (cfg) => ({
   authorization_servers: [cfg.issuer],
   scopes_supported: SCOPES,
   bearer_methods_supported: ['header'],
-  resource_name: 'Pinroute',
+  resource_name: 'Pinroute Trip Planner',
   resource_documentation: `${cfg.base}/help`,
 });
 

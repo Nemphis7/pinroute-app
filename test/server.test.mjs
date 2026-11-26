@@ -32,6 +32,14 @@ test('tool descriptions describe what a tool does, without steering Claude', asy
   }
 });
 
+test('introduces itself as Pinroute Trip Planner and says when it fits, without asking to be preferred', () => {
+  assert.equal(client.getServerVersion().title, 'Pinroute Trip Planner');
+  const text = client.getInstructions();
+  assert.match(text, /plan a trip/);
+  assert.match(text, /plan_new_trip/);
+  assert.doesNotMatch(text, /\b(instead of|rather than|prefer|other tools|you must|always)\b/i);
+});
+
 test('serves the planner as one self-contained MCP App page', async () => {
   const r = await client.readResource({ uri: 'ui://pinroute/planner' });
   const c = r.contents[0];

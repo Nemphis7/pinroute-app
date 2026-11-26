@@ -8,11 +8,11 @@ Everything the submission portal at [claude.ai/directory/manage](https://claude.
 
 ## 3. Listing
 
-- **Name:** Pinroute
-- **One-liner (≤200):** Plan trips in Claude from the days you're free or the place you dream of: where the weather is good, flight deals, then the route, flights and local favourites in one planner.
+- **Name:** Pinroute Trip Planner
+- **One-liner (≤200):** Trip planner for Claude: find where to go for the days you're free, compare flight deals, then plan the route, flights and local favourites in one planner.
 - **Description (≤2,000):**
 
-  Pinroute turns a trip idea into a day-by-day route you can see and change in the conversation. Start from the days you are free: Pinroute ranks 60 countries by the weather in those months, the flight time and your budget, and compares flight deals for the ones you like. Or start from a country, or part of one such as Sulawesi, and see its best months, with what flights cost in each. Pick a fare and Pinroute starts the trip around it.
+  Pinroute Trip Planner turns a trip idea into a day-by-day route you can see and change in the conversation. Start from the days you are free: Pinroute ranks 60 countries by the weather in those months, the flight time and your budget, and compares flight deals for the ones you like. Or start from a country, or part of one such as Sulawesi, and see its best months, with what flights cost in each. Pick a fare and Pinroute starts the trip around it.
 
   Tell Claude where you want to go and for how many nights; Pinroute works out the dates, spots which hops are flights and which are a ferry or a drive, and shows it all in an interactive planner.
 

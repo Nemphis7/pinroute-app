@@ -74,7 +74,7 @@ export function helpPage(env = process.env) {
   const base = publicUrl(env);
   const address = auth || !env.MCP_SECRET ? `${base}/mcp` : `${base}/mcp/<the secret you were given>`;
   const live = flightProvider(env).name !== 'Demo data';
-  return page('Pinroute', `
+  return page('Pinroute Trip Planner', `
 <p>Plan trips inside Claude, starting from the days you are free or from where you want to go: see where the weather is good, compare flight deals, then plan the route and dates, the flight or ferry between stops, and local favourites for each place, together in one planner. Claude does the thinking on your own Claude plan; Pinroute keeps your trips.</p>
 <h2>Two ways to start</h2>
 <ul>
@@ -89,7 +89,7 @@ export function helpPage(env = process.env) {
 <h2>Add Pinroute to Claude</h2>
 <ol>
 <li>In Claude, open <b>Settings → Connectors</b> and choose <b>Add custom connector</b>.</li>
-<li>Name it <b>Pinroute</b> and enter <span class="url">${esc(address)}</span></li>
+<li>Name it <b>Pinroute Trip Planner</b> and enter <span class="url">${esc(address)}</span></li>
 <li>${auth ? 'Sign in when Claude asks. Your trips are saved to your own Pinroute account.' : 'This server has no sign-in yet: anyone with the address shares the same trips.'}</li>
 </ol>
 <p class="muted">The planner works in Claude on the web, in the desktop app and in the iOS and Android apps.</p>
