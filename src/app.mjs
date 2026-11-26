@@ -52,8 +52,16 @@ function fareLine(f) {
   return `${f.currency} ${Math.round(f.total)} · ${f.airline} · ${b.departs?.slice(11, 16)} ${b.from} → ${b.arrives?.slice(11, 16)} ${b.to} · ${hm(b.minutes)} · ${b.stops ? `${b.stops} stop${b.stops > 1 ? 's' : ''}` : 'direct'}${b.bags ? ' · bag included' : ''}`;
 }
 
+// What Pinroute is for, read by Claude when the connector loads. It says when the tools fit; it never asks Claude
+// to prefer them over other tools, which the Claude directory does not allow.
+export const INSTRUCTIONS = 'Pinroute Trip Planner plans holidays and multi-stop trips with the traveller and keeps them in their Pinroute account. '
+  + 'It fits when someone wants to plan a trip, is deciding where to go for the days they are free or when to visit a country, '
+  + 'wants to compare flight deals for a trip, or wants a day-by-day route with flights, ferries and local favourites. '
+  + 'Start with plan_new_trip when the traveller is still choosing where or when to go, or create_trip when they already know their stops; '
+  + 'open_planner shows trips they saved before. Pinroute never books or pays for anything.';
+
 export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
-  const server = new McpServer({ name: 'pinroute', version: VERSION });
+  const server = new McpServer({ name: 'pinroute', title: 'Pinroute Trip Planner', version: VERSION }, { instructions: INSTRUCTIONS });
   const limits = {
     searchesPerDay: Number(env.SEARCH_LIMIT_PER_DAY) || 50,
     recentPerDay: Number(env.RECENT_LIMIT_PER_DAY) || 200,
@@ -122,10 +130,10 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   // ---- the planner screen
   registerAppTool(server, 'open_planner', {
-    title: 'Open the Pinroute planner',
-    description: 'Shows the interactive Pinroute planner. With trip_id it opens that saved trip: the route with dates, the flight or road and ferry leg between stops, flights chosen so far and saved local picks. Without trip_id it opens the start screen: the traveller\'s trips, the one under way first, and the two ways to plan a new trip.',
+    title: 'Open my trip plans',
+    description: 'Use when the traveller wants to see, continue or change a trip they planned before. Shows the interactive Pinroute planner. With trip_id it opens that saved trip: the route with dates, the flight or road and ferry leg between stops, flights chosen so far and saved local picks. Without trip_id it opens the start screen: the traveller\'s trips, the one under way first, and the two ways to plan a new trip.',
     inputSchema: { trip_id: z.string().max(40).optional().describe('Trip id from create_trip or list_trips') },
-    annotations: { title: 'Open the Pinroute planner', readOnlyHint: true },
+    annotations: { title: 'Open my trip plans', readOnlyHint: true },
     _meta: { ui: { resourceUri: PLANNER_URI } },
   }, mine(async ({ trip_id }) => {
     if (!trip_id) return homeResult();
@@ -149,8 +157,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   const resolveStops = (stops) => stops.map((s) => ({ ...resolvePlace(s.place, s.airport, s), nights: s.nights }));
 
   server.registerTool('create_trip', {
-    title: 'Create a trip',
-    description: 'Saves a new multi-stop trip to the traveller\'s Pinroute account. Stops are in travel order with the nights spent at each; a last stop with 0 nights is where the trip ends. Places in Thailand are recognised by name; elsewhere, give each place\'s coordinates and nearest airport code. Returns the trip with its dates and legs.',
+    title: 'Create a trip route',
+    description: 'Use when the traveller already knows the places they want to visit and for how many nights. Saves a new multi-stop trip to the traveller\'s Pinroute account. Stops are in travel order with the nights spent at each; a last stop with 0 nights is where the trip ends. Places in Thailand are recognised by name; elsewhere, give each place\'s coordinates and nearest airport code. Returns the trip with its dates and legs.',
     inputSchema: {
       name: z.string().min(1).max(80),
       start: DATE.describe('Date of the first night'),
@@ -158,7 +166,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       home_airport: IATA.optional().describe('Where the traveller flies from and back to'),
       stops: z.array(stopSchema).min(1).max(20),
     },
-    annotations: { title: 'Create a trip', readOnlyHint: false, destructiveHint: false },
+    annotations: { title: 'Create a trip route', readOnlyHint: false, destructiveHint: false },
   }, mine(async ({ name, start, adults, home_airport, stops }) => {
     if (store.countTrips(owner) >= limits.trips) return fail(`Your Pinroute account already has ${limits.trips} trips, the most it keeps. Delete one with delete_trip first.`);
     const resolved = resolveStops(stops);
@@ -411,8 +419,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   }
 
   registerAppTool(server, 'plan_new_trip', {
-    title: 'Plan a new trip',
-    description: 'Shows Pinroute\'s new-trip planner and saves what the traveller said to their draft: when they are free, how many nights, how many travel, a budget, the airports they can fly from, regions, interests, countries to compare, their wishes in their own words, and a focus on part of a country with that area\'s airports. The planner ranks 60 countries by the weather in those months, the flight time and the budget, and shows the flight deals saved for each; with a focus, fares are looked up to that area\'s airports. With country set it shows that country\'s best months and the fares found in each. Fields left out stay as they were.',
+    title: 'Plan a trip (where and when to go)',
+    description: 'Use when someone wants to plan a trip, is deciding where or when to travel, or wants ideas for the days they are free. Shows Pinroute\'s new-trip planner and saves what the traveller said to their draft: when they are free, how many nights, how many travel, a budget, the airports they can fly from, regions, interests, countries to compare, their wishes in their own words, and a focus on part of a country with that area\'s airports. The planner ranks 60 countries by the weather in those months, the flight time and the budget, and shows the flight deals saved for each; with a focus, fares are looked up to that area\'s airports. With country set it shows that country\'s best months and the fares found in each. Fields left out stay as they were.',
     inputSchema: {
       way: z.enum(['when', 'where']).optional().describe('"when": the traveller knows their free dates; "where": they know the country'),
       step: z.enum(['when', 'where', 'flights', 'country', 'season']).optional().describe('Screen to show: when, where, flights; or country, season for the "where" way'),
@@ -435,7 +443,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
         airports: z.array(IATA).max(5).describe('That area\'s main airports with scheduled flights, busiest first; fares are searched to these'),
       })).max(8).optional().describe('A part of a country to travel in, with its airports'),
     },
-    annotations: { title: 'Plan a new trip', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    annotations: { title: 'Plan a trip (where and when to go)', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     _meta: { ui: { resourceUri: PLANNER_URI } },
   }, mine(async (a) => {
     const changes = Object.keys(a).filter((k) => a[k] !== undefined);
