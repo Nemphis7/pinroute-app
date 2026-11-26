@@ -137,7 +137,13 @@ kbd { font: inherit; font-size: 11px; line-height: 16px; padding: 0 var(--s-1); 
 .tab[aria-current="page"] { color: var(--ink); background: var(--paper-2); }
 .tab[aria-current="page"] > svg.i:first-child { color: var(--accent); }
 .tab .tab-l { overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
-.trips-wrap { position: relative; min-width: 0; }
+.trips-wrap { position: relative; display: flex; min-width: 0; }   /* flex, so the trip's tab can shrink to its name's ellipsis */
+/* In place on a narrow host: Home and New trip are icons (their names stay as labels), the trip's name gets the rest */
+@media (max-width: 599px) {
+  #app[data-layout="stacked"] .places > .tab { flex: none; width: 32px; padding: 6px; justify-content: center; }
+  #app[data-layout="stacked"] .places > .tab .tab-l { display: none; }
+  #app[data-layout="stacked"] .places .menu { left: auto; right: 0; }   /* opens toward the room on the left */
+}
 .menu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; width: max-content; min-width: 260px; max-width: min(380px, calc(100vw - 32px)); max-height: 60vh; overflow-y: auto;
   display: grid; gap: 2px; padding: var(--s-1); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--r-2); box-shadow: 0 8px 24px rgb(0 0 0 / 0.14); }
 .menu > p { margin: 0; padding: var(--s-2) var(--s-3); }

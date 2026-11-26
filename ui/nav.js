@@ -51,7 +51,7 @@ function tripsMenu(tripId) {
 
 // The three places. `where` is 'home', 'new' or 'trip'; on a trip the Trips tab carries the trip's name.
 function places(where, tripName, tripId, phone) {
-  const tab = (id, ic, label, onclick, extra = {}) => h('button', { class: `tab${phone ? ' bottom' : ''}`, 'aria-current': where === id ? 'page' : null, onclick, ...extra },
+  const tab = (id, ic, label, onclick, extra = {}) => h('button', { class: `tab${phone ? ' bottom' : ''}`, 'aria-label': label, title: label, 'aria-current': where === id ? 'page' : null, onclick, ...extra },
     icon(ic), h('span', { class: 'tab-l', text: label }), extra['aria-haspopup'] && !phone ? icon(ChevronDown) : null);
   return [
     tab('home', House, 'Home', () => goPlace('open_planner', {})),

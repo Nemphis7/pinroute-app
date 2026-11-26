@@ -13,11 +13,11 @@ const skip = !chromium && 'Playwright not installed';
 let srv, client, browser, hostJs;
 const today = new Date().toISOString().slice(0, 10);
 
-async function openHost(args, full) {
+async function openHost(args, full, more = {}) {
   const page = await browser.newPage({ viewport: { width: 1200, height: 1000 } });
   page.on('pageerror', (e) => console.error('page error:', e.message));
   await page.goto(`${srv.base}/__host`);
-  await page.evaluate(([u, a, o]) => window.startHost(u, a, 'light', o), [srv.url, args, { inline: [760, 420], full }]);
+  await page.evaluate(([u, a, o]) => window.startHost(u, a, 'light', o), [srv.url, args, { inline: [760, 420], full, ...more }]);
   const f = page.frameLocator('#planner');
   await f.locator('#app[data-screen]').waitFor();
   return { page, f };
@@ -106,3 +106,28 @@ test('in the chat: a trip card also leads to all trips', { skip }, async () => {
   await f.locator('#app[data-screen="trip"]').waitFor();
   await page.close();
 });
+
+// A host without full screen shows the planner in place, as narrow as a phone: the bar on top keeps its places, and
+// nothing in it may stick out, however long the trip's name
+let longTrip;                                       // made by the first of these, after the list of trips was checked
+for (const width of [360, 420, 600]) {
+  test(`in place, ${width} px wide: the trip's name fits the bar and its list of trips opens inside`, { skip }, async () => {
+    longTrip ??= (await client.callTool({ name: 'create_trip', arguments: { name: 'Thailand island hop with the family', start: START, adults: 2, stops: [{ place: 'Bangkok', nights: 4 }] } })).structuredContent.trip.id;
+    const { page, f } = await openHost({ trip_id: longTrip }, undefined, { inline: [width, 1200], modes: ['inline'] });
+    await f.locator('#app[data-layout="stacked"][data-screen="trip"]').waitFor();
+    const W = await f.locator('html').evaluate((el) => el.clientWidth);
+    const right = (loc) => loc.evaluate((el) => el.getBoundingClientRect().right);
+    assert.ok(await f.locator('html').evaluate((el) => el.scrollWidth <= el.clientWidth), 'nothing wider than the planner');
+    const places = f.locator('.bar .places');
+    for (const name of ['Home', 'New trip']) assert.ok(await places.getByRole('button', { name, exact: true }).isVisible(), `${name} is there`);
+    const tab = f.locator('#trips-tab');
+    assert.ok(await right(tab) <= W - 16, 'the trip\'s tab ends inside the gutter');
+    assert.equal(await tab.getAttribute('aria-label'), 'Thailand island hop with the family');
+    await tab.click();
+    const menu = f.locator('#trips-menu');
+    await menu.waitFor();
+    const box = await menu.boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= W, 'the list of trips opens inside the planner');
+    await page.close();
+  });
+}
