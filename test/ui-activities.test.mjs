@@ -47,5 +47,5 @@ test('finds tours at a stop, opens one on GetYourGuide and keeps one with the lo
   await first.locator('.kept').waitFor();
   const picks = (await client.callTool({ name: 'get_local_picks', arguments: { place: 'Koh Lanta' } })).structuredContent.picks;
   assert.deepEqual(picks.map((p) => [p.name, p.kind, p.price_from]), [['Tour 30', 'activity', 70]]);
-  assert.match(await frame().locator('.detail h3').first().textContent(), /Local picks \(1\)/);
+  assert.match(await frame().locator('.detail h3', { hasText: 'Local picks' }).textContent(), /Local picks \(1\)/);
 });
