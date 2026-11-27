@@ -31,6 +31,8 @@ Claude (the traveller's own plan)
 | `search_flights` | Airline fares for one day or a return, cheapest first; daily limit per person | reads |
 | `find_airports` | Airports by city, name or code, or within a distance of a point (with a map for the picker); works without signing in | reads |
 | `flight_link` | A link to compare and book a flight on Aviasales, as a partner link when Travelpayouts is set up | reads |
+| `hotel_link` | A Booking.com search for each stop's place and check-in/check-out dates, or for any place and dates; a partner link when Booking.com partner links are set up | reads |
+| `choose_stay` / `clear_stay` | Saves or removes the hotel picked for a stop, from any hotel search (the Booking.com connector in Claude, for one), with price, link, booked and a note; it shows as needing a new pick when the stop's dates move | writes / deletes |
 | `find_activities` | Tours, activities and tickets at a trip stop or place (Amadeus Travel Builder), popular or matching interests, budget, traveller type and day; each with GetYourGuide and Klook links, as partner links when Travelpayouts is set up; daily limit per person | reads |
 | `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link; a kept tour also has its booking link and price | writes / reads |
 | `calendar_link` | A trip in the traveller's own calendar (Apple, Google/Android, Outlook): a secret subscription address `/calendar/<token>.ics` with each stop and its hotel, each flight, ferry and drive at its times when known, and dated tours; calendars follow changes; `new` renews the link, `stop` switches it off. Needs `PUBLIC_URL` (or Railway's domain) | writes |
@@ -62,6 +64,7 @@ All settings are environment variables: on Railway under **Variables**, locally 
 | `AMADEUS_API_KEY` | Live fares and tours and activities from Amadeus Travel Builder. Without it, demo fares and no activity search. `ACTIVITY_LIMIT_PER_DAY`: activity searches per person per day (default 100). |
 | `TRAVELPAYOUTS_TOKEN` | Recent prices from Aviasales (Travelpayouts Data API), low-cost airlines included, and the Links API. Profile → API token. |
 | `TRAVELPAYOUTS_MARKER`, `TRAVELPAYOUTS_TRS` | Your Travelpayouts partner ID and project ID: links to Aviasales, GetYourGuide and Klook become your partner links (the project must be connected to each program; a link it can't convert stays a plain link). `RECENT_LIMIT_PER_DAY`: look-ups of recent prices per person per day (default 200). |
+| `BOOKING_LINK_TEMPLATE` | Booking.com partner links through an affiliate network: the network's tracking link with `{url}` where the Booking.com address goes, e.g. `https://www.anrdoezrs.net/click-<PID>-<AID>?url={url}` for CJ. `BOOKING_AID`: instead, a Booking.com affiliate ID added as `aid=`, for partners of Booking.com's own programme. Without either, plain Booking.com links. |
 | `AUTH_ISSUER` | Turns sign-in on: the sign-in service's issuer URL, e.g. `https://<name>.authkit.app`. |
 | `PUBLIC_URL` | The server's public address, e.g. `https://pinroute.app`. On Railway, the generated domain is used until you set this. |
 | `MCP_SECRET` | Without sign-in only: makes the address `/mcp/<secret>`, so only people with the link can connect. Ignored once sign-in is on. |
@@ -188,3 +191,7 @@ test/                 tools, new trips, sign-in, store, pages, hosting, Amadeus,
 ```
 
 Versions are pinned to the stack Claude's MCP Apps quickstart is verified with (`@modelcontextprotocol/ext-apps` 1.7.5). `@modelcontextprotocol/sdk` 1.32.2 and `zod` 4.6.7 are raised from the quickstart's 1.30.1 and 4.6.5 for their security fixes; ext-apps 1.7.5 accepts both. `jose` 6.2.18 checks tokens; `d3-geo`, `topojson-client` and `world-atlas` draw the maps; `lucide` provides the icons. Run `npm audit --omit=dev` after any change.
+
+## Hotels
+
+Booking.com has no open hotel API: its Demand API is only for Managed Affiliate Partners with a contract and an account manager, and its affiliate support says it offers no API access to other partners. So each stop with nights gets a Booking.com search for its place and dates (`stays` on every trip, and `hotel_link`), and Claude searches hotels with whatever tools the traveller has connected, such as Booking.com's own connector, and saves the pick with `choose_stay`. To earn commission, join Booking.com's affiliate programme through its network (CJ for most regions, from booking.com/affiliate-program) and set `BOOKING_LINK_TEMPLATE` to the deep-link format the network gives you.

@@ -822,6 +822,10 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
 .cal-url { display: flex; gap: var(--s-2); }
 .cal-url input { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-2); }
 @media (max-width: 520px) { #trip-cal { font-size: 0; gap: 0; } #trip-cal svg { margin: 0; } }
+
+/* Where to stay: the hotel picked for a stop */
+.stay-ticket .tsum { display: flex; align-items: center; gap: var(--s-2); }
+.stay-ticket .tsum .kind-ic { flex: none; }
 /* ---- flight results: two quotes, the cheapest day, filters */
 .quotes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
 .quote { border: 1px solid var(--line); border-radius: var(--r-1); padding: var(--s-3); background: var(--paper); display: grid; gap: 2px; align-content: start; justify-items: start; box-shadow: var(--sh-1); }

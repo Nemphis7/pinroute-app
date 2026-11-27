@@ -4,6 +4,7 @@
 import { authConfig, publicUrl } from './auth.mjs';
 import { VERSION } from './app.mjs';
 import { flightProvider } from './providers/index.mjs';
+import { linksOn as bookingLinksOn } from './hotels.mjs';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -35,6 +36,8 @@ const TOOLS = [
   ['mark_leg', 'Marks a flight, ferry or drive as booked, with an optional note', 'Writes'],
   ['search_flights', 'Searches airline fares (Amadeus Travel Builder); daily limit per person', 'Reads'],
   ['flight_link', 'Makes a link to compare and book a flight on Aviasales (with Pinroute\'s partner ID when set up)', 'Reads'],
+  ['hotel_link', 'Makes a Booking.com search for each stop\'s place and dates, to compare and book hotels (with Pinroute\'s partner ID when set up)', 'Reads'],
+  ['choose_stay / clear_stay', 'Saves or removes the hotel picked for a stop, from any hotel search', 'Writes / deletes'],
   ['find_airports', 'Finds airports by city, name or code, or all airports within a distance of a point; works without signing in', 'Reads'],
   ['find_activities', 'Finds tours, activities and tickets at a place or trip stop (Amadeus Travel Builder), with links to book on GetYourGuide or Klook; daily limit per person', 'Reads'],
   ['save_local_picks', 'Saves local favourites for a place, each with its source link', 'Writes'],
@@ -101,6 +104,8 @@ export function helpPage(env = process.env) {
 <p>${env.TRAVELPAYOUTS_TOKEN ? '<b>Recent prices</b> come from Aviasales: the cheapest fares its travellers found in the last days, low-cost airlines included. They are a guide, not live: check the price on Aviasales before booking. ' : ''}${live ? `${env.TRAVELPAYOUTS_TOKEN ? '<b>Live airline fares</b> come from' : 'Fare search uses'} Amadeus Travel Builder, which covers a set of mostly full-service airlines and links to their own sites. Many regional low-cost airlines are not included.` : 'This server shows demo fares, not real prices.'} ${live && env.TRAVELPAYOUTS_TOKEN ? ' Each flight search shows both quotes side by side, the airline fare and the Aviasales price, and says which is cheaper.' : ''} Searches can be narrowed to direct flights or a number of changes, departure and arrival times, airlines, fares with a checked bag, a longest flight time or a highest price, and can try the days around a date to find the cheapest day. The planner's <b>Ask Claude</b> button lets Claude search with any other flight tools you have connected in Claude, and save the flight you pick to your trip. Booking always happens on the airline's or booking site.</p>
 ${env.AMADEUS_API_KEY ? `<p><b>Tours and activities</b> at each stop come from Amadeus Travel Builder: the most popular ones, or ones matching what you ask for. Prices are a guide. You book on GetYourGuide or Klook, which show the live price and availability.${env.TRAVELPAYOUTS_MARKER ? ' These links carry Pinroute\'s partner ID with Travelpayouts: if you book through one, Pinroute may earn a commission. The price you pay is the same, and tours are never ranked by commission.' : ''}</p>` : ''}
 <p><b>Compare on Aviasales</b> opens a search for the route and dates on Aviasales, where airlines and agencies show live prices.${env.TRAVELPAYOUTS_MARKER ? ' These links carry Pinroute\'s partner ID with Travelpayouts, Aviasales\'s partner network: if you book through one, Pinroute may earn a commission. The price you pay is the same, and fares are never ranked by commission.' : ''}</p>
+<h2>Hotels</h2>
+<p>Each stop with nights has a <b>Booking.com</b> link for its place and dates, where you compare and book. Claude can also search hotels with any hotel tools you have connected in Claude, such as Booking.com's, and save the one you pick to the stop. Pinroute never books a hotel.${bookingLinksOn(env) ? ' These links carry Pinroute\'s Booking.com partner ID: if you book through one, Pinroute may earn a commission. The price you pay is the same, and hotels are never ranked by commission.' : ''}</p>
 <h2>What Pinroute can do</h2>
 <div class="table"><table><thead><tr><th>Tool</th><th>What it does</th><th>Data</th></tr></thead><tbody>
 ${TOOLS.map(([n, d, k]) => `<tr><td><code>${n}</code></td><td>${esc(d)}</td><td>${k}</td></tr>`).join('')}
@@ -141,7 +146,7 @@ ${auth ? '<li><b>WorkOS</b> runs sign-in. It handles your login details under it
 <li><b>Amadeus</b> receives each live flight search (airports, dates, number of travellers and cabin) and each tour search (the place or its coordinates, the day, interests, budget and kind of traveller you gave), without your account id.</li>
 ${env.TRAVELPAYOUTS_TOKEN || env.TRAVELPAYOUTS_MARKER ? '<li><b>Travelpayouts</b> (Aviasales\'s partner network) receives the routes and months of recent-price look-ups and the Aviasales, GetYourGuide and Klook links Pinroute turns into partner links (route, dates, number of travellers, or a tour\'s name and place), without your account id. When you open such a link, that site\'s and Travelpayouts\'s own policies apply.</li>' : ''}
 <li><b>Your calendar provider</b> (Apple, Google or another) fetches a trip's calendar from its address when you subscribe to it, and keeps a copy under its own policy.</li>
-<li><b>Airlines and booking sites</b>: when you open a booking link, their own policies apply.</li>
+<li><b>Airlines, Booking.com and other booking sites</b>: when you open a booking link, their own policies apply.${bookingLinksOn(env) ? ' Booking.com links go through an affiliate network, which sees the place, dates and number of guests of the search, not your account id.' : ''}</li>
 </ul>
 <h2>How long it is kept</h2>
 <p>Your trips, draft and picks are kept until you delete them; fares in the draft whose departure has passed are dropped when new ones are saved. Ask Claude to delete a trip, or to <i>delete my Pinroute data</i> to remove everything at once; it is gone immediately and Pinroute keeps no backup copy. The hosting service keeps technical logs (time, address requested, response code) for a short period; they do not contain your trips.</p>

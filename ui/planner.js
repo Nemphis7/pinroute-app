@@ -433,6 +433,7 @@ function stopDetail(x) {
         h('button', { class: 'icon', 'aria-label': 'One night more', disabled: ui.busy || x.nights >= 60, onclick: () => setNights(x, x.nights + 1) }, icon(Plus)))),
     nights ? h('div', { class: 'moons', 'aria-hidden': 'true' }, Array.from({ length: Math.min(nights, 21) }, (_, i) => h('i', { style: `animation-delay:${i * 40}ms` }))) : null,
     where ? h('p', { class: 'small where', text: where }) : null,
+    hotelBlock(x),
     h('section', { class: 'block' },
       h('div', { class: 'block-head' }, h('h3', { text: picks.length ? `Local picks (${picks.length})` : 'Local picks' }),
         picks.length ? h('span', { class: 'small', text: 'What locals and recent travellers recommend' }) : null),
@@ -504,6 +505,51 @@ async function keepTour(x, a) {
     showError('');
   } catch (e) { showError(e.message || String(e)); }
   finally { ui.busy = false; render(); }
+}
+
+// Where to sleep: the stop's nights as a Booking.com search, the hotel picked (from any hotel search) and whether it's booked
+const stayOf = (x) => (V.stays || []).find((st) => st.stop === x.index) || null;
+function stayState(st) {
+  if (st.chosen?.booked) return { text: 'Booked', tone: 'done' };
+  if (st.chosen) return { text: 'Chosen', tone: 'done' };
+  if (st.stale) return { text: 'Dates moved', tone: 'warn' };
+  return { text: 'To choose', tone: 'todo' };
+}
+function hotelBlock(x) {
+  const st = stayOf(x);
+  if (!st) return null;
+  const state = stayState(st), c = st.chosen, key = `stay|${st.key}`;
+  return h('section', { class: 'block stay' },
+    h('div', { class: 'block-head' }, h('h3', { text: 'Where to stay' }),
+      h('span', { class: `pill ${state.tone}` }, state.tone === 'done' ? icon(Check) : null, state.text),
+      h('span', { class: 'small', text: `${day(st.checkin)} to ${day(st.checkout)} · ${nightsTxt(st.nights)}` })),
+    st.stale ? h('div', { class: 'note warn' }, `${st.stale.name} was saved for ${day(st.stale.checkin)} to ${day(st.stale.checkout)}, before the dates moved. Choose a place for the new dates. `,
+      h('button', { class: 'link', disabled: ui.busy, onclick: () => clearStay(st, st.stale) }, 'Remove it')) : null,
+    c ? h('div', { class: 'ticket stay-ticket' },
+      h('div', { class: 'tmain' },
+        h('p', { class: 'tsum' }, h('span', { class: 'kind-ic' }, icon(BedDouble)), c.name),
+        h('p', { class: 'small', text: [c.note, c.source ? `via ${c.source}` : null].filter(Boolean).join(' · ') || ' ' })),
+      h('div', { class: 'tside' }, c.price != null ? h('span', { class: 'price', text: money(c.price, c.currency) }) : null,
+        h('span', { class: 'small', text: nightsTxt(st.nights) }))) : null,
+    waiting[key] ? skeleton(`Claude is looking for places to stay in ${x.place}`, 2) : null,
+    h('div', { class: 'acts' },
+      h('button', { class: c ? '' : 'primary', onclick: () => app.openLink({ url: c?.link || st.link }) }, icon(ExternalLink), c?.link ? 'Booking page' : 'Find hotels on Booking.com'),
+      c ? h('button', { 'aria-pressed': String(!!c.booked), disabled: ui.busy, onclick: () => setStayBooked(st, !c.booked) }, icon(Check), c.booked ? 'Booked' : 'Mark booked') : null,
+      c?.link ? h('button', { class: 'ghost', onclick: () => app.openLink({ url: st.link }) }, icon(ExternalLink), 'Compare on Booking.com') : null,
+      h('button', { class: 'ghost', onclick: () => askStay(x, st) }, icon(MessageSquare), c ? 'Ask Claude again' : 'Ask Claude'),
+      c ? h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearStay(st, c) }, 'Remove') : null),
+    V.hotels?.partnerLinks ? h('p', { class: 'small foot', text: 'Booking.com links carry Pinroute\'s partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.' }) : null);
+}
+const clearStay = (st, c) => save('clear_stay', { trip_id: V.trip.id, stay_key: c === st.stale ? `stay|${st.place}|${st.stale.checkin}|${st.stale.checkout}` : st.key }, `the traveller removed ${c.name} from ${st.place}.`);
+const setStayBooked = (st, booked) => save('choose_stay', { trip_id: V.trip.id, stay_key: st.key, ...Object.fromEntries(Object.entries(st.chosen).filter(([k, v]) => v != null && ['name', 'price', 'currency', 'link', 'source', 'note'].includes(k))), booked },
+  `the traveller marked ${st.chosen.name} in ${st.place} as ${booked ? 'booked' : 'not booked yet'}.`);
+function askStay(x, st) {
+  const n = V.trip.adults;
+  const before = JSON.stringify(st.chosen);
+  const where = x.region ? `${x.place} (${x.region})` : x.place;
+  return ask(`stay|${st.key}`,
+    `Find places to stay in ${where} from ${longDay(st.checkin)} to ${longDay(st.checkout)} (${nightsTxt(st.nights)}) for ${n} adult${n === 1 ? '' : 's'}, using my hotel search tools. Show me a few good options with price, rating and location, and when I pick one, save it to Pinroute with choose_stay (trip_id "${V.trip.id}", stay_key "${st.key}").`,
+    { poll: refresh, done: () => JSON.stringify(stayOf(x)?.chosen) !== before });
 }
 
 // While Claude works: a line saying so, and grey rows where the answer will appear; Refresh only after a while

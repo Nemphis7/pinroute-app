@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { buildServer, VERSION } from './app.mjs';
 import { loadDotEnv } from './env.mjs';
 import { flightProvider } from './providers/index.mjs';
+import { linksOn as bookingLinksOn } from './hotels.mjs';
 import { authConfig, resourceMetadata, challenge, bearer, verifyToken, needsSignIn } from './auth.mjs';
 import { helpPage, privacyPage, ICON_SVG } from './pages.mjs';
 import { LOCAL, tripByCalendar, getPicks } from './store.mjs';
@@ -93,6 +94,7 @@ export function createApp(env = process.env) {
       `Pinroute MCP server ${VERSION} is running.`,
       `Flights: ${p.name}${p.name === 'Demo data' ? ' (AMADEUS_API_KEY is not set)' : ''}.`,
       `Recent prices (Aviasales via Travelpayouts): ${env.TRAVELPAYOUTS_TOKEN ? 'on' : 'off (TRAVELPAYOUTS_TOKEN is not set)'}. Partner links: ${env.TRAVELPAYOUTS_MARKER ? `on${env.TRAVELPAYOUTS_TRS ? '' : ' (marker only; TRAVELPAYOUTS_TRS is not set)'}` : 'off (TRAVELPAYOUTS_MARKER is not set)'}.`,
+      `Hotels (Booking.com links): partner links ${bookingLinksOn(env) ? 'on' : 'off (BOOKING_LINK_TEMPLATE or BOOKING_AID is not set)'}.`,
       `Sign-in: ${auth ? `on, through ${auth.issuer}` : env.MCP_SECRET ? 'off; the address is protected by MCP_SECRET' : 'off'}.`,
       `Address for Claude: ${site}${auth || !env.MCP_SECRET ? '/mcp' : '/mcp/<your MCP_SECRET>'}`,
       `Help: ${site}/help · Privacy: ${site}/privacy`,

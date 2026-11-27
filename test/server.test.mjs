@@ -7,10 +7,10 @@ let srv, client, trip;
 before(async () => { srv = await startServer(null, { SEARCH_LIMIT_PER_DAY: '6' }); client = await connect(srv.url); });
 after(async () => { await client.close(); srv.server.close(); });
 
-const TOOLS = ['calendar_link', 'choose_flight', 'clear_flight', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'flight_link', 'get_local_picks', 'list_trips', 'mark_leg', 'open_planner',
+const TOOLS = ['calendar_link', 'choose_flight', 'choose_stay', 'clear_flight', 'clear_stay', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'flight_link', 'get_local_picks', 'hotel_link', 'list_trips', 'mark_leg', 'open_planner',
   'plan_new_trip', 'save_flight_deals', 'save_local_picks', 'scan_flight_deals', 'search_flights', 'set_nights', 'set_trip_fare', 'start_trip_from_flight', 'update_trip'];
 
-test('lists twenty-one tools, each with a title and the right read or write annotation', async () => {
+test('lists every tool, each with a title and the right read or write annotation', async () => {
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((t) => t.name).sort(), TOOLS);
   for (const t of tools) {
