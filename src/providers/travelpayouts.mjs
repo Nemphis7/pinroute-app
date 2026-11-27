@@ -43,13 +43,13 @@ export function mapEntry(x) {
   };
 }
 
-// Return fares leaving in one month (YYYY-MM) or on one day, cheapest first
-export async function pricesForDates({ origin, destination, departure, ret = null, limit = 100 }, ctx) {
+// Return fares (or one-way ones, with oneWay) leaving in one month (YYYY-MM) or on one day, cheapest first
+export async function pricesForDates({ origin, destination, departure, ret = null, limit = 100, oneWay = false }, ctx) {
   const data = await get('/aviasales/v3/prices_for_dates', {
-    origin: origin.toUpperCase(), destination: destination.toUpperCase(), departure_at: departure, return_at: ret,
-    one_way: 'false', sorting: 'price', currency: 'eur', limit,
+    origin: origin.toUpperCase(), destination: destination.toUpperCase(), departure_at: departure, return_at: oneWay ? null : ret,
+    one_way: oneWay ? 'true' : 'false', sorting: 'price', currency: 'eur', limit,
   }, ctx);
-  return (Array.isArray(data) ? data : []).map(mapEntry).filter((f) => f.depart && f.return && f.pricePerAdult > 0);
+  return (Array.isArray(data) ? data : []).map(mapEntry).filter((f) => f.depart && (oneWay || f.return) && f.pricePerAdult > 0);
 }
 
 // The cheapest return fare for each month ahead, for trips of minDays to maxDays
