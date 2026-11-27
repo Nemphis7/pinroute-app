@@ -62,7 +62,9 @@ export const INSTRUCTIONS = 'Pinroute Trip Planner plans holidays and multi-stop
   + 'It fits when someone wants to plan a trip, is deciding where to go for the days they are free or when to visit a country, '
   + 'wants to compare flight deals for a trip, or wants a day-by-day route with flights, ferries, hotels and local favourites. '
   + 'Start with plan_new_trip when the traveller is still choosing where or when to go, or create_trip when they already know their stops; '
-  + 'open_planner shows trips they saved before. Pinroute never books or pays for anything. '
+  + 'open_planner shows trips they saved before. '
+  + 'Its own lookups cover live airline fares and recent Aviasales prices (search_flights, scan_flight_deals), a Booking.com search for each stop\'s dates (hotel_link), '
+  + 'tours and activities at each stop (find_activities), and each trip\'s route with its flight, ferry and road legs. Pinroute never books or pays for anything. '
   + 'A planner already showing in the conversation refreshes itself after every change saved with these tools, so a change does not need open_planner or plan_new_trip to show it; '
   + 'save_new_trip_draft changes the new-trip draft without showing another planner. '
   + 'A message sent from the planner names a key when the traveller wants the answer in the planner: show_answer puts it there.';
@@ -247,7 +249,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   server.registerTool('choose_flight', {
     title: 'Choose a flight for a leg',
-    description: 'Saves the flight the traveller picked for one leg of a trip, identified by leg_key from the trip\'s legs, with its summary, price and booking link. The offer can come from any flight search. Booking itself happens on the airline\'s or booking site.',
+    description: 'Saves the flight the traveller picked for one leg of a trip, identified by leg_key from the trip\'s legs, with its summary, price and booking link, such as a fare from search_flights or one saved in the new-trip draft. Booking itself happens on the airline\'s or booking site.',
     inputSchema: {
       trip_id: z.string().max(40),
       leg_key: z.string().max(80),
@@ -805,12 +807,12 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     back: z.string().max(160).optional().describe('Flight home: numbers and times'),
     stops: z.number().int().min(0).max(6).optional().describe('Most changes in either direction'),
     link: z.string().url().max(2000).optional(),
-    source: z.string().min(1).max(40).describe('Where the fare was found, e.g. the flight search tool or site'),
+    source: z.string().min(1).max(40).describe('Where the fare was found, e.g. the airline or Aviasales'),
   });
 
   server.registerTool('save_flight_deals', {
     title: 'Save flight deals',
-    description: 'Saves return fares found with any flight search to the traveller\'s new-trip draft, for one country, so the planner can compare them and start a trip from one. Fares from the same source for the same airports that leave in the same months are replaced.',
+    description: 'Saves return fares, such as ones the traveller found or picked, to the traveller\'s new-trip draft, for one country, so the planner can compare them and start a trip from one. Fares from the same source for the same airports that leave in the same months are replaced.',
     inputSchema: { country: z.string().min(2).max(60), deals: z.array(dealIn).min(1).max(10) },
     annotations: { title: 'Save flight deals', readOnlyHint: false, destructiveHint: false },
   }, mine(async ({ country, deals }) => {

@@ -102,7 +102,7 @@ export function registerHotelTools(server, { env, owner, store, mine, noTrip, vi
 
   server.registerTool('choose_stay', {
     title: 'Choose a hotel for a stop',
-    description: 'Saves the hotel or other place to stay the traveller picked for one stop of a trip, identified by stay_key from the trip\'s stays, with its name, price and booking link. The offer can come from any hotel search. Booking itself happens on Booking.com or the hotel\'s own site; set booked when the traveller says it is booked.',
+    description: 'Saves the hotel or other place to stay the traveller picked for one stop of a trip, identified by stay_key from the trip\'s stays, with its name, price and booking link, such as a place the traveller found through the stop\'s Booking.com search from hotel_link. Booking itself happens on Booking.com or the hotel\'s own site; set booked when the traveller says it is booked.',
     inputSchema: {
       trip_id: z.string().max(40),
       stay_key: z.string().max(160),

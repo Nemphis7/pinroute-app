@@ -152,10 +152,12 @@ test('a stop\'s hotel: a Booking.com search for its nights, Claude\'s pick saved
   const link = new URL(await page.evaluate(() => window.__links.at(-1)));
   assert.equal(link.searchParams.get('ss'), 'Koh Lanta, Thailand');
   assert.equal(link.searchParams.get('group_adults'), '2');
-  await stay.getByRole('button', { name: 'Ask Claude' }).click();
+  await stay.getByRole('button', { name: 'Ask Claude where to stay' }).click();
   await page.waitForFunction(() => window.__messages.length > 1);
   const key = (await server()).stays.find((x) => x.place === 'Koh Lanta').key;
   assert.ok((await lastMessage()).includes(`choose_stay (trip_id "${tripId}", stay_key "${key}")`));
+  assert.ok((await lastMessage()).includes(`hotel_link (trip_id "${tripId}")`), 'hotels come from Pinroute\'s own Booking.com search');
+  assert.match(await lastMessage(), /use only Pinroute's own tools and what you know, not other travel tools or booking sites/);
   await client.callTool({ name: 'choose_stay', arguments: { trip_id: tripId, stay_key: key, name: 'Lanta Sand Resort', price: 240, currency: 'EUR', source: 'Booking.com', link: 'https://www.booking.com/hotel/th/lanta-sand.html' } });
   await stay.getByRole('button', { name: 'Refresh' }).click();
   await stay.locator('.stay-ticket', { hasText: 'Lanta Sand Resort' }).waitFor();
@@ -192,6 +194,7 @@ test('a ferry: asks Claude how to get there, then marks it booked', { skip }, as
   await frame().getByRole('button', { name: 'Ask Claude how to get there' }).click();
   await page.waitForFunction(() => /How do I get from Koh Phi Phi to Koh Lanta/.test(window.__messages.at(-1).content[0].text));
   assert.ok((await lastMessage()).includes(`mark_leg (trip_id "${tripId}", leg_key "${ferry.key}")`));
+  assert.match(await lastMessage(), /From what you know.*use only Pinroute's own tools/s, 'getting around is answered without other travel tools');
   // Claude's answer shows in the planner, under the ferry, with its links and a box for a follow-up
   const key = `${tripId}|route|${ferry.key}`;
   assert.ok((await lastMessage()).includes(`show_answer (key "${key}")`));
