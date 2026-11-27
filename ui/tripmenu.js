@@ -1,12 +1,12 @@
 // Looking after a trip: rename it and change its details, move it to other flights, or delete it; and a question
 // before anything that can't be undone. Each opens as a dialog over the planner. The trip menu sits in the trip's
 // header full screen; the start screen's trip rows have Rename and Delete.
-import { MoreHorizontal, Pencil, Trash2, Plane, X, MessageSquare, ArrowRight } from 'lucide';
-import { call, render, show, tell, ask, waiting, nav } from './core.js';
+import { MoreHorizontal, Pencil, Trash2, Plane, X, MessageSquare, ArrowRight, CalendarPlus, Copy, Download } from 'lucide';
+import { app, call, render, show, tell, ask, waiting, nav } from './core.js';
 import { h, icon, day, money, nightsTxt, days, plural } from './dom.js';
 import { dealPP } from '../src/discover.mjs';
 
-const D = { kind: null };                       // the open dialog: 'edit', 'confirm' or 'fares'
+const D = { kind: null };                       // the open dialog: 'edit', 'confirm', 'fares' or 'calendar'
 const M = { open: false };                      // the trip menu
 const close = () => { D.kind = null; render(); };
 const busy = (on) => { D.busy = on; render(); };
@@ -15,9 +15,11 @@ const busy = (on) => { D.busy = on; render(); };
 export function tripMenu(trip) {
   const item = (ic, label, fn) => h('button', { role: 'menuitem', class: 'mi row-mi', onclick: () => { M.open = false; fn(); } }, icon(ic), label);
   return h('div', { class: 'trips-wrap trip-menu' },
+    h('button', { class: 'ghost', id: 'trip-cal', 'aria-label': 'Add to calendar', title: 'Add this trip to Apple, Google or another calendar app', onclick: () => openCalendar(trip) }, icon(CalendarPlus), 'Add to calendar'),
     h('button', { class: 'ghost', id: 'trip-menu', 'aria-haspopup': 'menu', 'aria-expanded': String(M.open), onclick: () => { M.open = !M.open; render(); } }, icon(MoreHorizontal), 'Trip'),
     M.open ? h('div', { class: 'menu right', role: 'menu', 'aria-label': 'Trip' },
       item(Pencil, 'Rename and details…', () => openEdit(trip)),
+      item(CalendarPlus, 'Add to calendar…', () => openCalendar(trip)),
       trip.ticket && trip.countryId ? item(Plane, 'Change flights…', () => openFares(trip)) : null,
       item(Trash2, 'Delete trip…', () => openDelete(trip))) : null);
 }
@@ -155,6 +157,56 @@ function faresDialog() {
   ]);
 }
 
+// ---------------------------------------------------------------- the trip in the traveller's own calendar app
+// One secret link per trip: Apple Calendar subscribes to it as webcal:, Google Calendar (and so Android) adds it by URL,
+// any other app takes the .ics file. Subscribed calendars follow later changes to the trip by themselves.
+export async function openCalendar(trip) {
+  Object.assign(D, { kind: 'calendar', trip, busy: true, err: '', links: null, copied: false, off: false });
+  render();
+  await calendarCall('get');
+}
+async function calendarCall(action) {
+  D.busy = true; D.err = ''; render();
+  try {
+    const r = await call('calendar_link', { trip_id: D.trip.id, action });
+    D.links = r.structuredContent?.links || null;
+    D.off = action === 'stop';
+    if (!D.links && !D.off) D.err = 'This Pinroute server has no public address yet, so it can\'t give a calendar link. Ask Claude for the trip as an .ics file instead.';
+    if (action !== 'get') tell(`the traveller ${action === 'new' ? 'made a new calendar link (the old one stopped working)' : 'switched off the calendar link'} for "${D.trip.name}" (${D.trip.id}).`);
+  } catch (e) { D.err = e.message || String(e); }
+  D.busy = false; render();
+}
+function calendarDialog() {
+  const L = D.links, t = D.trip;
+  const open = async (url, what) => {
+    try { await app.openLink({ url }); tell(`the traveller added "${t.name}" (${t.id}) to ${what}.`); } catch (e) { D.err = e.message || String(e); render(); }
+  };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(L.ics); D.copied = true; } catch { document.getElementById('cal-url')?.select(); }
+    render();
+  };
+  const opt = (id, ic, title, sub, url, what) => h('button', { class: 'cal-opt', id, disabled: D.busy, onclick: () => open(url, what) },
+    h('span', { class: 'kind-ic' }, icon(ic)), h('span', { class: 'pick-t' }, h('span', { class: 'pname', text: title }), h('span', { class: 'kind', text: sub })));
+  return box('Add to your calendar', [
+    h('p', { class: 'meta', text: `Every stop of "${t.name}" with its dates and hotel, each flight, ferry and drive, and the tours you planned for a day, as events in your own calendar.` }),
+    L ? h('div', { class: 'cal-opts' },
+      opt('cal-apple', CalendarPlus, 'Apple Calendar', 'iPhone, iPad and Mac', L.webcal, 'Apple Calendar'),
+      opt('cal-google', CalendarPlus, 'Google Calendar', 'Android phones and the web', L.google, 'Google Calendar'),
+      opt('cal-file', Download, 'Calendar file (.ics)', 'Outlook and other apps', L.ics, 'a calendar file')) : null,
+    L ? field('Calendar address', h('div', { class: 'cal-url' },
+      h('input', { id: 'cal-url', type: 'text', readonly: true, value: L.ics, onfocus: (e) => e.target.select() }),
+      h('button', { class: 'ghost', onclick: copy }, icon(Copy), D.copied ? 'Copied' : 'Copy')), 'cal-url') : null,
+    L ? h('p', { class: 'small', text: 'Your calendar follows the trip: changes you make in Pinroute show up there by themselves, usually within a few hours. Anyone with this address can see the trip.' }) : null,
+    D.off ? h('p', { class: 'note', text: 'The calendar link is off. Calendars that subscribed to it stop updating.' }) : null,
+    !L && !D.off && D.busy ? h('p', { class: 'meta busy', text: 'Making your calendar link…' }) : null,
+  ], [
+    L ? h('button', { class: 'ghost', disabled: D.busy, onclick: () => calendarCall('new') }, 'New link') : null,
+    L ? h('button', { class: 'ghost', disabled: D.busy, onclick: () => calendarCall('stop') }, 'Turn off') : D.off ? h('button', { class: 'ghost', disabled: D.busy, onclick: () => calendarCall('get') }, 'Turn on again') : null,
+    h('span', { class: 'grow' }),
+    h('button', { class: 'primary', onclick: close }, 'Done'),
+  ].filter(Boolean));
+}
+
 // ---------------------------------------------------------------- the dialog frame
 const field = (label, control, id) => h('label', { class: 'field', for: id }, h('span', { text: label }), control);
 function box(title, body, actions) {
@@ -169,5 +221,6 @@ export function tripDialog() {
   if (D.kind === 'edit') return editDialog();
   if (D.kind === 'confirm') return confirmDialog();
   if (D.kind === 'fares') return faresDialog();
+  if (D.kind === 'calendar') return calendarDialog();
   return null;
 }

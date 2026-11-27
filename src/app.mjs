@@ -17,6 +17,7 @@ import { flightProvider } from './providers/index.mjs';
 import * as tp from './providers/travelpayouts.mjs';
 import * as acts from './providers/activities.mjs';
 import { airlineName, withAirlineName, namedFare } from './airlines.mjs';
+import * as cal from './calendar.mjs';
 import * as hotels from './hotels.mjs';
 import { applyFilters, sortFares, dedupe, facets } from './flightfilter.mjs';
 
@@ -105,6 +106,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       flights: { provider: provider.name, live: provider.name !== 'Demo data', partnerLinks: tp.linksOn(env) },
       hotels: { partnerLinks: hotels.linksOn(env) },
       activities: { on: acts.configured(env), partnerLinks: tp.linksOn(env) },
+      calendar: { links: cal.calendarLinks(trip.calendar?.token, env), hosted: !!cal.publicBase(env) },
     };
   }
   // The map goes in _meta: the planner draws it, the model never needs the coastline
@@ -975,6 +977,45 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     }));
   }
 
+  // ---- the trip in the traveller's own calendar app
+  const calText = (trip, links, fresh) => {
+    const n = cal.tripEvents(trip, {}).events.length;
+    return [`${fresh ? 'A new calendar link' : 'The calendar link'} for "${trip.name}" (${trip.start} to ${endDate(trip)}): an event for each stop, flight, ferry and drive, with the hotels and the dated tours and activities saved for it.`,
+      `Apple Calendar (iPhone, iPad, Mac): ${links.webcal}`,
+      `Google Calendar, which also shows it on Android: ${links.google}`,
+      `The calendar file itself, for any other app: ${links.ics}`,
+      'Subscribed this way, the calendar follows changes to the trip (calendar apps check every few hours). Anyone with the link can see the trip; a new link stops the old one.',
+      n ? '' : 'The trip has no events yet.'].filter(Boolean).join('\n');
+  };
+  server.registerTool('calendar_link', {
+    title: 'Add a trip to my calendar',
+    description: 'Gives a link that adds a saved trip to the traveller\'s own calendar app (Apple Calendar, Google Calendar on Android or the web, Outlook and others): an all-day event for each stop with its hotel and local picks, an event for each flight, ferry and drive at its times when known, and each saved tour or activity that has a date. '
+      + 'The calendar is a subscription, so later changes to the trip show up by themselves. action "new" makes a new link and stops the old one; "stop" switches the link off.',
+    inputSchema: { trip_id: z.string().max(40), action: z.enum(['get', 'new', 'stop']).optional().describe('"get" (default) gives the link, making one the first time') },
+    annotations: { title: 'Add a trip to my calendar', readOnlyHint: false, destructiveHint: false },
+  }, mine(async ({ trip_id, action = 'get' }) => {
+    const t = store.getTrip(owner, trip_id);
+    if (!t) return noTrip(trip_id);
+    if (action === 'stop') {
+      if (!t.calendar) return { content: [text(`"${t.name}" has no calendar link.`)], structuredContent: { trip_id, links: null } };
+      const { calendar, ...rest } = t;
+      store.putTrip(owner, rest);
+      return { content: [text(`The calendar link for "${t.name}" is off. Calendars subscribed to it stop updating and lose its events.`)], structuredContent: { trip_id, links: null } };
+    }
+    if (!cal.publicBase(env)) {
+      // Running on the traveller's own computer: no address a calendar app could reach, so the file itself
+      const ics = cal.tripCalendar(t, Object.fromEntries(schedule(t).map((s) => [s.place, store.getPicks(owner, s.place)])));
+      return { content: [text(`This Pinroute server has no public address (PUBLIC_URL is not set), so it can't give a calendar link. The trip as an .ics calendar file:\n\n${ics}`)], structuredContent: { trip_id, links: null, ics } };
+    }
+    let trip = t, fresh = false;
+    if (!t.calendar?.token || action === 'new') {
+      trip = store.putTrip(owner, { ...t, calendar: { token: cal.newCalendarToken(), created: new Date().toISOString() } });
+      fresh = action === 'new';
+    }
+    const links = cal.calendarLinks(trip.calendar.token, env);
+    return { content: [text(calText(trip, links, fresh))], structuredContent: { trip_id, name: trip.name, links } };
+  }));
+
   // ---- local picks: Claude researches on the traveller's own plan, this server keeps the result
   const pick = z.object({
     name: z.string().min(1).max(80),
@@ -985,6 +1026,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     book_url: z.string().url().max(2000).optional().describe('For a tour or ticket: where to book it, e.g. its GetYourGuide or Klook link from find_activities'),
     price_from: z.number().nonnegative().max(100000).optional(),
     currency: CURRENCY.optional(),
+    date: DATE.optional().describe('For a tour or ticket the traveller plans on a set day: that day, so it shows in their calendar'),
+    time: z.string().max(20).optional().describe('Its start time as HH:MM local, or "HH:MM–HH:MM"'),
   });
 
   server.registerTool('save_local_picks', {
