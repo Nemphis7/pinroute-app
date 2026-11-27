@@ -8,7 +8,7 @@ export const name = 'Amadeus Travel Builder';
 
 const CABIN = { economy: 'ECONOMY', premium: 'PREMIUM_ECONOMY', business: 'BUSINESS', first: 'FIRST' };
 
-export function buildUrl({ origin, destination, date, returnDate, adults = 1, cabin = 'economy', nonstop = false, currency = 'EUR' }, base) {
+export function buildUrl({ origin, destination, date, returnDate, adults = 1, children = 0, infants = 0, cabin = 'economy', nonstop = false, currency = 'EUR' }, base) {
   const o = origin.toUpperCase(), d = destination.toUpperCase();
   const q = new URLSearchParams({
     origins: returnDate ? `${o},${d}` : o,            // positional: leg i = origins[i] → destinations[i] on dates[i]
@@ -19,9 +19,11 @@ export function buildUrl({ origin, destination, date, returnDate, adults = 1, ca
     adults: String(adults),
     travel_class: CABIN[cabin] || 'ECONOMY',
     currency,
-    number_of_results: '10',                           // per airline; a search over every airline can return hundreds
+    number_of_results: '20',                           // per airline: enough to hold its cheapest fares after Pinroute's own filters
   });
-  if (nonstop) q.set('nonstop', 'true');
+  if (children) q.set('children', String(children));
+  if (infants) q.set('infants', String(infants));
+  if (nonstop) q.set('nonstop', 'true');             // a hint: each airline decides whether to apply it, so stops are filtered again later
   return `${base.replace(/\/$/, '')}/api/v3/search/?${q}`;
 }
 
@@ -93,7 +95,7 @@ export async function searchFlights(query, { fetchImpl = fetch, env = process.en
   const fares = (j.results || []).map((r, i) => mapResult(r, i, j.meta?.carriers)).filter((f) => f.total != null).sort((a, b) => a.total - b.total);
   const noOffers = Object.keys(j.errors || {}).length;
   return {
-    fares: fares.slice(0, 40),
+    fares: fares.slice(0, 80),
     note: noOffers ? `${noOffers} airline${noOffers === 1 ? '' : 's'} had no offer for this search.` : '',
     requestId: j.request_id || null,
   };
