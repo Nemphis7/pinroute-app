@@ -80,6 +80,16 @@ npm run check:amadeus LHR CDG    # any other pair
 
 Amadeus Travel Builder covers a set of mostly full-service airlines; many regional low-cost airlines aren't in it (Krabi → Bangkok returns nothing, for example). That is why the planner's **Ask Claude** buttons exist: Claude searches with whatever flight tools the traveller has connected (LetsFG's flexible-date search fits the new-trip flow best) and saves deals with `save_flight_deals` or a leg's pick with `choose_flight`. The planner's **Quick check** is the server's own Amadeus search: three departure dates per country, each counted toward the daily limit.
 
+## Flight search options
+
+`search_flights` takes filters, all optional: `max_stops` (0 for direct only; `nonstop` still works), `depart_after` / `depart_before` / `arrive_before` and `return_after` / `return_before` (local clock times, HH:MM), `airlines` and `exclude_airlines` (IATA codes or names), `bag_included`, `max_hours` per direction, `max_price` for everyone, plus `children`, `infants` and `sort` (`price`, `best`, `duration`, `departure`). Amadeus Travel Builder only takes `nonstop` as a hint (each airline decides), so every filter is applied by Pinroute on the offers that come back (`src/flightfilter.mjs`). The result carries `facets` (airlines, cheapest per number of changes, price range, offers with a bag) for every offer on the date, so a filter bar can offer only choices that change something.
+
+**Cheapest date:** `flex_days` (1–3) also searches that many days before and after; a return keeps its number of nights. The result has a `calendar` with the cheapest Amadeus fare and the Aviasales price for each date, and `cheapest`. Each date is one search toward the daily limit.
+
+**Two quotes:** with Travelpayouts set up, every search also looks up Aviasales's recent price for the same route and dates (one recent-price look-up per date) and returns `compare`: the cheapest Amadeus fare, the Aviasales price with its partner link, which is cheaper and by how much. Only the filters Aviasales data can answer apply to it (changes and airline). Aviasales prices are what travellers found in the last days, not live; live Aviasales search needs Travelpayouts to approve the Flight Search API.
+
+`scan_flight_deals` takes up to 6 departure dates in a window and `max_stops` for live fares.
+
 ## Travelpayouts: recent prices and partner links
 
 Amadeus has no low-cost airlines. Travelpayouts, Aviasales's partner network, fills that gap for prices and pays a commission on bookings:

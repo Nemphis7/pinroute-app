@@ -10,8 +10,8 @@ export async function fakeTravelpayouts({ token = 'tp-test' } = {}) {
   const add = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
   const entry = (o, d, out, back, price) => ({
     origin: o, destination: d, origin_airport: o, destination_airport: d, price, airline: 'VJ', flight_number: '58',
-    departure_at: `${out}T10:15:00+01:00`, return_at: `${back}T21:40:00+07:00`, transfers: 1, return_transfers: 1,
-    duration: 1500, duration_to: 760, duration_back: 740, link: `/search/${o}${out.slice(8, 10)}${out.slice(5, 7)}${d}${back.slice(8, 10)}${back.slice(5, 7)}1?t=VJ1`,
+    departure_at: `${out}T10:15:00+01:00`, return_at: back ? `${back}T21:40:00+07:00` : undefined, transfers: 1, return_transfers: back ? 1 : undefined,
+    duration: 1500, duration_to: 760, duration_back: back ? 740 : undefined, link: `/search/${o}${out.slice(8, 10)}${out.slice(5, 7)}${d}${back ? `${back.slice(8, 10)}${back.slice(5, 7)}` : ''}1?t=VJ1`,
   });
   const authed = (req, res) => {
     if (req.headers['x-access-token'] !== token) { res.status(401).json({ success: false, error: 'Unauthorized' }); return false; }

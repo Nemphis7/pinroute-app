@@ -909,3 +909,30 @@ input, textarea, select { scroll-margin-top: var(--s-6); }
 @keyframes nudge { 0%, 100% { box-shadow: 0 1px 2px rgb(11 110 133 / 0.25), 0 4px 12px rgb(11 110 133 / 0.18); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent), 0 4px 12px rgb(11 110 133 / 0.18); } }
 .rl-leg.up .state { display: none; }
 .stage .clouds ellipse { fill: rgb(10 30 40 / 0.035); }
+/* ---- flight results: two quotes, the cheapest day, filters */
+.quotes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+.quote { border: 1px solid var(--line); border-radius: var(--r-1); padding: var(--s-3); background: var(--paper); display: grid; gap: 2px; align-content: start; justify-items: start; box-shadow: var(--sh-1); }
+.quote.win { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent-soft) 55%, var(--paper)); }
+.quote .qsrc { font-size: 12px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+.quote .qprice { font-size: 22px; font-weight: var(--medium); font-variant-numeric: tabular-nums; }
+.quote .qprice.none { color: var(--ink-3); }
+.quote .pill { margin-top: var(--s-1); }
+.dstrip { display: grid; gap: var(--s-1); }
+.dbars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--s-1); align-items: end; height: 112px; }
+.dbar { display: grid; grid-template-rows: auto 1fr auto; height: 100%; text-align: center; gap: 2px; }
+.dbar .dfill { align-self: end; width: 100%; border-radius: 6px 6px 2px 2px; background: var(--paper-2); border: 1px solid var(--line); transition: height var(--fast) var(--ease); }
+.dbar.low .dfill { background: var(--accent); border-color: var(--accent); }
+.dbar.here .dfill { outline: 2px solid var(--ink-2); outline-offset: 1px; }
+.dbar .dprice { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.dbar.low .dprice { color: var(--accent); font-weight: var(--medium); }
+.dbar .dday { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.dbar.here .dday { color: var(--ink); font-weight: var(--medium); }
+.ffilters { display: grid; gap: var(--s-2); }
+.frow { display: flex; flex-wrap: wrap; gap: var(--s-1); align-items: center; }
+.frow.airl { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.frow.airl .pill { white-space: nowrap; }
+.pill.toggle { cursor: pointer; }
+.pill.toggle[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.fcount { margin-left: auto; }
+@media (max-width: 420px) { .quotes { grid-template-columns: 1fr; } .dbar .dprice { font-size: 10px; } }
+@media (prefers-reduced-motion: reduce) { .dbar .dfill { transition: none; } }
