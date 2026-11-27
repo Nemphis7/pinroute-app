@@ -13,6 +13,10 @@ import { h, icon, day, dm, longDay, span, money, nightsTxt, plural, today } from
 import { worldSvg, legend } from './world.js';
 import { openAirMap } from './airmap.js';
 import { openConfirm } from './tripmenu.js';
+import { scene, kindOfTags } from './scene.js';
+
+// A country's postcard, from what it is known for
+const destArt = (d, w = 400, hgt = 200, sky) => scene(d.name, kindOfTags(d.tags), { w, h: hgt, sky });
 
 const N = { view: null, d: null, homes: [], deals: {}, flights: {}, seq: 0, all: false, sort: 'deal', scan: {}, q: '', air: { q: '', list: [] }, regionsOpen: false, mx: {} };
 const ICON = { city: Building2, culture: Landmark, nature: Trees, beach: Waves };
@@ -73,6 +77,8 @@ export function newCard() {
   else status = d.way === 'where' ? 'Next: choose the country' : 'Next: where is good then';
   return {
     title: target ? `New trip: ${target.name}` : 'New trip', sub, status,
+    eyebrow: d.step === 'flights' ? 'Flight deals' : d.step === 'where' ? 'Where is good then' : d.step === 'season' ? 'Best time' : 'New trip',
+    art: target ? { seed: target.name, kind: kindOfTags(target.tags), sky: 'golden' } : { seed: 'New trip', kind: 'beach', sky: 'tropic' },
     side: worldSvg(target ? { mode: 'pick', target: target.id, mini: true } : { months: months(), compare: d.compare, regions: d.regions, mini: true }),
   };
 }
@@ -270,6 +276,7 @@ function destRow({ d, fit, hours, cost }, i, ms) {
   const on = N.d.compare.includes(d.id), [, fl] = fitLabel(fit), bf = budgetFit(cost, N.d.budget);
   return h('li', {}, h('label', { class: `dest${on ? ' on' : ''}` },
     h('input', { type: 'checkbox', checked: on, 'aria-label': `Compare ${d.name}`, onchange: () => toggleCompare(d.id) }),
+    h('span', { class: 'dthumb' }, destArt(d, 160, 160)),
     h('div', { class: 'dbody' },
       h('div', { class: 'dname' }, h('b', { text: d.name }), h('span', { class: 'small', text: d.region }), i < 3 && fit >= 0.6 ? h('span', { class: 'tag', text: 'Top pick' }) : null),
       h('p', { class: 'why', text: d.why }),
@@ -332,7 +339,8 @@ function flightsStep() {
 
 function bestBanner(x) {
   const dl = dealLabel(dealRatio(x.best));
-  return h('section', { class: 'banner' },
+  return h('section', { class: 'banner art' },
+    h('div', { class: 'hero-art' }, destArt(x.d, 900, 220, 'golden')), h('div', { class: 'hero-shade' }),
     h('p', { class: 'eyebrow', text: 'Best deal right now' }),
     h('div', { class: 'bhead' }, h('h3', { text: `${x.d.name} from ${money(dealPP(x.best), x.best.currency)} per person` }), dl ? h('span', { class: `badge ${dl[0]}`, text: dl[1] }) : null),
     h('p', { class: 'meta', text: `${fitLabel(x.fit)[1]} · ${day(x.best.depart)} → ${day(x.best.return)} · ${x.best.airline} · via ${x.best.source}` }),
@@ -353,6 +361,7 @@ function countryDeals({ d, list, fit }) {
     N.flights.recent ? h('button', { class: 'ghost', disabled: !N.homes.length, onclick: () => quickAll([d.id], 'recent') }, 'Check recent prices') : null,
     h('button', { class: 'ghost', disabled: !N.homes.length, onclick: () => quickAll([d.id], 'live') }, N.flights.live ? 'Check airline fares' : 'Check demo fares'));
   return h('article', { class: 'country', id: `deals-${d.id}` },
+    h('div', { class: 'c-art' }, destArt(d, 800, 120)),
     h('header', {}, h('div', {}, h('h3', { text: N.d.focus?.[d.id] ? `${d.name}: ${N.d.focus[d.id].area}` : d.name }),
       h('p', { class: 'small', text: N.d.focus?.[d.id] ? `${d.region} · fares to ${N.d.focus[d.id].airports.join(', ')}` : `${d.region} · arrive at ${d.gw} or another airport` })),
       h('span', { class: 'fit' }, h('i', { class: `sw f${level(fit)}` }), fl)),
@@ -530,7 +539,8 @@ function seasonStep() {
     N.scan[`y|${d.id}`]?.error ? h('p', { class: 'note warn', text: N.scan[`y|${d.id}`].error }) : null,
     waiting.months ? h('p', { class: 'note' }, 'Claude is searching with your flight tools; fares appear under each month as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
     ...check.map((mo) => N.scan[`m|${mo.ym}`]?.error ? h('p', { class: 'note warn', text: `${MONTHS[mo.m]}: ${N.scan[`m|${mo.ym}`].error}` }) : null),
-    best ? h('section', { class: 'banner' },
+    best ? h('section', { class: 'banner art' },
+      h('div', { class: 'hero-art' }, destArt(d, 900, 220, 'golden')), h('div', { class: 'hero-shade' }),
       h('p', { class: 'eyebrow', text: 'Cheapest good month' }),
       h('h3', { text: `${MONTHS[best.m]} ${best.year}: from ${money(dealPP(cheapest(best)), cheapest(best).currency)} per person` }),
       h('p', { class: 'meta', text: `${W[d.months[best.m]][1]} weather · ${day(cheapest(best).depart)} → ${day(cheapest(best).return)} · ${cheapest(best).airline}` }),
