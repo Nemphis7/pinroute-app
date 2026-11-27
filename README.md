@@ -31,7 +31,8 @@ Claude (the traveller's own plan)
 | `search_flights` | Airline fares for one day or a return, cheapest first; daily limit per person | reads |
 | `find_airports` | Airports by city, name or code, or within a distance of a point (with a map for the picker); works without signing in | reads |
 | `flight_link` | A link to compare and book a flight on Aviasales, as a partner link when Travelpayouts is set up | reads |
-| `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link | writes / reads |
+| `find_activities` | Tours, activities and tickets at a trip stop or place (Amadeus Travel Builder), popular or matching interests, budget, traveller type and day; each with GetYourGuide and Klook links, as partner links when Travelpayouts is set up; daily limit per person | reads |
+| `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link; a kept tour also has its booking link and price | writes / reads |
 | `delete_my_data` | Deletes everything the person saved | deletes |
 
 Every tool has a title and a read-only or destructive annotation, and its description says what it does without steering Claude, as the [directory review](https://claude.com/docs/connectors/building/review-criteria) asks.
@@ -57,9 +58,9 @@ All settings are environment variables: on Railway under **Variables**, locally 
 
 | Variable | What it does |
 | --- | --- |
-| `AMADEUS_API_KEY` | Live fares from Amadeus Travel Builder. Without it, demo fares. |
+| `AMADEUS_API_KEY` | Live fares and tours and activities from Amadeus Travel Builder. Without it, demo fares and no activity search. `ACTIVITY_LIMIT_PER_DAY`: activity searches per person per day (default 100). |
 | `TRAVELPAYOUTS_TOKEN` | Recent prices from Aviasales (Travelpayouts Data API), low-cost airlines included, and the Links API. Profile → API token. |
-| `TRAVELPAYOUTS_MARKER`, `TRAVELPAYOUTS_TRS` | Your Travelpayouts partner ID and project ID: links to Aviasales become your partner links. `RECENT_LIMIT_PER_DAY`: look-ups of recent prices per person per day (default 200). |
+| `TRAVELPAYOUTS_MARKER`, `TRAVELPAYOUTS_TRS` | Your Travelpayouts partner ID and project ID: links to Aviasales, GetYourGuide and Klook become your partner links (the project must be connected to each program; a link it can't convert stays a plain link). `RECENT_LIMIT_PER_DAY`: look-ups of recent prices per person per day (default 200). |
 | `AUTH_ISSUER` | Turns sign-in on: the sign-in service's issuer URL, e.g. `https://<name>.authkit.app`. |
 | `PUBLIC_URL` | The server's public address, e.g. `https://pinroute.app`. On Railway, the generated domain is used until you set this. |
 | `MCP_SECRET` | Without sign-in only: makes the address `/mcp/<secret>`, so only people with the link can connect. Ignored once sign-in is on. |

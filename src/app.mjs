@@ -18,7 +18,7 @@ import * as tp from './providers/travelpayouts.mjs';
 import * as acts from './providers/activities.mjs';
 import { airlineName, withAirlineName, namedFare } from './airlines.mjs';
 
-export const VERSION = '0.7.0';
+export const VERSION = '0.8.0';
 export const PLANNER_URI = 'ui://pinroute/planner';
 
 const realDate = (s) => { const d = new Date(`${s}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
@@ -100,6 +100,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       legs: legList,
       picks,
       flights: { provider: provider.name, live: provider.name !== 'Demo data', partnerLinks: tp.linksOn(env) },
+      activities: { on: acts.configured(env), partnerLinks: tp.linksOn(env) },
     };
   }
   // The map goes in _meta: the planner draws it, the model never needs the coastline
@@ -144,7 +145,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   }));
 
   registerAppResource(server, 'Pinroute planner', PLANNER_URI, { description: 'Interactive trip planner: route, flights and local picks' }, async () => ({
-    contents: [{ uri: PLANNER_URI, mimeType: RESOURCE_MIME_TYPE, text: plannerHtml() }],
+    // Tour photos come from Amadeus's image host; the host's sandbox loads only images from domains named here
+    contents: [{ uri: PLANNER_URI, mimeType: RESOURCE_MIME_TYPE, text: plannerHtml(), ...(acts.configured(env) ? { _meta: { ui: { csp: { resourceDomains: acts.IMAGE_DOMAINS } } } } : {}) }],
   }));
 
   // ---- trips

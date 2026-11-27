@@ -11,6 +11,8 @@ import * as tp from './travelpayouts.mjs';
 
 export const name = 'Amadeus Travel Builder';
 export const configured = (env = process.env) => !!env.AMADEUS_API_KEY;
+// Where product photos are served from (Holibob, Amadeus's activity supplier); the planner declares these to its host
+export const IMAGE_DOMAINS = ['https://images.holibob.tech'];
 
 const base = (env) => (env.AMADEUS_GATEWAY_URL || 'https://api.amadeus.com').replace(/\/$/, '');
 const coded = (code, message) => Object.assign(new Error(message), { code });
