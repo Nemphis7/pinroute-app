@@ -16,6 +16,7 @@ import { airMapDialog } from './airmap.js';
 import { tripMenu, tripDialog } from './tripmenu.js';
 import { applyInsets } from './keyboard.js';
 import { scene, kindOf } from './scene.js';
+import { filtered, filterBar, quotes, dateStrip } from './fares.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
@@ -24,7 +25,7 @@ let MINI = null;           // the same, small and wide, for the card in the chat
 let sel = null;            // { kind: 'stop', index } or { kind: 'leg', key }
 let pane = 'list';         // one-pane layouts: 'list' or 'detail'
 const tours = {};          // trip id|stop|place → { state, list, more, error, kept }
-const fares = {};          // leg key → { state, fares, note, live, error, direct, sort }
+const fares = {};          // leg key → { state, fares, note, live, error, filter, sort, facets, calendar, compare }
 
 const KIND = { food: 'Food', drink: 'Drinks', beach: 'Beach', view: 'View', activity: 'Activity', stay: 'Stay', shop: 'Shopping', other: 'Other' };
 const KIND_ICON = { food: Utensils, drink: Wine, beach: Umbrella, view: Mountain, activity: Compass, stay: BedDouble, shop: ShoppingBag, other: Sparkles };
@@ -560,7 +561,7 @@ function flightBlock(l) {
       h('button', { class: 'ghost', onclick: () => openFlightLink(leg(l)) }, icon(ExternalLink), 'Compare on Aviasales')),
     V.flights.partnerLinks ? commissionNote() : null,
     waiting[`flights|${l.key}`] ? skeleton('Claude is searching with your flight tools; the flight you pick appears here.', 2) : null,
-    st.state === 'loading' ? skeleton('Searching airline fares…', 3) : null,
+    st.state === 'loading' ? skeleton('Searching airline fares for the day and the days around it, and Aviasales…', 3) : null,
     st.state === 'error' ? h('p', { class: 'note warn', text: st.error }) : null,
     st.state === 'done' ? faresBlock(l, st) : null,
   ].filter(Boolean);
@@ -593,22 +594,19 @@ function transferBlock(l) {
 }
 
 function faresBlock(l, st) {
+  const top = [quotes(st, (url) => app.openLink({ url }), (url) => app.openLink({ url })), dateStrip(st, l.date)].filter(Boolean);
   if (!st.fares.length) {
-    return h('p', { class: 'note' }, `No offers from ${st.live ? 'the airlines Amadeus covers' : 'this source'} on this route. `,
-      h('button', { class: 'link', onclick: () => askFlights(l) }, 'Ask Claude to search with your flight tools'));
+    return h('div', { class: 'block' }, ...top,
+      h('p', { class: 'note' }, `No offers from ${st.live ? 'the airlines Amadeus covers' : 'this source'} on this day. `,
+        h('button', { class: 'link', onclick: () => askFlights(l) }, 'Ask Claude to search with your flight tools')));
   }
-  let list = st.fares.slice();
-  if (st.direct) list = list.filter((f) => f.bounds.every((b) => b.stops === 0));
-  if (st.sort === 'time') list.sort((a, b) => a.bounds[0].minutes - b.bounds[0].minutes);
+  const list = filtered(st);
   return h('div', { class: 'block' },
-    h('div', { class: 'fbar' },
-      h('button', { 'aria-pressed': String(!!st.direct), onclick: () => { st.direct = !st.direct; render(); } }, 'Direct only'),
-      h('button', { 'aria-pressed': String(st.sort !== 'time'), onclick: () => { st.sort = 'price'; render(); } }, 'Cheapest'),
-      h('button', { 'aria-pressed': String(st.sort === 'time'), onclick: () => { st.sort = 'time'; render(); } }, 'Fastest'),
-      h('span', { class: 'small', text: `${list.length} of ${st.fares.length} · ${st.live ? V.flights.provider : 'demo data'}` })),
+    ...top,
+    filterBar(st, render, V.flights.provider),
     st.note ? h('p', { class: 'small', text: st.note }) : null,
     h('div', { class: 'fares' }, list.slice(0, 8).map((f) => fareCard(l, f))),
-    !list.length ? h('p', { class: 'small', text: 'No fares match. Turn off “Direct only”.' }) : null);
+    !list.length ? h('p', { class: 'small', text: 'No fares match these filters.' }) : null);
 }
 
 function fareCard(l, f) {
@@ -667,10 +665,12 @@ async function findFlights(l) {
   fares[l.key] = { ...(fares[l.key] || {}), state: 'loading' };
   render();
   try {
-    const r = await app.callServerTool({ name: 'search_flights', arguments: { origin: l.from, destination: l.to, date: l.date, adults: V.trip.adults } });
+    // Two days either side too, so the strip can show when a nearby day is cheaper; only the leg's own day can be chosen
+    const r = await app.callServerTool({ name: 'search_flights', arguments: { origin: l.from, destination: l.to, date: l.date, adults: V.trip.adults, flex_days: 2 } });
     if (r.isError) throw new Error(textOf(r) || 'The search failed.');
     const sc = r.structuredContent || {};
-    fares[l.key] = { ...fares[l.key], state: 'done', fares: sc.fares || [], note: sc.note || '', live: !!sc.live };
+    fares[l.key] = { ...fares[l.key], state: 'done', fares: (sc.fares || []).filter((f) => !f.date || f.date === l.date), note: sc.note || '', live: !!sc.live,
+      facets: sc.facets || null, calendar: sc.calendar || null, compare: sc.compare || null };
   } catch (e) {
     fares[l.key] = { ...fares[l.key], state: 'error', error: e.message || String(e) };
   }
