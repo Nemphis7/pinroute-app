@@ -598,13 +598,13 @@ function hotelBlock(x) {
         h('p', { class: 'small', text: [c.note, c.source ? `via ${c.source}` : null].filter(Boolean).join(' · ') || ' ' })),
       h('div', { class: 'tside' }, c.price != null ? h('span', { class: 'price', text: money(c.price, c.currency) }) : null,
         h('span', { class: 'small', text: nightsTxt(st.nights) }))) : null,
-    waiting[key] ? skeleton(`Claude is looking for places to stay in ${x.place}`, 2) : null,
+    waiting[key] ? skeleton(`Claude is suggesting where to stay in ${x.place}`, 2) : null,
     answerBlock(key, { poll: refresh }),
     h('div', { class: 'acts' },
       h('button', { class: c ? '' : 'primary', onclick: () => app.openLink({ url: c?.link || st.link }) }, icon(ExternalLink), c?.link ? 'Booking page' : 'Find hotels on Booking.com'),
       c ? h('button', { 'aria-pressed': String(!!c.booked), disabled: ui.busy, onclick: () => setStayBooked(st, !c.booked) }, icon(Check), c.booked ? 'Booked' : 'Mark booked') : null,
       c?.link ? h('button', { class: 'ghost', onclick: () => app.openLink({ url: st.link }) }, icon(ExternalLink), 'Compare on Booking.com') : null,
-      h('button', { class: 'ghost', onclick: () => askStay(x, st) }, icon(MessageSquare), c ? 'Ask Claude again' : 'Ask Claude'),
+      h('button', { class: 'ghost', onclick: () => askStay(x, st) }, icon(MessageSquare), 'Ask Claude where to stay'),
       c ? h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearStay(st, c) }, 'Remove') : null),
     V.hotels?.partnerLinks ? h('p', { class: 'small foot', text: 'Booking.com links carry Pinroute\'s partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.' }) : null);
 }
@@ -616,7 +616,7 @@ function askStay(x, st) {
   const before = JSON.stringify(st.chosen);
   const where = x.region ? `${x.place} (${x.region})` : x.place;
   return ask(`stay|${st.key}`,
-    `Find places to stay in ${where} from ${longDay(st.checkin)} to ${longDay(st.checkout)} (${nightsTxt(st.nights)}) for ${n} adult${n === 1 ? '' : 's'}, using my hotel search tools. Show me a few good options with price, rating and location, and when I pick one, save it to Pinroute with choose_stay (trip_id "${V.trip.id}", stay_key "${st.key}").`,
+    `Where should I stay in ${where} from ${longDay(st.checkin)} to ${longDay(st.checkout)} (${nightsTxt(st.nights)}), ${n} adult${n === 1 ? '' : 's'}? Tell me which area suits this trip and what kind of place to look for, from what you know, and give me Pinroute's Booking.com search for these dates with hotel_link (trip_id "${V.trip.id}"). When I tell you the place I picked, save it to Pinroute with choose_stay (trip_id "${V.trip.id}", stay_key "${st.key}").`,
     { poll: refresh, done: () => JSON.stringify(stayOf(x)?.chosen) !== before });
 }
 
@@ -699,7 +699,7 @@ function transferBlock(l) {
     h('div', { class: 'acts' },
       h('button', { class: l.booked ? '' : 'primary', onclick: () => askRoute(l) }, icon(MessageSquare), 'Ask Claude how to get there'),
       bookedButton(l)),
-    waiting[`route|${l.key}`] ? skeleton('Claude is looking up the ferries and transfers; the answer shows here.', 2) : null,
+    waiting[`route|${l.key}`] ? skeleton('Claude is working out how to get there; the answer shows here.', 2) : null,
     answerBlock(`route|${l.key}`, { poll: refresh }),
   ].filter(Boolean);
 }
@@ -797,13 +797,13 @@ function askPicks(x) {
   const before = (V.picks[x.place] || []).length;
   const where = x.region ? `${x.place} (${x.region})` : x.place;
   return ask(`picks|${x.place}`,
-    `Find local favourites in ${where} for my trip: what recent Reddit threads, TikTok and Instagram posts, and food and travel blogs recommend. Choose up to 10, each with its source link, then save them with save_local_picks (place: "${x.place}").`,
+    `Find local favourites in ${where} for my trip: what recent Reddit threads, TikTok and Instagram posts, and food and travel blogs recommend. Search the web for those posts and blogs. Choose up to 10, each with its source link, then save them with save_local_picks (place: "${x.place}").`,
     { poll: refresh, done: () => (V.picks[x.place] || []).length > before });
 }
 
 function askRoute(l) {
   return ask(`route|${l.key}`,
-    `How do I get from ${l.fromName} to ${l.toName} on ${longDay(l.date)}? Give me the ferry or transfer options with times, journey length, price and how to book. When I've booked, mark that leg booked in Pinroute with mark_leg (trip_id "${V.trip.id}", leg_key "${l.key}").`);
+    `How do I get from ${l.fromName} to ${l.toName} on ${longDay(l.date)}? From what you know, give me the ferry, train, bus or road options with their usual times, journey length, rough price and where to book, and say that times and prices are to be checked with the operator. When I've booked, mark that leg booked in Pinroute with mark_leg (trip_id "${V.trip.id}", leg_key "${l.key}").`);
 }
 
 // Redraws only when something changed, so a refresh in the background leaves the screen as it is
