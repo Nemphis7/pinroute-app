@@ -62,7 +62,7 @@ test('the best time to go fills every month from one look-up', { skip }, async (
   assert.equal(fake.calls.filter((c) => c.path === '/aviasales/v3/grouped_prices').length, 1);
 });
 
-test('a flight leg links to Aviasales for its route and date', { skip }, async () => {
+test('a flight search links to Aviasales for its route and date', { skip }, async () => {
   const t = (await client.callTool({ name: 'create_trip', arguments: { name: 'Hop', start: START, adults: 2, stops: [{ place: 'Krabi', nights: 2 }, { place: 'Bangkok', nights: 1 }] } })).structuredContent;
   const p2 = await browser.newPage({ viewport: { width: 1200, height: 1000 } });
   await p2.goto(`${srv.base}/__host`);
@@ -70,10 +70,12 @@ test('a flight leg links to Aviasales for its route and date', { skip }, async (
   const g = p2.frameLocator('#planner');
   await g.getByRole('button', { name: 'Open planner' }).click();
   await g.locator('.row.leg').first().click();
-  await g.getByRole('button', { name: 'Compare on Aviasales' }).click();
+  await g.getByRole('button', { name: 'Find flights' }).click();
+  await g.locator('.quotes').waitFor();
+  await g.locator('.quotes').getByRole('button', { name: /Aviasales/ }).click();
   await p2.waitForFunction(() => window.__links.length > 0);
-  const asked = fake.calls.filter((c) => c.path === '/links/v1/create').at(-1).body.links[0].url;
-  assert.equal(asked, `https://www.aviasales.com/search/KBV${addDays(START, 2).slice(8, 10)}${addDays(START, 2).slice(5, 7)}BKK2`);
+  const made = fake.calls.filter((c) => c.path === '/links/v1/create').flatMap((c) => c.body.links.map((x) => x.url));
+  assert.ok(made.some((u) => u.startsWith(`https://www.aviasales.com/search/KBV${addDays(START, 2).slice(8, 10)}${addDays(START, 2).slice(5, 7)}BKK`)), made.join(' '));
   assert.match(await g.locator('.detail').textContent(), /Pinroute may earn a commission/);
   await p2.close();
 });

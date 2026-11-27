@@ -97,14 +97,14 @@ test('Flights: a quick check prices every country, the best deal leads', { skip 
   assert.match(await frame().locator('.country .deal.main').first().textContent(), /per person · €[\d,]+ for 2/);
 });
 
-test('asks Claude to search with the traveller\'s own flight tools and shows what Claude saved', { skip }, async () => {
+test('asks Claude to search with Pinroute only and shows what was saved', { skip }, async () => {
   const before = await page.evaluate(() => window.__messages.length);
   await frame().getByRole('button', { name: 'Ask Claude to find deals' }).click();
   await page.waitForFunction((n) => window.__messages.length > n, before);
   const asked = await lastMessage();
-  assert.match(asked, /^Find return flights for my new trip in Pinroute: from .*\(FRA\).* staying 13–16 nights, for 2 adults\. Use my flight search tools/);
-  assert.match(asked, /save_flight_deals/);
-  await frame().getByText('Claude is searching with your flight tools').waitFor();
+  assert.match(asked, /^Find return flights for my new trip in Pinroute: from .*\(FRA\).* staying 13–16 nights, for 2 adults\. Search only with Pinroute's own scan_flight_deals/);
+  assert.match(asked, /don't use other flight tools/);
+  await frame().getByText('Claude is searching with Pinroute').waitFor();
   const d = await draft();
   const first = d.draft.compare[0];
   await client.callTool({ name: 'save_flight_deals', arguments: { country: first, deals: [{ from: 'FRA', to: 'BKK', depart: addDays(FROM, 1), return: addDays(FROM, 15), price: 300, currency: 'EUR', adults: 2, airline: 'Test Air', out: 'TA 1, 10:00 FRA → 06:00 BKK', source: 'LetsFG', link: 'https://letsfg.co/b/test' }] } });

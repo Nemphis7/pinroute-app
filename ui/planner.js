@@ -11,7 +11,7 @@ import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, 
 import { answerBlock } from './answer.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
 import { takeHome, homeCard, homeScreen } from './home.js';
-import { takeNew, newCard, newSteps, newScreen, newKey, openFlightLink, commissionNote, refresh as refreshNew } from './newtrip.js';
+import { takeNew, newCard, newSteps, newScreen, newKey, commissionNote, refresh as refreshNew } from './newtrip.js';
 import { navBar, navTabs } from './nav.js';
 import { airMapDialog } from './airmap.js';
 import { tripMenu, tripDialog } from './tripmenu.js';
@@ -645,12 +645,6 @@ function legDetail(l) {
 
 const bookedButton = (l) => h('button', { 'aria-pressed': String(l.booked), disabled: ui.busy, onclick: () => setBooked(l, !l.booked) }, icon(Check), l.booked ? 'Booked' : 'Mark booked');
 
-// A leg as an Aviasales search: the flight out of a return fare is searched as the return trip it is
-const leg = (l) => {
-  const t = V.trip.ticket;
-  if (l.kind === 'out' && t && l.chosen?.part === 'out') return { from: t.from, to: t.to, depart: t.depart, return: t.return, adults: V.trip.adults };
-  return { from: l.from, to: l.to, depart: l.date, adults: V.trip.adults };
-};
 
 function flightBlock(l) {
   if (l.chosen) {
@@ -659,29 +653,28 @@ function flightBlock(l) {
       h('div', { class: 'acts' },
         bookedButton(l),
         l.chosen.link ? h('button', { onclick: () => app.openLink({ url: l.chosen.link }) }, icon(ExternalLink), 'Booking page') : null,
-        l.chosen.part === 'return' ? null : h('button', { class: 'ghost', onclick: () => openFlightLink(leg(l)) }, icon(ExternalLink), 'Compare on Aviasales'),
-        h('button', { class: 'ghost', onclick: () => askFlights(l) }, icon(MessageSquare), 'Ask Claude again'),
+        l.chosen.part === 'return' ? null : findButton(l, ''),
         h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove')),
-      waiting[`flights|${l.key}`] ? skeleton('Claude is searching with your flight tools; the options show here.', 2) : null,
-      answerBlock(`flights|${l.key}`, { poll: refresh }),
-      V.flights.partnerLinks && l.chosen.part !== 'return' ? commissionNote() : null].filter(Boolean);
+      ...results(l)].filter(Boolean);
   }
-  const st = fares[l.key] || {};
-  const label = st.state === 'loading' ? 'Searching…' : st.state === 'done' ? 'Search again' : V.flights.live ? 'Airline fares' : 'Demo fares';
   return [
     l.stale ? h('div', { class: 'note warn' }, `A flight was chosen for ${day(l.stale.date)}, before the dates moved: ${l.stale.summary}, ${money(l.stale.price, l.stale.currency)}. Choose one for ${day(l.date)}. `,
       h('button', { class: 'link', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove it')) : null,
-    h('div', { class: 'acts' },
-      h('button', { class: 'primary', onclick: () => askFlights(l) }, icon(MessageSquare), 'Ask Claude to find flights'),
-      h('button', { disabled: st.state === 'loading', onclick: () => findFlights(l) }, label),
-      h('button', { class: 'ghost', onclick: () => openFlightLink(leg(l)) }, icon(ExternalLink), 'Compare on Aviasales')),
-    V.flights.partnerLinks ? commissionNote() : null,
-    waiting[`flights|${l.key}`] ? skeleton('Claude is searching with your flight tools; the options show here.', 2) : null,
-    answerBlock(`flights|${l.key}`, { poll: refresh }),
+    h('div', { class: 'acts' }, findButton(l, 'primary')),
+    ...results(l),
+  ].filter(Boolean);
+}
+
+// One button finds flights with Pinroute's own search: Amadeus airline fares and the Aviasales price, the days around too
+const findButton = (l, cls) => h('button', { class: cls || null, disabled: fares[l.key]?.state === 'loading', onclick: () => findFlights(l) }, icon(Plane), 'Find flights');
+function results(l) {
+  const st = fares[l.key] || {};
+  return [
     st.state === 'loading' ? skeleton('Searching airline fares for the day and the days around it, and Aviasales…', 3) : null,
     st.state === 'error' ? h('p', { class: 'note warn', text: st.error }) : null,
     st.state === 'done' ? faresBlock(l, st) : null,
-  ].filter(Boolean);
+    st.state === 'done' && V.flights.partnerLinks ? commissionNote() : null,
+  ];
 }
 
 // A chosen flight as a stub: codes and times when the summary carries them ("11:40 KBV → 12:55 DMK")
@@ -715,8 +708,7 @@ function faresBlock(l, st) {
   const top = [quotes(st, (url) => app.openLink({ url }), (url) => app.openLink({ url })), dateStrip(st, l.date)].filter(Boolean);
   if (!st.fares.length) {
     return h('div', { class: 'block' }, ...top,
-      h('p', { class: 'note' }, `No offers from ${st.live ? 'the airlines Amadeus covers' : 'this source'} on this day. `,
-        h('button', { class: 'link', onclick: () => askFlights(l) }, 'Ask Claude to search with your flight tools')));
+      h('p', { class: 'note', text: `No offers from ${st.live ? 'the airlines Amadeus covers' : 'this source'} on this day. Check the days around it above, or Aviasales.` }));
   }
   const list = filtered(st);
   return h('div', { class: 'block' },
@@ -800,13 +792,6 @@ async function findFlights(l) {
   render();
 }
 
-function askFlights(l) {
-  const n = V.trip.adults;
-  const before = JSON.stringify(l.chosen);
-  return ask(`flights|${l.key}`,
-    `Find flights from ${l.fromName} (${l.from}) to ${l.toName} (${l.to} or another airport nearby) on ${longDay(l.date)} for ${n} adult${n === 1 ? '' : 's'}, using my flight search tools. Show me the best options, and when I pick one, save it to Pinroute with choose_flight (trip_id "${V.trip.id}", leg_key "${l.key}").`,
-    { poll: refresh, done: () => JSON.stringify(legByKey(l.key)?.chosen) !== before, then: () => celebrate(`Claude saved a flight: ${l.from} → ${l.to}`, { kind: 'leg', key: l.key }) });
-}
 
 function askPicks(x) {
   const before = (V.picks[x.place] || []).length;

@@ -2,7 +2,7 @@
 //   I know when:  When (days off, length, airports) → Where (countries ranked for those months) → Flights (deals)
 //   I know where: Country → Best time (weather and fares by month) → Flights
 // Both end with "Plan <country> with this flight", which creates the trip from the fare. Fares come from Pinroute's
-// own airline search (a quick check) or from Claude, searching with the traveller's own flight tools.
+// own airline search (a quick check) or from Claude, searching with Pinroute's own tools.
 import { ArrowLeft, ArrowRight, MessageSquare, ExternalLink, X, Building2, Landmark, Trees, Waves, Search, MapPin, RotateCcw, Check } from 'lucide';
 import {
   REGIONS, DESTS, INTERESTS, INTEREST_NAME, LENGTHS, MONTHS, MON, destById, windowMonths, seasonFit, fitLabel, rankDests,
@@ -337,7 +337,7 @@ function flightsStep() {
         h('button', { disabled: off, onclick: () => quickAll(ids, 'live') }, scanning && !N.flights.recent ? 'Checking…' : liveLabel())),
       h('div', { class: 'sorter', role: 'group', 'aria-label': 'Sort' }, h('span', { class: 'small', text: 'Sort' }),
         [['deal', 'Deal'], ['price', 'Price'], ['weather', 'Weather']].map(([k, l]) => h('button', { 'aria-pressed': String(N.sort === k), onclick: () => { N.sort = k; render(); } }, l)))),
-    waiting.deals ? h('p', { class: 'note' }, 'Claude is searching with your flight tools; fares appear here as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
+    waiting.deals ? h('p', { class: 'note' }, 'Claude is searching with Pinroute; fares appear here as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
     answerBlock('deals', { poll: refresh }),
     !N.homes.length ? h('p', { class: 'note warn' }, 'Add a departure airport first. ', h('button', { class: 'link', onclick: () => goStep(d.way === 'where' ? 'season' : 'when') }, 'Add one')) : null,
     top ? bestBanner(top) : null,
@@ -440,7 +440,7 @@ async function compareRoutes(d, x, m) {
 }
 function askCompare(d, x, m) {
   const since = new Date().toISOString(), n = m.homes.length * m.tos.length;
-  ask(`cmp|${d.id}`, `For my new Pinroute trip to ${d.name}, compare return flights for ${plural(N.d.adults, 'adult')} leaving ${longDay(x.depart)} and coming back ${longDay(x.return)}: from ${m.homes.join(', ')} to ${m.tos.join(', ')} (${plural(n, 'route')}). Use my flight search tools. Save the best fare for each route with Pinroute's save_flight_deals (country "${d.name}"): the airports, dates, total price for all travellers, airline, flight numbers and times, the booking link and where you found it.`,
+  ask(`cmp|${d.id}`, `For my new Pinroute trip to ${d.name}, compare return flights for ${plural(N.d.adults, 'adult')} leaving ${longDay(x.depart)} and coming back ${longDay(x.return)}: from ${m.homes.join(', ')} to ${m.tos.join(', ')} (${plural(n, 'route')}). Search only with Pinroute's own scan_flight_deals (Amadeus airline fares and Aviasales prices), which saves the fares it finds; don't use other flight tools or sites.`,
     { poll: refresh, done: () => (N.deals[d.id] || []).filter((y) => y.at > since && y.depart === x.depart).length >= n, tries: 75 });
 }
 
@@ -490,7 +490,7 @@ function askDeals() {
   const d = N.d, rows = rowsFor(), since = new Date().toISOString();
   const names = rows.map((x) => x.d.name);
   const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
-  ask('deals', `Find return flights for my new trip in Pinroute: from ${fromText()} to ${list}, leaving between ${longDay(d.from)} and ${longDay(d.until)} and staying ${nightsRange()} nights, for ${plural(d.adults, 'adult')}. Use my flight search tools, with flexible dates where they offer them, and any airport in each country. For each country, save the 3 to 5 best fares with Pinroute's save_flight_deals: the airports, dates, total price for all travellers, airline, flight numbers and times, the booking link and where you found it.`,
+  ask('deals', `Find return flights for my new trip in Pinroute: from ${fromText()} to ${list}, leaving between ${longDay(d.from)} and ${longDay(d.until)} and staying ${nightsRange()} nights, for ${plural(d.adults, 'adult')}. Search only with Pinroute's own scan_flight_deals (Amadeus airline fares and Aviasales prices), which saves the fares it finds; don't use other flight tools or sites. Try each country's main airports.`,
     { poll: refresh, done: () => rows.every((x) => (N.deals[x.d.id] || []).some((y) => y.at > since)), tries: 75 });
 }
 
@@ -551,7 +551,7 @@ function seasonStep() {
       N.flights.recent ? h('button', { disabled: scanning || !N.homes.length, title: 'The cheapest fare Aviasales travellers found for each month ahead', onclick: () => quickYear(d) }, scanning ? 'Checking…' : 'Quick check: recent prices') : null,
       h('button', { disabled: scanning || !N.homes.length, onclick: () => quickMonths(d, check) }, scanning && !N.flights.recent ? 'Checking…' : N.flights.recent ? `Live airline fares (${check.map((mo) => MON[mo.m]).join(', ')})` : liveLabel())),
     N.scan[`y|${d.id}`]?.error ? h('p', { class: 'note warn', text: N.scan[`y|${d.id}`].error }) : null,
-    waiting.months ? h('p', { class: 'note' }, 'Claude is searching with your flight tools; fares appear under each month as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
+    waiting.months ? h('p', { class: 'note' }, 'Claude is searching with Pinroute; fares appear under each month as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
     answerBlock('months', { poll: refresh }),
     ...check.map((mo) => N.scan[`m|${mo.ym}`]?.error ? h('p', { class: 'note warn', text: `${MONTHS[mo.m]}: ${N.scan[`m|${mo.ym}`].error}` }) : null),
     best ? h('section', { class: 'banner art' },
@@ -591,7 +591,7 @@ async function quickYear(d) {
 }
 function askMonths(d, check) {
   const since = new Date().toISOString();
-  ask('months', `Find the cheapest return flights to ${d.name} from ${fromText()} for ${nightsRange()} nights, ${plural(N.d.adults, 'adult')}, leaving in each of these months: ${check.map((mo) => `${MONTHS[mo.m]} ${mo.year}`).join(', ')}. Use my flight search tools, with flexible dates where they offer them. For each month, save the 2 or 3 best fares with Pinroute's save_flight_deals (country "${d.name}"): the airports, dates, total price for all travellers, airline, flight numbers and times, the booking link and where you found it.`,
+  ask('months', `Find the cheapest return flights to ${d.name} from ${fromText()} for ${nightsRange()} nights, ${plural(N.d.adults, 'adult')}, leaving in each of these months: ${check.map((mo) => `${MONTHS[mo.m]} ${mo.year}`).join(', ')}. Search only with Pinroute's own scan_flight_deals (Amadeus airline fares and Aviasales prices), which saves the fares it finds; don't use other flight tools or sites.`,
     { poll: refresh, done: () => check.every((mo) => (N.deals[d.id] || []).some((x) => x.at > since && x.depart.startsWith(mo.ym))), tries: 75 });
 }
 

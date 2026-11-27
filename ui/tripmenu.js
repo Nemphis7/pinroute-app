@@ -130,7 +130,7 @@ function faresDialog() {
   };
   const askClaude = () => {
     const since = new Date().toISOString();
-    ask('fares', `Find other return flights for my Pinroute trip "${t.name}": from ${k.from} to ${k.to}, around ${day(k.depart)} and back around ${day(k.return)} (a few days either way is fine), for ${plural(t.adults, 'adult')}. Use my flight search tools, and save the best 3 to 5 with Pinroute's save_flight_deals (country "${t.country}") so I can pick one in the planner's Change flights.`,
+    ask('fares', `Find other return flights for my Pinroute trip "${t.name}": from ${k.from} to ${k.to}, around ${day(k.depart)} and back around ${day(k.return)} (a few days either way is fine), for ${plural(t.adults, 'adult')}. Search only with Pinroute's own scan_flight_deals (Amadeus airline fares and Aviasales prices), which saves the fares it finds; don't use other flight tools or sites. Then I can pick one in the planner's Change flights.`,
       { poll: async () => loadFares(true), done: () => (D.fares || []).some((x) => x.at > since) || D.kind !== 'fares', tries: 75 });
   };
   const row = (x) => {
@@ -148,7 +148,7 @@ function faresDialog() {
     D.fares == null ? h('p', { class: 'meta busy', text: 'Loading the fares you have saved…' })
       : list.length ? h('ul', { class: 'fare-list' }, list.map(row))
         : h('p', { class: 'meta', text: `No other fares saved for ${t.country} yet.` }),
-    waiting.fares && D.kind === 'fares' ? h('p', { class: 'note', text: 'Claude is searching with your flight tools; the fares appear here as Claude saves them.' }) : null,
+    waiting.fares && D.kind === 'fares' ? h('p', { class: 'note', text: 'Claude is searching with Pinroute; the fares appear here as Claude saves them.' }) : null,
   ], [
     h('button', { disabled: D.scanning, onclick: scanSame }, D.scanning ? 'Looking…' : 'Other fares, same dates'),
     h('button', { class: 'ghost', onclick: askClaude }, icon(MessageSquare), 'Ask Claude'),
