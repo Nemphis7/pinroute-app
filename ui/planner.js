@@ -14,6 +14,7 @@ import { takeNew, newCard, newSteps, newScreen, newKey, openFlightLink, commissi
 import { navBar, navTabs } from './nav.js';
 import { airMapDialog } from './airmap.js';
 import { tripMenu, tripDialog } from './tripmenu.js';
+import { applyInsets } from './keyboard.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
@@ -507,8 +508,7 @@ function applyContext(next) {
   if (ui.ctx.theme) applyDocumentTheme(ui.ctx.theme);
   if (ui.ctx.styles?.variables) applyHostStyleVariables(ui.ctx.styles.variables);
   if (ui.ctx.styles?.css?.fonts) applyHostFonts(ui.ctx.styles.css.fonts);
-  const inset = ui.ctx.safeAreaInsets || {};
-  document.documentElement.style.setProperty('--safe-bottom', `${inset.bottom || 0}px`);
+  applyInsets(ui.ctx.safeAreaInsets);
   render();
 }
 
