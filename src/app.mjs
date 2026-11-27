@@ -15,9 +15,10 @@ import {
 import { tripMap, regionMap } from './map.mjs';
 import { flightProvider } from './providers/index.mjs';
 import * as tp from './providers/travelpayouts.mjs';
+import * as acts from './providers/activities.mjs';
 import { airlineName, withAirlineName, namedFare } from './airlines.mjs';
 
-export const VERSION = '0.7.0';
+export const VERSION = '0.8.0';
 export const PLANNER_URI = 'ui://pinroute/planner';
 
 const realDate = (s) => { const d = new Date(`${s}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
@@ -67,6 +68,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     recentPerDay: Number(env.RECENT_LIMIT_PER_DAY) || 200,
     trips: Number(env.TRIP_LIMIT) || 200,
     picksPerPlace: 60,
+    activitiesPerDay: Number(env.ACTIVITY_LIMIT_PER_DAY) || 100,
   };
   if (owner && owner !== store.LOCAL && env.ADOPT_LOCAL_DATA === 'true') store.adoptLocal(owner);
 
@@ -98,6 +100,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       legs: legList,
       picks,
       flights: { provider: provider.name, live: provider.name !== 'Demo data', partnerLinks: tp.linksOn(env) },
+      activities: { on: acts.configured(env), partnerLinks: tp.linksOn(env) },
     };
   }
   // The map goes in _meta: the planner draws it, the model never needs the coastline
@@ -142,7 +145,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   }));
 
   registerAppResource(server, 'Pinroute planner', PLANNER_URI, { description: 'Interactive trip planner: route, flights and local picks' }, async () => ({
-    contents: [{ uri: PLANNER_URI, mimeType: RESOURCE_MIME_TYPE, text: plannerHtml() }],
+    // Tour photos come from Amadeus's image host; the host's sandbox loads only images from domains named here
+    contents: [{ uri: PLANNER_URI, mimeType: RESOURCE_MIME_TYPE, text: plannerHtml(), ...(acts.configured(env) ? { _meta: { ui: { csp: { resourceDomains: acts.IMAGE_DOMAINS } } } } : {}) }],
   }));
 
   // ---- trips
@@ -781,6 +785,73 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     return { content: [text(url)], structuredContent: { url, partner: tp.linksOn(env) } };
   }));
 
+  // ---- tours and activities: found with Amadeus Travel Builder, booked through GetYourGuide or Klook partner links
+  if (acts.configured(env)) {
+    const money = (n, c) => (n == null ? null : `${c === 'EUR' ? '€' : `${c} `}${Math.round(n).toLocaleString('en-GB')}`);
+    const actLine = (a, i) => [`${i + 1}. ${a.title}`, a.priceFrom != null ? `from ${money(a.priceFrom, a.currency)}${a.perPerson ? ' pp' : ''}` : null,
+      a.rating ? `${a.rating}★ (${a.reviews} reviews)` : null, a.duration || null].filter(Boolean).join(', ')
+      + `\n   ${a.links.map((l) => `${l.site}: ${l.url}`).join(' · ')}`;
+    server.registerTool('find_activities', {
+      title: 'Find tours and activities',
+      description: 'Finds tours, activities and attraction tickets at a place with Amadeus Travel Builder: the most popular ones, or ones matching interests, a budget, the kind of traveller or the travel date. '
+        + 'Give a stop of a saved trip (trip_id and stop, its number from 0) or a place: an English city name, or coordinates for a small town. '
+        + `Each result has a price from, rating, duration and links to find and book it on GetYourGuide and Klook${tp.linksOn(env) ? ', which carry Pinroute\'s Travelpayouts partner ID, so Pinroute may earn a commission on a booking; the price is the same either way' : ''}. `
+        + 'Prices are a guide; the booking site shows the live price and availability. To keep one for a stop, save it with save_local_picks (kind "activity", with its booking link as book_url and source_url). Each person has a daily search limit.',
+      inputSchema: {
+        trip_id: z.string().max(40).optional(),
+        stop: z.number().int().min(0).max(19).optional().describe('The stop\'s number in the trip, from 0'),
+        place: z.string().min(1).max(80).optional().describe('English city or area name, e.g. "Chiang Mai"; not needed with trip_id and stop'),
+        lat: z.number().min(-90).max(90).optional(),
+        lon: z.number().min(-180).max(180).optional(),
+        radius_km: z.number().min(1).max(100).optional().describe('How far around the place to look; default 15 km around coordinates'),
+        interests: z.array(z.string().min(1).max(60)).max(6).optional().describe('In the traveller\'s words, e.g. "street food", "snorkelling", "temples"'),
+        max_price: z.number().positive().max(10000).optional().describe('Highest price per person, in EUR'),
+        traveller_type: z.enum(['solo', 'couple', 'family', 'group']).optional(),
+        date: DATE.optional().describe('The day of the activity, which changes the ranking; with a trip stop, its arrival day is used'),
+        limit: z.number().int().min(1).max(20).default(8),
+      },
+      annotations: { title: 'Find tours and activities', readOnlyHint: true, openWorldHint: true },
+    }, mine(async ({ trip_id, stop, place, lat, lon, radius_km, interests = [], max_price, traveller_type, date, limit }) => {
+      let at, label = place, day = date;
+      if (trip_id) {
+        const trip = store.getTrip(owner, trip_id);
+        if (!trip) return noTrip(trip_id);
+        const rows = schedule(trip);
+        const s = rows[stop ?? 0];
+        if (!s) return fail(`"${trip.name}" has ${rows.length} stop${rows.length === 1 ? '' : 's'}, numbered 0 to ${rows.length - 1}.`);
+        label = s.place;
+        if (s.lat != null && s.lon != null) at = { lat: s.lat, lon: s.lon };
+        if (!day && s.arrive >= earliest()) day = s.arrive;
+        if (!traveller_type) traveller_type = trip.adults === 1 ? 'solo' : trip.adults === 2 ? 'couple' : undefined;
+      }
+      if (!at && lat != null && lon != null) at = { lat, lon };
+      if (!at && label) at = { city: label };
+      if (!at) return fail('Give a place, coordinates, or a trip_id and stop.');
+      if (day && day < earliest()) return fail(`${day} has already passed.`);
+      if (store.usage(owner, 'activities') >= limits.activitiesPerDay) return fail(`You have used today's ${limits.activitiesPerDay} activity searches in Pinroute. The count starts again at 00:00 UTC.`);
+      store.bumpUsage(owner, 'activities');
+      const query = { at, radiusKm: radius_km || (at.lat != null ? 15 : undefined), interests, maxPrice: max_price, travellerType: traveller_type, date: day, limit };
+      let list;
+      try {
+        list = await acts.searchActivities(query, { env });
+        // A town with few listings by its name: look around its coordinates instead, or a wider circle
+        if (!list.length && at.lat != null && !radius_km) list = await acts.searchActivities({ ...query, radiusKm: 40 }, { env });
+      } catch (e) {
+        if (e.code === 'no_place') return fail(`Amadeus has no tours or activities for ${label || 'that point'}. Try the nearest larger town, or coordinates with a wider radius_km.`);
+        return fail(e.message || 'The activity search failed. Try again in a minute.');
+      }
+      const { activities, more, partner } = await acts.withBookingLinks(list, label, { env });
+      const where = label || `${at.lat.toFixed(3)}, ${at.lon.toFixed(3)}`;
+      const head = activities.length
+        ? `${acts.name}: ${activities.length} tour${activities.length === 1 ? '' : 's'} and activities in ${where}${interests.length ? ` for ${interests.join(', ')}` : ''}${max_price ? `, up to ${money(max_price, 'EUR')}` : ''}.`
+        : `${acts.name} found no tours or activities in ${where}${interests.length || max_price ? ' with those filters' : ''}.`;
+      return {
+        content: [text([head, ...activities.map(actLine), more.length ? `More in ${where}: ${more.map((l) => `${l.site}: ${l.url}`).join(' · ')}` : null].filter(Boolean).join('\n'))],
+        structuredContent: { provider: acts.name, place: where, trip_id: trip_id || null, stop: trip_id ? stop ?? 0 : null, date: day || null, activities, more, partnerLinks: partner },
+      };
+    }));
+  }
+
   // ---- local picks: Claude researches on the traveller's own plan, this server keeps the result
   const pick = z.object({
     name: z.string().min(1).max(80),
@@ -788,6 +859,9 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     why: z.string().min(1).max(300).describe('What locals or recent visitors say, in one or two sentences'),
     area: z.string().max(80).optional(),
     source_url: z.string().url().max(2000).describe('The post, thread or article the pick comes from'),
+    book_url: z.string().url().max(2000).optional().describe('For a tour or ticket: where to book it, e.g. its GetYourGuide or Klook link from find_activities'),
+    price_from: z.number().nonnegative().max(100000).optional(),
+    currency: CURRENCY.optional(),
   });
 
   server.registerTool('save_local_picks', {
