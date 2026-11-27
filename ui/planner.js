@@ -373,7 +373,7 @@ const thumb = (x) => stopArt(x, 120, 120);
 function stopRow(x) {
   const picks = V.picks[x.place] || [];
   const on = isSel('stop', x.index);
-  return h('li', { class: 'rl rl-stop' }, h('button', { class: `row stop${on ? ' sel' : ''}`, 'aria-current': on ? 'true' : null, 'data-stop': x.index, onclick: () => pick({ kind: 'stop', index: x.index }),
+  return h('li', { class: 'rl rl-stop' }, h('button', { class: `row stop${on ? ' sel' : ''}`, 'aria-current': on ? 'true' : null, 'data-stop': x.index, id: `row-stop-${x.index}`, onclick: () => pick({ kind: 'stop', index: x.index }),
     onmouseenter: () => link(x.index, true), onmouseleave: () => link(x.index, false) },
     h('span', { class: 'badge-n', text: String(x.index + 1) }),
     h('span', { class: 'thumb' }, thumb(x)),
@@ -392,7 +392,7 @@ const legLine = (l) => (l.mode === 'flight' ? `${l.from} → ${l.to} · ${day(l.
 
 function legRow(l) {
   const on = isSel('leg', l.key), st = legState(l), up = nextTodo()?.key === l.key;
-  return h('li', { class: `rl rl-leg ${st.tone}${l.mode === 'flight' ? ' fly' : ''}${up ? ' up' : ''}` }, h('button', { class: `row leg${on ? ' sel' : ''}`, 'aria-current': on ? 'true' : null, 'data-leg': l.key, onclick: () => pick({ kind: 'leg', key: l.key }),
+  return h('li', { class: `rl rl-leg ${st.tone}${l.mode === 'flight' ? ' fly' : ''}${up ? ' up' : ''}` }, h('button', { class: `row leg${on ? ' sel' : ''}`, 'aria-current': on ? 'true' : null, 'data-leg': l.key, id: `row-leg-${l.key}`, onclick: () => pick({ kind: 'leg', key: l.key }),
     onmouseenter: () => link(null, true, l.key), onmouseleave: () => link(null, false, l.key) },
     h('span', { class: 'leg-ic' }, icon(MODE[l.mode] || Plane)),
     h('span', { class: 'main' }, h('span', { text: legLine(l) })),
