@@ -811,3 +811,7 @@ input, textarea, select { scroll-margin-top: var(--s-6); }
 .world { background: color-mix(in srgb, var(--accent) 10%, var(--paper)); }
 :root[data-theme="dark"] .world { background: color-mix(in srgb, var(--accent) 8%, var(--paper)); }
 :root[data-theme="dark"] svg.scene { filter: brightness(0.88) saturate(0.95); }
+
+/* Where to stay: the hotel picked for a stop */
+.stay-ticket .tsum { display: flex; align-items: center; gap: var(--s-2); }
+.stay-ticket .tsum .kind-ic { flex: none; }

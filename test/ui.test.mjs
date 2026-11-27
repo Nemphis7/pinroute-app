@@ -132,10 +132,35 @@ test('asks Claude for local picks and shows them once saved', { skip }, async ()
   await client.callTool({ name: 'save_local_picks', arguments: { place: 'Koh Lanta', picks: [{ name: 'Time for Lime', kind: 'food', why: 'Cooking class and dinner on Klong Dao beach.', source_url: 'https://www.reddit.com/r/Thailand/' }] } });
   await frame().getByRole('button', { name: 'Refresh' }).click();
   await frame().locator('.picks', { hasText: 'Time for Lime' }).waitFor();
-  assert.match(await frame().locator('.detail h3').textContent(), /Local picks \(1\)/);
+  assert.match(await frame().locator('.detail h3', { hasText: 'Local picks' }).textContent(), /Local picks \(1\)/);
   assert.match(await frame().locator('.row.stop', { hasText: 'Koh Lanta' }).textContent(), /1$/, 'the route shows how many picks');
   await frame().getByRole('button', { name: 'Source for Time for Lime' }).click();
   await page.waitForFunction(() => window.__links.includes('https://www.reddit.com/r/Thailand/'));
+});
+
+test('a stop\'s hotel: a Booking.com search for its nights, Claude\'s pick saved, marked booked and removed', { skip }, async () => {
+  await frame().locator('.row.stop', { hasText: 'Koh Lanta' }).click();
+  const stay = frame().locator('.detail .stay');
+  assert.match(await stay.textContent(), /Where to stay.*To choose.*3 nights/);
+  await stay.getByRole('button', { name: 'Find hotels on Booking.com' }).click();
+  await page.waitForFunction(() => /booking\.com\/searchresults/.test(window.__links.at(-1)));
+  const link = new URL(await page.evaluate(() => window.__links.at(-1)));
+  assert.equal(link.searchParams.get('ss'), 'Koh Lanta, Thailand');
+  assert.equal(link.searchParams.get('group_adults'), '2');
+  await stay.getByRole('button', { name: 'Ask Claude' }).click();
+  await page.waitForFunction(() => window.__messages.length > 2);
+  const key = (await server()).stays.find((x) => x.place === 'Koh Lanta').key;
+  assert.ok((await lastMessage()).includes(`choose_stay (trip_id "${tripId}", stay_key "${key}")`));
+  await client.callTool({ name: 'choose_stay', arguments: { trip_id: tripId, stay_key: key, name: 'Lanta Sand Resort', price: 240, currency: 'EUR', source: 'Booking.com', link: 'https://www.booking.com/hotel/th/lanta-sand.html' } });
+  await stay.getByRole('button', { name: 'Refresh' }).click();
+  await stay.locator('.stay-ticket', { hasText: 'Lanta Sand Resort' }).waitFor();
+  assert.match(await stay.textContent(), /Chosen/);
+  await stay.getByRole('button', { name: 'Mark booked' }).click();
+  await stay.getByRole('button', { name: 'Booked', exact: true }).waitFor();
+  assert.equal((await server()).stays.find((x) => x.key === key).chosen.booked, true);
+  await stay.getByRole('button', { name: 'Remove' }).click();
+  await stay.getByRole('button', { name: 'Find hotels on Booking.com' }).waitFor();
+  assert.equal((await server()).stays.find((x) => x.key === key).chosen, null);
 });
 
 test('flags a chosen flight whose date moved, and clears it', { skip }, async () => {
