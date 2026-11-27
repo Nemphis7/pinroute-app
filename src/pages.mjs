@@ -36,6 +36,7 @@ const TOOLS = [
   ['search_flights', 'Searches airline fares (Amadeus Travel Builder); daily limit per person', 'Reads'],
   ['flight_link', 'Makes a link to compare and book a flight on Aviasales (with Pinroute\'s partner ID when set up)', 'Reads'],
   ['find_airports', 'Finds airports by city, name or code, or all airports within a distance of a point; works without signing in', 'Reads'],
+  ['find_activities', 'Finds tours, activities and tickets at a place or trip stop (Amadeus Travel Builder), with links to book on GetYourGuide or Klook; daily limit per person', 'Reads'],
   ['save_local_picks', 'Saves local favourites for a place, each with its source link', 'Writes'],
   ['get_local_picks', 'Returns the local favourites saved for a place', 'Reads'],
   ['delete_my_data', 'Deletes everything you saved in Pinroute', 'Deletes'],
@@ -97,6 +98,7 @@ export function helpPage(env = process.env) {
 <ul class="prompts">${EXAMPLE_PROMPTS.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
 <h2>Flights</h2>
 <p>${env.TRAVELPAYOUTS_TOKEN ? '<b>Recent prices</b> come from Aviasales: the cheapest fares its travellers found in the last days, low-cost airlines included. They are a guide, not live: check the price on Aviasales before booking. ' : ''}${live ? `${env.TRAVELPAYOUTS_TOKEN ? '<b>Live airline fares</b> come from' : 'Fare search uses'} Amadeus Travel Builder, which covers a set of mostly full-service airlines and links to their own sites. Many regional low-cost airlines are not included.` : 'This server shows demo fares, not real prices.'} ${live && env.TRAVELPAYOUTS_TOKEN ? ' Each flight search shows both quotes side by side, the airline fare and the Aviasales price, and says which is cheaper.' : ''} Searches can be narrowed to direct flights or a number of changes, departure and arrival times, airlines, fares with a checked bag, a longest flight time or a highest price, and can try the days around a date to find the cheapest day. The planner's <b>Ask Claude</b> button lets Claude search with any other flight tools you have connected in Claude, and save the flight you pick to your trip. Booking always happens on the airline's or booking site.</p>
+${env.AMADEUS_API_KEY ? `<p><b>Tours and activities</b> at each stop come from Amadeus Travel Builder: the most popular ones, or ones matching what you ask for. Prices are a guide. You book on GetYourGuide or Klook, which show the live price and availability.${env.TRAVELPAYOUTS_MARKER ? ' These links carry Pinroute\'s partner ID with Travelpayouts: if you book through one, Pinroute may earn a commission. The price you pay is the same, and tours are never ranked by commission.' : ''}</p>` : ''}
 <p><b>Compare on Aviasales</b> opens a search for the route and dates on Aviasales, where airlines and agencies show live prices.${env.TRAVELPAYOUTS_MARKER ? ' These links carry Pinroute\'s partner ID with Travelpayouts, Aviasales\'s partner network: if you book through one, Pinroute may earn a commission. The price you pay is the same, and fares are never ranked by commission.' : ''}</p>
 <h2>What Pinroute can do</h2>
 <div class="table"><table><thead><tr><th>Tool</th><th>What it does</th><th>Data</th></tr></thead><tbody>
@@ -120,8 +122,8 @@ export function privacyPage(env = process.env) {
 <li><b>An account id.</b> ${auth ? 'When you sign in, the sign-in service gives Pinroute a random id for your account, and your data is stored under it. Pinroute never sees your password and does not store your name or email address.' : 'This server has no sign-in; everything is stored under one shared account.'}</li>
 <li><b>Your trips:</b> their names, dates, places and nights, the number of travellers, your home airport, the flights you chose (a one-line summary, price, booking link and where it was found), which legs you marked as booked, any short note you added to a leg, and the wishes and area you planned it from.</li>
 <li><b>Your new-trip draft:</b> the days you are free, the trip length, the number of travellers, a budget if you gave one, your departure airports, the regions, interests and countries you chose, what you wrote you have in mind and the part of a country you chose, and the return fares saved for them (airports, dates, price, airline, booking link and where it was found).</li>
-<li><b>Local picks</b> saved for places: name, type, a short note, area and source link.</li>
-<li><b>A count of your flight searches per day</b>, kept for seven days, to apply the daily limit.</li>
+<li><b>Local picks</b> saved for places: name, type, a short note, area and source link, and for a tour you kept, its booking link and price.</li>
+<li><b>A count of your flight and activity searches per day</b>, kept for seven days, to apply the daily limit.</li>
 </ul>
 <p>Pinroute uses this data only to provide the planner you asked for. It has no ads, does not sell or share your data for marketing, does not track you across sites and sets no cookies.${env.TRAVELPAYOUTS_MARKER ? ' Links to Aviasales carry Pinroute\'s partner ID, so a booking made through one can earn Pinroute a commission; the partner ID identifies Pinroute, not you.' : ''}</p>
 <h2>What Pinroute does not keep</h2>
@@ -134,8 +136,8 @@ export function privacyPage(env = process.env) {
 <li><b>Anthropic</b> runs Claude, through which you use Pinroute. Your conversations are covered by Anthropic's privacy policy.</li>
 ${auth ? '<li><b>WorkOS</b> runs sign-in. It handles your login details under its own privacy policy; of what it sends, Pinroute uses only your account id.</li>' : ''}
 <li><b>Railway</b> hosts the Pinroute server and its database in ${esc(region)}.</li>
-<li><b>Amadeus</b> receives each live flight search: airports, dates, number of travellers and cabin, without your account id.</li>
-${env.TRAVELPAYOUTS_TOKEN || env.TRAVELPAYOUTS_MARKER ? '<li><b>Travelpayouts</b> (Aviasales\'s partner network) receives the routes and months of recent-price look-ups and the Aviasales links Pinroute turns into partner links (route, dates, number of travellers), without your account id. When you open such a link, Aviasales\'s and Travelpayouts\'s own policies apply.</li>' : ''}
+<li><b>Amadeus</b> receives each live flight search (airports, dates, number of travellers and cabin) and each tour search (the place or its coordinates, the day, interests, budget and kind of traveller you gave), without your account id.</li>
+${env.TRAVELPAYOUTS_TOKEN || env.TRAVELPAYOUTS_MARKER ? '<li><b>Travelpayouts</b> (Aviasales\'s partner network) receives the routes and months of recent-price look-ups and the Aviasales, GetYourGuide and Klook links Pinroute turns into partner links (route, dates, number of travellers, or a tour\'s name and place), without your account id. When you open such a link, that site\'s and Travelpayouts\'s own policies apply.</li>' : ''}
 <li><b>Airlines and booking sites</b>: when you open a booking link, their own policies apply.</li>
 </ul>
 <h2>How long it is kept</h2>

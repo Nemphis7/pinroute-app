@@ -6,7 +6,7 @@
 // It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper } from 'lucide';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star } from 'lucide';
 import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting } from './core.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
 import { takeHome, homeCard, homeScreen } from './home.js';
@@ -24,6 +24,7 @@ let MAP = null;            // its map (coastline and stop positions), from the r
 let MINI = null;           // the same, small and wide, for the card in the chat
 let sel = null;            // { kind: 'stop', index } or { kind: 'leg', key }
 let pane = 'list';         // one-pane layouts: 'list' or 'detail'
+const tours = {};          // trip id|stop|place → { state, list, more, error, kept }
 const fares = {};          // leg key → { state, fares, note, live, error, filter, sort, facets, calendar, compare }
 
 const KIND = { food: 'Food', drink: 'Drinks', beach: 'Beach', view: 'View', activity: 'Activity', stay: 'Stay', shop: 'Shopping', other: 'Other' };
@@ -443,7 +444,66 @@ function stopDetail(x) {
         h('p', { class: 'meta', text: `No picks for ${x.place} yet. Claude can look through recent Reddit threads, Instagram posts and travel blogs for the places locals love.` })),
       waiting[`picks|${x.place}`] ? skeleton(`Claude is researching picks for ${x.place}`) : null,
       h('div', { class: 'acts' }, h('button', { class: picks.length ? '' : 'primary', onclick: () => askPicks(x) }, icon(MessageSquare), picks.length ? 'Ask Claude for more' : 'Ask Claude for local picks'))),
+    V.activities?.on ? toursBlock(x, picks) : null,
   ];
+}
+
+// ---- tours and activities at a stop: found with Amadeus, booked on GetYourGuide or Klook
+const tourKey = (x) => `${V.trip.id}|${x.index}|${x.place}`;
+function toursBlock(x, picks) {
+  const t = tours[tourKey(x)] || {};
+  const kept = new Set(picks.map((p) => p.name.toLowerCase()));
+  const facts = (a) => [a.priceFrom != null ? `from ${money(a.priceFrom, a.currency)}${a.perPerson ? ' pp' : ''}` : null, a.duration].filter(Boolean).join(' · ');
+  return h('section', { class: 'block tours' },
+    h('div', { class: 'block-head' }, h('h3', { text: t.list?.length ? `Tours & activities (${t.list.length})` : 'Tours & activities' }),
+      h('span', { class: 'small', text: 'Popular with travellers, to book on GetYourGuide or Klook' })),
+    t.state === 'loading' ? h('div', { class: 'skel', role: 'status' }, h('p', { class: 'small skel-line' }, h('span', { class: 'spark' }, icon(Sparkles)), `Finding tours in ${x.place}`),
+      Array.from({ length: 2 }, () => h('div', { class: 'skel-row' }, h('i', { class: 'a' }), h('i', { class: 'b' }), h('i', { class: 'c' }), h('i', { class: 'd' })))) : null,
+    t.state === 'error' ? h('p', { class: 'note warn', text: t.error }) : null,
+    t.state === 'done' && !t.list.length ? h('p', { class: 'meta', text: `No tours found around ${x.place}.` }) : null,
+    t.list?.length ? h('ul', { class: 'picks' }, t.list.map((a, i) => h('li', { class: 'pick k-activity tour', style: `animation-delay:${i * 50}ms` },
+      a.image ? h('img', { class: 'tour-img', src: a.image, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: (e) => e.currentTarget.remove() }) : null,
+      h('div', { class: 'pick-head' }, h('span', { class: 'kind-ic' }, icon(Ticket)),
+        h('span', { class: 'pick-t' }, h('span', { class: 'pname', text: a.title }), h('span', { class: 'kind', text: facts(a) }))),
+      a.rating ? h('p', { class: 'small rating' }, icon(Star), ` ${a.rating.toFixed(1)}${a.reviews ? ` (${a.reviews.toLocaleString('en-GB')} reviews)` : ''}`) : null,
+      a.summary ? h('p', { class: 'why', text: a.summary }) : null,
+      h('div', { class: 'acts tour-acts' },
+        a.links.map((l, j) => h('button', { class: j ? 'ghost' : '', onclick: () => app.openLink({ url: l.url }) }, icon(ExternalLink), l.site)),
+        kept.has(a.title.toLowerCase()) ? h('span', { class: 'small kept' }, icon(Check), ' Kept')
+          : h('button', { class: 'ghost', disabled: ui.busy, onclick: () => keepTour(x, a) }, icon(Plus), 'Keep'))))) : null,
+    t.more?.length ? h('p', { class: 'small' }, `More in ${x.place}: `, t.more.flatMap((l, j) => [j ? ' · ' : '', h('button', { class: 'link', text: l.site, onclick: () => app.openLink({ url: l.url }) })])) : null,
+    t.state === 'done' && V.activities.partnerLinks ? h('p', { class: 'small foot', text: 'GetYourGuide and Klook links carry Pinroute\'s partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.' }) : null,
+    t.state === 'loading' ? null : h('div', { class: 'acts' }, h('button', { class: t.list?.length ? '' : 'primary', onclick: () => findTours(x) }, icon(Ticket), t.list ? 'Search again' : `Find tours in ${x.place}`)));
+}
+
+async function findTours(x) {
+  const k = tourKey(x);
+  tours[k] = { ...(tours[k] || {}), state: 'loading' };
+  render();
+  try {
+    const r = await app.callServerTool({ name: 'find_activities', arguments: { trip_id: V.trip.id, stop: x.index, limit: 6 } });
+    if (r.isError) throw new Error(textOf(r) || 'The search failed.');
+    tours[k] = { state: 'done', list: r.structuredContent?.activities || [], more: r.structuredContent?.more || [] };
+  } catch (e) {
+    tours[k] = { ...tours[k], state: 'error', error: e.message || String(e) };
+  }
+  render();
+}
+
+// Keeps a tour with the stop's local picks, with its first booking link
+async function keepTour(x, a) {
+  const url = a.links[0]?.url;
+  if (!url) return;
+  ui.busy = true; render();
+  try {
+    const r = await app.callServerTool({ name: 'save_local_picks', arguments: { place: x.place, picks: [{
+      name: a.title.slice(0, 80), kind: 'activity', why: (a.summary || a.title).slice(0, 300), source_url: url, book_url: url,
+      ...(a.priceFrom != null ? { price_from: a.priceFrom, currency: a.currency } : {}) }] } });
+    if (r.isError) throw new Error(textOf(r) || 'Could not save it.');
+    V.picks[x.place] = r.structuredContent?.picks || V.picks[x.place];
+    showError('');
+  } catch (e) { showError(e.message || String(e)); }
+  finally { ui.busy = false; render(); }
 }
 
 // While Claude works: a line saying so, and grey rows where the answer will appear; Refresh only after a while
