@@ -64,8 +64,8 @@ function places(where, tripName, tripId, phone) {
 }
 
 // layout: 'app' (full screen) or 'stacked' (a host without full screen); phone: narrow full screen
-export function navBar({ layout, phone, where, title, tripName, tripId, steps }) {
-  const back = h('button', { class: `ghost back${phone ? ' icon' : ''}`, 'aria-label': 'Back', title: 'Back (Alt+←)', disabled: !nav.back.length, onclick: () => goBack() },
+export function navBar({ layout, phone, where, title, tripName, tripId, steps, onBack }) {
+  const back = h('button', { class: `ghost back${phone ? ' icon' : ''}`, 'aria-label': 'Back', title: 'Back (Alt+←)', disabled: !onBack && !nav.back.length, onclick: () => (onBack ? onBack() : goBack()) },
     icon(ChevronLeft), phone ? null : 'Back');
   const out = layout === 'app'
     ? h('button', { class: phone ? 'ghost icon' : 'ghost', 'aria-label': 'Back to chat', title: 'Back to chat', onclick: () => setMode('inline') }, icon(Minimize2), phone ? null : 'Back to chat')
