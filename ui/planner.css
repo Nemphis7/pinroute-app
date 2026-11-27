@@ -30,6 +30,8 @@
   --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --fast: 140ms;
+  --safe-top: 0px; --safe-right: 0px; --safe-bottom: 0px; --safe-left: 0px;   /* kept clear by the host (keyboard.js) */
+  --kb: 0px;              /* covered by the keyboard, where the frame can tell */
 }
 :root[data-theme="dark"] {
   --ink: var(--color-text-primary, #ecebe7);
@@ -115,7 +117,8 @@ kbd { font: inherit; font-size: 11px; line-height: 16px; padding: 0 var(--s-1); 
 #app[data-layout="card"] .side .map { width: 176px; }
 
 /* ---- full screen: a bar on top, the screen below it fills the rest */
-#app[data-layout="app"] { height: 100vh; display: flex; flex-direction: column; padding: 0; }
+#app[data-layout="app"] { height: calc(100vh - var(--kb)); display: flex; flex-direction: column; padding: var(--safe-top) var(--safe-right) 0 var(--safe-left); }
+#app[data-layout="app"]:has(> #tabs[hidden]), #app[data-layout="app"][data-typing="true"] { padding-bottom: var(--safe-bottom); }
 #app[data-layout="app"] > #screen { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--s-4) var(--s-4) 0; }
 #app[data-layout="app"] > #error { margin: var(--s-3) var(--s-4) 0; }
 
@@ -415,7 +418,8 @@ details[open] > summary { margin-bottom: var(--s-2); }
 /* ---- departure airports on a map */
 .airrow { display: flex; gap: var(--s-2); align-items: center; }
 .airrow .acwrap { flex: 1; min-width: 0; }
-.am-wrap { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: var(--s-4); background: rgb(0 0 0 / 0.4); }
+.am-wrap { position: fixed; inset: 0 0 var(--kb); z-index: 50; display: grid; place-items: center; background: rgb(0 0 0 / 0.4);
+  padding: calc(var(--s-4) + var(--safe-top)) calc(var(--s-4) + var(--safe-right)) calc(var(--s-4) + var(--safe-bottom)) calc(var(--s-4) + var(--safe-left)); }
 .am-box { width: min(880px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: var(--s-3);
   padding: var(--s-4); background: var(--paper); border-radius: var(--r-1); box-shadow: 0 20px 60px rgb(0 0 0 / 0.3); overflow: hidden; }
 .am-box > * { flex: none; }
@@ -446,7 +450,7 @@ details[open] > summary { margin-bottom: var(--s-2); }
 .am-nm { display: grid; min-width: 0; font-size: 13px; }
 .am-nm .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .am-foot { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
-@media (max-width: 640px) { .am-wrap { padding: 0; } .am-box { height: 100%; border-radius: 0; padding: var(--s-3); } .airrow { flex-wrap: wrap; } }
+@media (max-width: 640px) { .am-wrap { padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); } .am-box { height: 100%; border-radius: 0; padding: var(--s-3); } .airrow { flex-wrap: wrap; } }
 
 /* ---- the same dates, other airports: departure airports by arrival airports */
 .compare { display: grid; gap: var(--s-2); padding: var(--s-3); border-radius: var(--r-2); background: var(--paper-2); }
@@ -498,3 +502,11 @@ button.danger:hover { background: var(--warn-soft); }
 .wish-l b { font-weight: var(--medium); }
 .wish textarea { background: var(--paper); }
 .bar-row.sub { gap: var(--s-2); }
+
+/* ---- typing on a phone (keyboard.js): the field goes to the top of its pane, clear of Claude's composer and the
+   keyboard; the bottom tabs step aside and the pane gets room below its content so even the last field can get there */
+input, textarea, select { scroll-margin-top: var(--s-6); }
+#app[data-layout="stacked"] :is(input, textarea, select) { scroll-margin-top: 80px; }   /* below the host's own top bar */
+#app[data-typing="true"] > .tabs { display: none; }
+#app[data-layout="app"][data-typing="true"] :is(.body, .list, .detail) { padding-bottom: 50vh; }
+@media (max-width: 640px) { #app[data-typing="true"] .dlg-body { padding-bottom: 50vh; } }

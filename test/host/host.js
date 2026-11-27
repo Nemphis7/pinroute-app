@@ -7,7 +7,7 @@ import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/
 
 window.__messages = []; window.__links = []; window.__context = []; window.__modes = [];
 
-// opts: { inline: [w, h], full: [w, h], modes: ['inline', 'fullscreen'], tool: 'open_planner' }
+// opts: { inline: [w, h], full: [w, h], modes: ['inline', 'fullscreen'], tool: 'open_planner', context: { platform, safeAreaInsets, … } }
 window.startHost = async (mcpUrl, args, theme = 'light', opts = {}) => {
   const inline = opts.inline || [760, 1500], full = opts.full || [1100, 760];
   const client = new Client({ name: 'test-host', version: '1.0.0' });
@@ -20,7 +20,7 @@ window.startHost = async (mcpUrl, args, theme = 'light', opts = {}) => {
   size(inline);
   document.body.append(iframe);
 
-  let hostContext = { theme, displayMode: 'inline', availableDisplayModes: opts.modes || ['inline', 'fullscreen'], locale: 'en-GB' };
+  let hostContext = { theme, displayMode: 'inline', availableDisplayModes: opts.modes || ['inline', 'fullscreen'], locale: 'en-GB', ...opts.context };
   // The starting context goes in at construction: setHostContext() before connecting would notify a view that isn't there yet
   const bridge = new AppBridge(client, { name: 'TestHost', version: '1.0.0' },
     { openLinks: {}, serverTools: {}, logging: {}, updateModelContext: { text: {} }, message: { text: {} } },
