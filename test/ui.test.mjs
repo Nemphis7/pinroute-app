@@ -82,7 +82,7 @@ test('changes nights in place, moves the dates, and tells Claude', { skip }, asy
 
 test('shows fares for a flight leg and saves the choice as a ticket', { skip }, async () => {
   await leg(KBV_BKK).click();
-  await frame().getByRole('button', { name: 'Demo fares' }).click();
+  await frame().getByRole('button', { name: 'Find flights' }).click();
   await frame().locator('.fare').first().waitFor();
   assert.ok(await frame().locator('.fare').count() >= 5);
   assert.equal(await frame().locator('.dbar').count(), 5, 'the day and two either side');
@@ -113,33 +113,26 @@ test('marks the flight booked, then removes it', { skip }, async () => {
   await frame().getByRole('button', { name: 'Booked', exact: true }).click();
   await frame().getByRole('button', { name: 'Mark booked', exact: true }).waitFor();
   await frame().getByRole('button', { name: 'Remove' }).click();
-  await frame().getByRole('button', { name: 'Ask Claude to find flights' }).waitFor();
+  await frame().getByRole('button', { name: 'Find flights' }).waitFor();
   assert.equal((await server()).legs.find((l) => l.key === KBV_BKK).chosen, null);
   assert.match(await leg(KBV_BKK).textContent(), /To choose/);
 });
 
-test('asks Claude to find flights and shows the one Claude saved', { skip }, async () => {
+test('a flight leg has one Find flights button, which searches with Pinroute only', { skip }, async () => {
   await leg(OUT).click();
-  await frame().getByRole('button', { name: 'Ask Claude to find flights' }).click();
-  await page.waitForFunction(() => window.__messages.length > 0);
-  const asked = await lastMessage();
-  assert.match(asked, /^Find flights from .*\(FRA\) to Bangkok \(BKK or another airport nearby\) on .* for 2 adults, using my flight search tools\./);
-  assert.ok(asked.includes(`choose_flight (trip_id "${tripId}", leg_key "${OUT}")`));
-  await frame().getByText('Claude is searching with your flight tools').waitFor();
-  // Claude would now search with the traveller's flight tools and save the pick itself
-  const r = await client.callTool({ name: 'choose_flight', arguments: { trip_id: tripId, leg_key: OUT, summary: 'Thai Airways TG921, 13:30 FRA → 06:15 BKK', price: 1384, currency: 'EUR', source: 'Kiwi.com', link: 'https://www.kiwi.com/en/booking' } });
-  assert.ok(!r.isError, JSON.stringify(r.content));
-  await frame().getByRole('button', { name: 'Refresh' }).click();
-  await frame().locator('.ticket').waitFor();
-  assert.match(await frame().locator('.ticket').textContent(), /FRA13:30.*BKK06:15.*Thai Airways TG921 · via Kiwi\.com.*€1,384/);
-  await frame().getByRole('button', { name: 'Booking page' }).click();
-  await page.waitForFunction(() => window.__links.includes('https://www.kiwi.com/en/booking'));
+  const acts = await frame().locator('.detail .acts').first().locator('button').allTextContents();
+  assert.deepEqual(acts.map((t) => t.trim()), ['Find flights']);
+  assert.equal(await frame().getByRole('button', { name: /Ask Claude to find flights|Compare on Aviasales/ }).count(), 0);
+  const before = await page.evaluate(() => window.__messages.length);
+  await frame().getByRole('button', { name: 'Find flights' }).click();
+  await frame().locator('.fare').first().waitFor();
+  assert.equal(await page.evaluate(() => window.__messages.length), before, 'no message to Claude: the search is Pinroute\'s own');
 });
 
 test('asks Claude for local picks and shows them once saved', { skip }, async () => {
   await frame().locator('.row.stop', { hasText: 'Koh Lanta' }).click();
   await frame().getByRole('button', { name: 'Ask Claude for local picks' }).click();
-  await page.waitForFunction(() => window.__messages.length > 1);
+  await page.waitForFunction(() => window.__messages.length > 0);
   assert.match(await lastMessage(), /save_local_picks \(place: "Koh Lanta"\)/);
   await client.callTool({ name: 'save_local_picks', arguments: { place: 'Koh Lanta', picks: [{ name: 'Time for Lime', kind: 'food', why: 'Cooking class and dinner on Klong Dao beach.', source_url: 'https://www.reddit.com/r/Thailand/' }] } });
   await frame().getByRole('button', { name: 'Refresh' }).click();
@@ -160,7 +153,7 @@ test('a stop\'s hotel: a Booking.com search for its nights, Claude\'s pick saved
   assert.equal(link.searchParams.get('ss'), 'Koh Lanta, Thailand');
   assert.equal(link.searchParams.get('group_adults'), '2');
   await stay.getByRole('button', { name: 'Ask Claude' }).click();
-  await page.waitForFunction(() => window.__messages.length > 2);
+  await page.waitForFunction(() => window.__messages.length > 1);
   const key = (await server()).stays.find((x) => x.place === 'Koh Lanta').key;
   assert.ok((await lastMessage()).includes(`choose_stay (trip_id "${tripId}", stay_key "${key}")`));
   await client.callTool({ name: 'choose_stay', arguments: { trip_id: tripId, stay_key: key, name: 'Lanta Sand Resort', price: 240, currency: 'EUR', source: 'Booking.com', link: 'https://www.booking.com/hotel/th/lanta-sand.html' } });
