@@ -8,6 +8,28 @@ const load = (f) => JSON.parse(readFileSync(new URL(`./data/${f}`, import.meta.u
 const AIR = load('airports.json');
 const PLACES = load('places-th.json').places;
 
+// The city a traveller would say they fly to. OurAirports names the municipality the airport stands in, which for
+// many gateways is a suburb or a district ("Narita", "Sepang", "Kuta, Badung", "Ferno (VA)"): a trip that lands at
+// NRT should start in Tokyo, not Narita. The few big ones are named here; elsewhere a region or district after the
+// town is left out ("Manchester, Greater Manchester", "Pisa (PI)", "Toulouse/Blagnac"). The municipality stays
+// searchable.
+const CITY = {
+  NRT: 'Tokyo', KIX: 'Osaka', NGO: 'Nagoya', CTS: 'Sapporo', ICN: 'Seoul', TPE: 'Taipei', KUL: 'Kuala Lumpur', DPS: 'Bali',
+  CXR: 'Nha Trang', PQC: 'Phu Quoc', USM: 'Koh Samui', CEB: 'Cebu', GOI: 'Goa', GOX: 'Goa', ISB: 'Islamabad', MFM: 'Macau',
+  BRU: 'Brussels', CRL: 'Brussels', STN: 'London', LTN: 'London', SEN: 'London', MXP: 'Milan', LIN: 'Milan', BGY: 'Bergamo',
+  ATH: 'Athens', SAW: 'Istanbul', EDI: 'Edinburgh', PIK: 'Glasgow', MRS: 'Marseille', LYS: 'Lyon', NCE: 'Nice', LIL: 'Lille',
+  BSL: 'Basel', OTP: 'Bucharest', KRK: 'Kraków', WMI: 'Warsaw', LJU: 'Ljubljana', ZAG: 'Zagreb', SKP: 'Skopje', TIA: 'Tirana',
+  LEJ: 'Leipzig', FKB: 'Karlsruhe', HHN: 'Hahn', CGN: 'Cologne', GRZ: 'Graz', VCE: 'Venice', TSF: 'Treviso', NAP: 'Naples',
+  FLR: 'Florence', GOA: 'Genoa', TRN: 'Turin', VRN: 'Verona', ADB: 'Izmir', CHQ: 'Chania', CFU: 'Corfu', FUE: 'Fuerteventura',
+  ACE: 'Lanzarote', MAH: 'Menorca', DJE: 'Djerba', OUD: 'Oujda', DMM: 'Dammam', MRU: 'Mauritius', SID: 'Sal', BVC: 'Boa Vista',
+  RUN: 'Réunion', SEZ: 'Mahé', ANU: 'Antigua', VRA: 'Varadero', MVD: 'Montevideo', IAD: 'Washington', EWR: 'New York',
+  GIG: 'Rio de Janeiro', SPN: 'Saipan', KUT: 'Kutaisi', NYO: 'Stockholm', EMA: 'East Midlands', MLA: 'Malta',
+};
+const plainCity = (s) => String(s).replace(/\s*\(.*\)\s*$/, '').split(/\s*\/\s*/)[0].split(',')[0].trim() || String(s);
+for (const r of AIR.a) {
+  const city = CITY[r[0]] || plainCity(r[1]);
+  if (city !== r[1]) { r[10] = r[1]; r[1] = city; }       // r[10]: the municipality as OurAirports has it
+}
 const BY = new Map(AIR.a.map((r) => [r[0], r]));
 const COUNTRY = AIR.c || {};
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -25,12 +47,19 @@ export function findAirports(query, limit = 8) {
   const hits = [];
   for (const r of AIR.a) {
     if (exact && r[0] === exact.code) continue;
-    const city = norm(r[1]), name = norm(r[2]), country = norm(COUNTRY[r[3]] || r[3]);
-    const score = city === q ? 3 : city.startsWith(q) ? 2 : name.includes(q) || country === q ? 1 : 0;
+    const city = norm(r[1]), name = norm(r[2]), country = norm(COUNTRY[r[3]] || r[3]), muni = r[10] ? norm(r[10]) : '';
+    const score = city === q ? 3 : city.startsWith(q) ? 2 : name.includes(q) || country === q || (muni && muni.startsWith(q)) ? 1 : 0;
     if (score) hits.push([score, r[8] || 0, r[0]]);
   }
   hits.sort((a, b) => b[0] - a[0] || b[1] - a[1]);
-  return [...(exact ? [exact] : []), ...hits.slice(0, limit).map((h) => airport(h[2]))].slice(0, limit);
+  const list = hits.slice(0, limit).map((h) => airport(h[2]));
+  if (!exact) return list;
+  // Three letters are a code or the start of a city: a small airport with that code ("MUN", Maturín) follows the
+  // busy cities that start so ("Munich"); a big one ("BER") stays first
+  const r = BY.get(exact.code), small = !r[6] && exact.served < 10;
+  const ahead = small ? list.findIndex((a, i) => !(hits[i][0] >= 2 && a.served > exact.served)) : 0;
+  list.splice(ahead < 0 ? list.length : ahead, 0, exact);
+  return list.slice(0, limit);
 }
 
 // A stop typed by the traveller ("Ao Nang", "Koh Lanta", "Hoi An") → name, coordinates and its airport. Pinroute's

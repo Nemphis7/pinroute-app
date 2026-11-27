@@ -79,8 +79,10 @@ export function navBar({ layout, phone, where, title, tripName, tripId, steps })
 // The tabs along the bottom of a phone
 export const navTabs = ({ where, tripName, tripId }) => places(where, tripName, tripId, true);
 
-// Closing the trips list: Escape, or a tap anywhere else. Alt+← goes back, as in a browser.
-document.addEventListener('pointerdown', (e) => { if (M.open && !e.target.closest('.trips-wrap')) closeTrips(false); });
+// Closing the trips list: Escape, or a tap anywhere else. Alt+← goes back, as in a browser. The tap closes the list
+// on click, after the tapped button has had it: closing on pointerdown redraws the bar under the pointer, and the
+// button the traveller pressed is gone before the click lands (Home did nothing while the list was open).
+document.addEventListener('click', (e) => { if (M.open && !e.target.closest('.trips-wrap')) closeTrips(false); });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && M.open) { e.preventDefault(); closeTrips(true); }
   if (e.altKey && e.key === 'ArrowLeft' && nav.back.length && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { e.preventDefault(); goBack(); }
