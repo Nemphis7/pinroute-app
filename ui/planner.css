@@ -812,6 +812,9 @@ input, textarea, select { scroll-margin-top: var(--s-6); }
 :root[data-theme="dark"] .world { background: color-mix(in srgb, var(--accent) 8%, var(--paper)); }
 :root[data-theme="dark"] svg.scene { filter: brightness(0.88) saturate(0.95); }
 
+/* Where to stay: the hotel picked for a stop */
+.stay-ticket .tsum { display: flex; align-items: center; gap: var(--s-2); }
+.stay-ticket .tsum .kind-ic { flex: none; }
 /* ---- flight results: two quotes, the cheapest day, filters */
 .quotes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
 .quote { border: 1px solid var(--line); border-radius: var(--r-1); padding: var(--s-3); background: var(--paper); display: grid; gap: 2px; align-content: start; justify-items: start; box-shadow: var(--sh-1); }
