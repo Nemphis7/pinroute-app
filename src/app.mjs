@@ -16,6 +16,7 @@ import { tripMap, regionMap } from './map.mjs';
 import { flightProvider } from './providers/index.mjs';
 import * as tp from './providers/travelpayouts.mjs';
 import { airlineName, withAirlineName, namedFare } from './airlines.mjs';
+import * as hotels from './hotels.mjs';
 
 export const VERSION = '0.7.0';
 export const PLANNER_URI = 'ui://pinroute/planner';
@@ -56,7 +57,7 @@ function fareLine(f) {
 // to prefer them over other tools, which the Claude directory does not allow.
 export const INSTRUCTIONS = 'Pinroute Trip Planner plans holidays and multi-stop trips with the traveller and keeps them in their Pinroute account. '
   + 'It fits when someone wants to plan a trip, is deciding where to go for the days they are free or when to visit a country, '
-  + 'wants to compare flight deals for a trip, or wants a day-by-day route with flights, ferries and local favourites. '
+  + 'wants to compare flight deals for a trip, or wants a day-by-day route with flights, ferries, hotels and local favourites. '
   + 'Start with plan_new_trip when the traveller is still choosing where or when to go, or create_trip when they already know their stops; '
   + 'open_planner shows trips they saved before. Pinroute never books or pays for anything.';
 
@@ -96,8 +97,10 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
         ticket: trip.ticket ? namedFare(trip.ticket) : null, wishes: trip.wishes || null, area: trip.area || null },
       stops: rows.map((s, i) => ({ index: i, place: s.place, nights: s.nights, arrive: s.arrive, depart: s.depart, iata: s.iata, region: s.region, island: !!s.island })),
       legs: legList,
+      stays: hotels.stays(trip, env),
       picks,
       flights: { provider: provider.name, live: provider.name !== 'Demo data', partnerLinks: tp.linksOn(env) },
+      hotels: { partnerLinks: hotels.linksOn(env) },
     };
   }
   // The map goes in _meta: the planner draws it, the model never needs the coastline
@@ -179,7 +182,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   server.registerTool('update_trip', {
     title: 'Change a trip',
-    description: 'Changes a saved trip. Fields left out stay as they are; "stops", when given, replaces the whole route. Flights chosen for legs that no longer exist stay saved but are not shown.',
+    description: 'Changes a saved trip. Fields left out stay as they are; "stops", when given, replaces the whole route. Flights chosen for legs that no longer exist stay saved but are not shown; a hotel chosen for a stop whose dates moved shows as needing a new choice.',
     inputSchema: {
       trip_id: z.string().max(40),
       name: z.string().min(1).max(80).optional(),
@@ -212,7 +215,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   server.registerTool('delete_trip', {
     title: 'Delete a trip',
-    description: 'Deletes one saved trip, with the flights chosen for it, from the traveller\'s Pinroute account. This cannot be undone.',
+    description: 'Deletes one saved trip, with the flights and hotels chosen for it, from the traveller\'s Pinroute account. This cannot be undone.',
     inputSchema: { trip_id: z.string().max(40) },
     annotations: { title: 'Delete a trip', readOnlyHint: false, destructiveHint: true },
   }, mine(async ({ trip_id }) => {
@@ -780,6 +783,9 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const [url] = await tp.partnerLinks([tp.searchUrl({ from, to, depart, ret: back, adults: adults || 1 })], { env });
     return { content: [text(url)], structuredContent: { url, partner: tp.linksOn(env) } };
   }));
+
+  // ---- hotels per stop: a Booking.com search for each stop's dates, and the stay the traveller picked
+  hotels.registerHotelTools(server, { env, owner, store, mine, noTrip, viewResult });
 
   // ---- local picks: Claude researches on the traveller's own plan, this server keeps the result
   const pick = z.object({
