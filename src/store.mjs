@@ -82,6 +82,11 @@ export function putTrip(owner, trip) {
   if (!r.changes) throw new Error(`Trip ${trip.id} could not be saved.`);
   return getTrip(owner, trip.id);
 }
+// The trip behind a calendar link, with its owner: the link's secret token is the only key
+export function tripByCalendar(token) {
+  const r = open().prepare("SELECT id, owner, data, updated FROM trips WHERE json_extract(data, '$.calendar.token') = ?").get(String(token));
+  return r ? { owner: r.owner, trip: row2trip(r) } : null;
+}
 export function deleteTrip(owner, id) {
   return open().prepare('DELETE FROM trips WHERE id = ? AND owner = ?').run(id, owner).changes > 0;
 }

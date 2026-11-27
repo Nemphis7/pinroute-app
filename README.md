@@ -33,6 +33,7 @@ Claude (the traveller's own plan)
 | `flight_link` | A link to compare and book a flight on Aviasales, as a partner link when Travelpayouts is set up | reads |
 | `find_activities` | Tours, activities and tickets at a trip stop or place (Amadeus Travel Builder), popular or matching interests, budget, traveller type and day; each with GetYourGuide and Klook links, as partner links when Travelpayouts is set up; daily limit per person | reads |
 | `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link; a kept tour also has its booking link and price | writes / reads |
+| `calendar_link` | A trip in the traveller's own calendar (Apple, Google/Android, Outlook): a secret subscription address `/calendar/<token>.ics` with each stop and its hotel, each flight, ferry and drive at its times when known, and dated tours; calendars follow changes; `new` renews the link, `stop` switches it off. Needs `PUBLIC_URL` (or Railway's domain) | writes |
 | `delete_my_data` | Deletes everything the person saved | deletes |
 
 Every tool has a title and a read-only or destructive annotation, and its description says what it does without steering Claude, as the [directory review](https://claude.com/docs/connectors/building/review-criteria) asks.
