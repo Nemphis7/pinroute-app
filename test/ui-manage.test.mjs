@@ -96,9 +96,10 @@ test('what the traveller has in mind goes to Claude, and the planner follows wha
   await f.getByRole('button', { name: 'Ask Claude to set this up' }).click();
   await page.waitForFunction(() => window.__messages.length > 0);
   const asked = await page.evaluate(() => window.__messages.at(-1).content[0].text);
-  assert.match(asked, /^Here is what I have in mind for my new trip in Pinroute: "Indonesia, but only Sulawesi"\. Set up my Pinroute draft to match with plan_new_trip: the country \(country\)/);
+  assert.match(asked, /^Here is what I have in mind for my new trip in Pinroute: "Indonesia, but only Sulawesi"\. Set up my Pinroute draft to match with save_new_trip_draft \(the planner is open and follows\): the country \(country\)/);
+  assert.match(asked, /show_answer \(key "new\|wish"\)/);
   assert.equal((await call('plan_new_trip')).draft.wishes, 'Indonesia, but only Sulawesi', 'saved before Claude answers');
-  await call('plan_new_trip', { country: 'Indonesia', focus: [{ country: 'Indonesia', area: 'Sulawesi', airports: ['UPG', 'MDC'] }] });
+  await call('save_new_trip_draft', { country: 'Indonesia', focus: [{ country: 'Indonesia', area: 'Sulawesi', airports: ['UPG', 'MDC'] }] });
   await f.locator('.nt-head h2', { hasText: 'When is best for Sulawesi, Indonesia?' }).waitFor({ timeout: 30000 });
 
   await f.getByRole('button', { name: 'Start over' }).click();

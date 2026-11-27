@@ -8,7 +8,7 @@ before(async () => { srv = await startServer(null, { SEARCH_LIMIT_PER_DAY: '6' }
 after(async () => { await client.close(); srv.server.close(); });
 
 const TOOLS = ['calendar_link', 'choose_flight', 'choose_stay', 'clear_flight', 'clear_stay', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'flight_link', 'get_local_picks', 'hotel_link', 'list_trips', 'mark_leg', 'open_planner',
-  'plan_new_trip', 'save_flight_deals', 'save_local_picks', 'scan_flight_deals', 'search_flights', 'set_nights', 'set_trip_fare', 'start_trip_from_flight', 'update_trip'];
+  'plan_new_trip', 'planner_answers', 'save_flight_deals', 'save_local_picks', 'save_new_trip_draft', 'scan_flight_deals', 'search_flights', 'set_nights', 'set_trip_fare', 'show_answer', 'start_trip_from_flight', 'update_trip'];
 
 test('lists every tool, each with a title and the right read or write annotation', async () => {
   const { tools } = await client.listTools();
@@ -176,6 +176,26 @@ test('marks a ferry booked with a note, and removes a chosen flight', async () =
   await client.callTool({ name: 'choose_flight', arguments: { trip_id: trip.id, leg_key: KBV_BKK, summary: 'Thai AirAsia FD4403, 08:55 KBV → 10:30 DMK', price: 186, currency: 'EUR' } });
 });
 
+test('keeps answers for the planner under the key it gave, and only the planner reads them', async () => {
+  const { tools } = await client.listTools();
+  assert.deepEqual(tools.find((t) => t.name === 'planner_answers')._meta.ui.visibility, ['app']);
+  for (const name of ['show_answer', 'save_new_trip_draft']) assert.equal(tools.find((t) => t.name === name)._meta?.ui?.resourceUri, undefined, `${name} shows no new planner`);
+  const one = await client.callTool({ name: 'show_answer', arguments: { key: 'trp_x|route|a', answer: ' Take the 9:00 ferry. ', links: [{ title: 'Timetable', url: 'https://example.com/t' }] } });
+  assert.equal(one.structuredContent.answer.answer, 'Take the 9:00 ferry.');
+  await client.callTool({ name: 'show_answer', arguments: { key: 'trp_x|route|a', answer: 'Take the 13:30 ferry.' } });
+  await client.callTool({ name: 'show_answer', arguments: { key: 'new|take', answer: 'Vietnam and Mexico.' } });
+  const got = (await client.callTool({ name: 'planner_answers', arguments: { prefix: 'trp_x|' } })).structuredContent.answers;
+  assert.deepEqual(got.map((a) => [a.key, a.answer, a.links.length]), [['trp_x|route|a', 'Take the 13:30 ferry.', 0]]);
+  const bad = await client.callTool({ name: 'show_answer', arguments: { key: 'x|a', answer: 'Hi', links: [{ title: 'Bad', url: 'javascript:alert(1)' }] } });
+  assert.equal(bad.isError, true);
+});
+
+test('saves the new-trip draft without showing the planner', async () => {
+  const r = await client.callTool({ name: 'save_new_trip_draft', arguments: { min_nights: 9, max_nights: 12 } });
+  assert.deepEqual([r.structuredContent.draft.minNights, r.structuredContent.draft.maxNights], [9, 12]);
+  assert.equal((await client.callTool({ name: 'plan_new_trip', arguments: {} })).structuredContent.draft.minNights, 9);
+});
+
 test('deletes one trip, then everything', async () => {
   const other = (await client.callTool({ name: 'create_trip', arguments: { name: 'Short', start: START, adults: 1, stops: [{ place: 'Ao Nang', nights: 2 }] } })).structuredContent.trip;
   const d = await client.callTool({ name: 'delete_trip', arguments: { trip_id: other.id } });
@@ -184,6 +204,7 @@ test('deletes one trip, then everything', async () => {
   const refused = await client.callTool({ name: 'delete_my_data', arguments: {} });
   assert.equal(refused.isError, true, 'needs confirm: true');
   const all = await client.callTool({ name: 'delete_my_data', arguments: { confirm: true } });
-  assert.match(all.content[0].text, /Deleted 1 trip and the local picks for 1 place/);
+  assert.match(all.content[0].text, /Deleted 1 trip, the new-trip draft and the local picks for 1 place/);
+  assert.equal(all.structuredContent.deleted.answers, 2, 'answers shown in the planner go too');
   assert.equal((await client.callTool({ name: 'list_trips', arguments: {} })).structuredContent.trips.length, 0);
 });

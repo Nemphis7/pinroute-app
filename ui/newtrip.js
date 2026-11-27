@@ -9,6 +9,7 @@ import {
   addDays, diffDays, dealPP, dealRatio, dealLabel, dealsFor, dealNights, budgetFit, roughCost, bestMonthsText, nextMonths, monthsToCheck,
 } from '../src/discover.mjs';
 import { app, ui, call, go, render, showError, tell, ask, waiting, narrow } from './core.js';
+import { answerBlock } from './answer.js';
 import { h, icon, day, dm, longDay, span, money, nightsTxt, plural, today } from './dom.js';
 import { worldSvg, legend } from './world.js';
 import { openAirMap } from './airmap.js';
@@ -52,9 +53,14 @@ async function save(patch, line) {
   }
   render();
 }
+// Redraws only when the draft changed; a save made while it looked wins over what it found
 export async function refresh(quiet) {
-  try { takeNew((await call('plan_new_trip', {})).structuredContent); render(); }
-  catch (e) { if (!quiet) showError(e.message || String(e)); }
+  try {
+    const seq = N.seq, was = JSON.stringify(N.view);
+    const sc = (await call('plan_new_trip', {})).structuredContent;
+    if (seq !== N.seq || JSON.stringify(sc) === was) return;
+    takeNew(sc); render();
+  } catch (e) { if (!quiet) showError(e.message || String(e)); }
 }
 const goStep = (step) => save({ step });
 const months = () => windowMonths(N.d.from, N.d.until);
@@ -115,7 +121,8 @@ function wishBox() {
       h('button', { class: 'icon ghost', 'aria-label': `Remove the focus on ${f.area}`, onclick: () => save({ focus: [{ country: id, area: '', airports: [] }] }) }, icon(X))))) : null,
     h('div', { class: 'acts' },
       h('button', { id: 'wish-go', disabled: !text.trim(), onclick: askWishes }, icon(MessageSquare), 'Ask Claude to set this up'),
-      waiting.wish ? h('span', { class: 'small busy', text: 'Claude is setting up your trip; the planner follows.' }) : null));
+      waiting.wish ? h('span', { class: 'small busy', text: 'Claude is setting up your trip; the planner follows.' }) : null),
+    answerBlock('wish', { poll: refresh }));
 }
 async function askWishes() {
   const text = (N.wish ?? N.d.wishes ?? '').trim();
@@ -124,7 +131,7 @@ async function askWishes() {
   N.wish = null;
   const since = N.d.updated;
   const where = N.d.way === 'where';
-  ask('wish', `Here is what I have in mind for my new trip in Pinroute: "${text}". Set up my Pinroute draft to match with plan_new_trip: ${where ? 'the country (country)' : 'the countries worth comparing (compare)'}, and the regions, interests, trip length (min_nights, max_nights), dates and travellers if I said them. For a part of a country I named, such as an island or a region, add a focus with its name and its main airports with scheduled flights (IATA codes, busiest first), so Pinroute looks up fares to those airports. Leave my wishes as they are. Then tell me in two or three lines what you set.`,
+  ask('wish', `Here is what I have in mind for my new trip in Pinroute: "${text}". Set up my Pinroute draft to match with save_new_trip_draft (the planner is open and follows): ${where ? 'the country (country)' : 'the countries worth comparing (compare)'}, and the regions, interests, trip length (min_nights, max_nights), dates and travellers if I said them. For a part of a country I named, such as an island or a region, add a focus with its name and its main airports with scheduled flights (IATA codes, busiest first), so Pinroute looks up fares to those airports. Leave my wishes as they are. Then say in two or three lines what you set.`,
     { poll: refresh, done: () => (N.d.updated || '') > (since || ''), tries: 45 });
 }
 
@@ -267,7 +274,8 @@ function whereStep() {
         INTERESTS.map((t) => chip(INTEREST_NAME[t], d.interests.includes(t), () => save({ interests: d.interests.includes(t) ? d.interests.filter((x) => x !== t) : [...d.interests, t] }), icon(ICON[t])))))),
     h('div', { class: 'acts' },
       h('button', { onclick: askTake }, icon(MessageSquare), 'Ask Claude about these'),
-      h('span', { class: 'small', text: waiting.take ? 'Claude answers in the conversation.' : 'Festivals, crowds and weather caveats for your dates.' })),
+      h('span', { class: 'small', text: waiting.take ? 'Claude is answering; it shows here.' : 'Festivals, crowds and weather caveats for your dates.' })),
+    answerBlock('take'),
     h('ul', { class: 'dests' }, shown.map((r, i) => destRow(r, i, ms))),
     ranked.length > 12 ? h('button', { class: 'ghost', onclick: () => { N.all = !N.all; render(); } }, N.all ? 'Show the top 12' : `Show all ${ranked.length}`) : null,
     stepNav(['When', () => goStep('when')], [`Next: compare flights (${d.compare.length})`, () => goStep('flights'), !d.compare.length],
@@ -330,6 +338,7 @@ function flightsStep() {
       h('div', { class: 'sorter', role: 'group', 'aria-label': 'Sort' }, h('span', { class: 'small', text: 'Sort' }),
         [['deal', 'Deal'], ['price', 'Price'], ['weather', 'Weather']].map(([k, l]) => h('button', { 'aria-pressed': String(N.sort === k), onclick: () => { N.sort = k; render(); } }, l)))),
     waiting.deals ? h('p', { class: 'note' }, 'Claude is searching with your flight tools; fares appear here as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
+    answerBlock('deals', { poll: refresh }),
     !N.homes.length ? h('p', { class: 'note warn' }, 'Add a departure airport first. ', h('button', { class: 'link', onclick: () => goStep(d.way === 'where' ? 'season' : 'when') }, 'Add one')) : null,
     top ? bestBanner(top) : null,
     rows.length ? h('div', { class: 'deal-rows' }, rows.map(countryDeals))
@@ -412,6 +421,7 @@ function compareBlock(d, x) {
     picked && picked.id !== x.id ? dealItem(d, picked, false) : null,
     st?.error ? h('p', { class: 'note warn', text: st.error }) : null,
     waiting[`cmp|${d.id}`] ? h('p', { class: 'note' }, 'Claude is comparing the routes; fares appear in the table as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
+    answerBlock(`cmp|${d.id}`, { poll: refresh }),
     h('div', { class: 'acts' },
       h('button', { disabled: !routes || st === 'loading' || routes > (N.flights.searchesLeft ?? 99), onclick: () => compareRoutes(d, x, m) },
         st === 'loading' ? 'Comparing…' : `Compare ${plural(routes, 'route')}`),
@@ -542,6 +552,7 @@ function seasonStep() {
       h('button', { disabled: scanning || !N.homes.length, onclick: () => quickMonths(d, check) }, scanning && !N.flights.recent ? 'Checking…' : N.flights.recent ? `Live airline fares (${check.map((mo) => MON[mo.m]).join(', ')})` : liveLabel())),
     N.scan[`y|${d.id}`]?.error ? h('p', { class: 'note warn', text: N.scan[`y|${d.id}`].error }) : null,
     waiting.months ? h('p', { class: 'note' }, 'Claude is searching with your flight tools; fares appear under each month as Claude saves them. ', h('button', { class: 'link', onclick: () => refresh() }, 'Refresh')) : null,
+    answerBlock('months', { poll: refresh }),
     ...check.map((mo) => N.scan[`m|${mo.ym}`]?.error ? h('p', { class: 'note warn', text: `${MONTHS[mo.m]}: ${N.scan[`m|${mo.ym}`].error}` }) : null),
     best ? h('section', { class: 'banner art' },
       h('div', { class: 'hero-art' }, destArt(d, 900, 220, 'golden')), h('div', { class: 'hero-shade' }),

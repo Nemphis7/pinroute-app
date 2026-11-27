@@ -5,7 +5,8 @@ import { App } from '@modelcontextprotocol/ext-apps';
 // Size reports start once the host has answered (see the start in planner.js), so none is sent into a closed channel
 export const app = new App({ name: 'Pinroute planner', version: '0.8.0' }, {}, { autoResize: false });
 export const $ = (id) => document.getElementById(id);
-export const ui = { ctx: {}, busy: false };
+// scope: what the screen shows, as the start of the keys its answers are kept under ("<trip id>|", "new|")
+export const ui = { ctx: {}, busy: false, scope: '' };
 
 let paint = () => {}, open = () => {};
 export const onRender = (f) => { paint = f; };
@@ -64,20 +65,40 @@ export async function setMode(mode) {
   render();
 }
 
-export const tell = (line) => app.updateModelContext({ content: [{ type: 'text', text: `In the Pinroute planner, ${line}` }] }).catch(() => {});
+export const tell = (line) => app.updateModelContext({ content: [{ type: 'text', text: `In the Pinroute planner (open in this conversation; it refreshes itself after changes), ${line}` }] }).catch(() => {});
 
-// Asking Claude: a message in the conversation, then the screen watches the server for what Claude saves.
-// poll() fetches the latest state; done() says whether what was asked for has arrived.
+// Asking Claude: a message in the conversation, then the screen watches the server for what Claude saves, and for
+// Claude's answer, which Claude puts in the planner with show_answer under the key the message names. The key is the
+// screen's scope (the trip, or the new-trip draft) and what was asked, so each answer shows where it was asked.
+// poll() fetches the latest state; done() says whether what was asked for has arrived. The grey "Claude is working" rows
+// go once the answer or what was asked for is in; polling goes on for done() so then() can follow.
 export const waiting = {};
-export async function ask(key, message, { poll, done, then, every = 8000, tries = 30 } = {}) {
+export const answers = {};
+export const answerKey = (key) => `${ui.scope || ''}${key}`;
+export async function loadAnswers(prefix = ui.scope) {
+  if (!prefix) return false;
+  try {
+    const r = await app.callServerTool({ name: 'planner_answers', arguments: { prefix } });
+    let fresh = false;
+    for (const a of r.structuredContent?.answers || []) if (answers[a.key]?.at !== a.at) { answers[a.key] = a; fresh = true; }
+    return fresh;
+  } catch { return false; }
+}
+const inPlanner = (k) => ` Put your full answer in the Pinroute planner with show_answer (key "${k}"), where I asked; in the chat, one short line is enough. The planner I'm looking at refreshes itself.`;
+
+export async function ask(key, message, { poll, done, then, every = 8000, tries = 30, answer = true } = {}) {
+  const scope = ui.scope || '', ak = scope + key, since = answers[ak]?.at || '';
   waiting[key] = true;
   render();
-  await app.sendMessage({ role: 'user', content: [{ type: 'text', text: message }] }).catch((e) => showError(e.message || String(e)));
-  if (!poll || !done) return;
+  await app.sendMessage({ role: 'user', content: [{ type: 'text', text: answer ? message + inPlanner(ak) : message }] }).catch((e) => showError(e.message || String(e)));
+  if (!(poll && done) && !answer) return;
   let n = 0;
   const timer = setInterval(async () => {
     n += 1;
-    await poll(true);
-    if (done() || n >= tries) { clearInterval(timer); if (done()) { delete waiting[key]; then?.(); } render(); }
+    await Promise.all([poll ? poll(true) : null, answer ? loadAnswers(scope) : null]);
+    const got = (answers[ak]?.at || '') > since, finished = !!done?.();
+    if (got || finished) delete waiting[key];
+    if (finished || (got && !done) || n >= tries) { clearInterval(timer); if (finished) then?.(); }
+    render();
   }, every);
 }

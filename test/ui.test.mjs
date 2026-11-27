@@ -199,10 +199,31 @@ test('a ferry: asks Claude how to get there, then marks it booked', { skip }, as
   await frame().getByRole('button', { name: 'Ask Claude how to get there' }).click();
   await page.waitForFunction(() => /How do I get from Koh Phi Phi to Koh Lanta/.test(window.__messages.at(-1).content[0].text));
   assert.ok((await lastMessage()).includes(`mark_leg (trip_id "${tripId}", leg_key "${ferry.key}")`));
+  // Claude's answer shows in the planner, under the ferry, with its links and a box for a follow-up
+  const key = `${tripId}|route|${ferry.key}`;
+  assert.ok((await lastMessage()).includes(`show_answer (key "${key}")`));
+  await client.callTool({ name: 'show_answer', arguments: { key, answer: 'Two ferries a day:\n- **09:00** Phi Phi Cruiser, 1h30, 500 THB\n- 13:30 Andaman Wave, 1h45, 600 THB\n\nBook a day ahead in high season.', links: [{ title: '12Go timetable', url: 'https://12go.asia/en' }] } });
+  const answer = frame().locator('.detail .answer');
+  await answer.waitFor({ timeout: 20000 });
+  assert.equal(await answer.locator('li').count(), 2);
+  assert.equal(await answer.locator('li b').first().textContent(), '09:00');
+  await answer.getByRole('button', { name: '12Go timetable' }).waitFor();
+  await answer.getByRole('textbox', { name: 'Ask Claude a follow-up' }).fill('Is there a later one?');
+  await answer.getByRole('button', { name: 'Ask' }).click();
+  await page.waitForFunction(() => /^Is there a later one\?/.test(window.__messages.at(-1).content[0].text));
+  assert.ok((await lastMessage()).includes(`show_answer (key "${key}")`));
   await frame().getByRole('button', { name: 'Mark booked', exact: true }).click();
   await frame().getByRole('button', { name: 'Booked', exact: true }).waitFor();
   assert.match(await leg(ferry.key).textContent(), /Booked/);
   assert.match(await frame().locator('#status').textContent(), /1 of 5 ferries and drives booked/);
+});
+
+test('the open planner follows what Claude saves in the chat', { skip }, async () => {
+  const sok = (await server()).stops.find((x) => x.place === 'Khao Sok');
+  await client.callTool({ name: 'set_nights', arguments: { trip_id: tripId, stop: sok.index, nights: sok.nights + 1 } });
+  await frame().locator('.row.stop', { hasText: 'Khao Sok' }).locator('.sub', { hasText: `${sok.nights + 1} nights` }).waitFor({ timeout: 25000 });
+  await client.callTool({ name: 'set_nights', arguments: { trip_id: tripId, stop: sok.index, nights: sok.nights } });
+  await frame().locator('.row.stop', { hasText: 'Khao Sok' }).locator('.sub', { hasText: `${sok.nights} night` }).waitFor({ timeout: 25000 });
 });
 
 test('moves along the route with the arrow keys', { skip }, async () => {

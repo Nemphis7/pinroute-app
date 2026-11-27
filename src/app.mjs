@@ -62,7 +62,10 @@ export const INSTRUCTIONS = 'Pinroute Trip Planner plans holidays and multi-stop
   + 'It fits when someone wants to plan a trip, is deciding where to go for the days they are free or when to visit a country, '
   + 'wants to compare flight deals for a trip, or wants a day-by-day route with flights, ferries, hotels and local favourites. '
   + 'Start with plan_new_trip when the traveller is still choosing where or when to go, or create_trip when they already know their stops; '
-  + 'open_planner shows trips they saved before. Pinroute never books or pays for anything.';
+  + 'open_planner shows trips they saved before. Pinroute never books or pays for anything. '
+  + 'A planner already showing in the conversation refreshes itself after every change saved with these tools, so a change does not need open_planner or plan_new_trip to show it; '
+  + 'save_new_trip_draft changes the new-trip draft without showing another planner. '
+  + 'A message sent from the planner names a key when the traveller wants the answer in the planner: show_answer puts it there.';
 
 export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   const server = new McpServer({ name: 'pinroute', title: 'Pinroute Trip Planner', version: VERSION }, { instructions: INSTRUCTIONS });
@@ -140,7 +143,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   // ---- the planner screen
   registerAppTool(server, 'open_planner', {
     title: 'Open my trip plans',
-    description: 'Use when the traveller wants to see, continue or change a trip they planned before. Shows the interactive Pinroute planner. With trip_id it opens that saved trip: the route with dates, the flight or road and ferry leg between stops, flights chosen so far and saved local picks. Without trip_id it opens the start screen: the traveller\'s trips, the one under way first, and the two ways to plan a new trip.',
+    description: 'Use when the traveller wants to see, continue or change a trip they planned before. Shows the interactive Pinroute planner. With trip_id it opens that saved trip: the route with dates, the flight or road and ferry leg between stops, flights chosen so far and saved local picks. Without trip_id it opens the start screen: the traveller\'s trips, the one under way first, and the two ways to plan a new trip. A planner already showing in the conversation refreshes itself after changes, so this is for opening it, or another trip.',
     inputSchema: { trip_id: z.string().max(40).optional().describe('Trip id from create_trip or list_trips') },
     annotations: { title: 'Open my trip plans', readOnlyHint: true },
     _meta: { ui: { resourceUri: PLANNER_URI } },
@@ -544,34 +547,48 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     return { ids: out };
   }
 
+  const draftSchema = {
+    way: z.enum(['when', 'where']).optional().describe('"when": the traveller knows their free dates; "where": they know the country'),
+    step: z.enum(['when', 'where', 'flights', 'country', 'season']).optional().describe('Screen to show: when, where, flights; or country, season for the "where" way'),
+    free_from: DATE.optional().describe('First day the traveller could leave'),
+    free_until: DATE.optional().describe('Last day they could be back'),
+    min_nights: z.number().int().min(1).max(60).optional(),
+    max_nights: z.number().int().min(1).max(60).optional(),
+    adults: z.number().int().min(1).max(9).optional(),
+    budget: z.number().min(0).max(1e6).optional().describe('Budget for the whole trip in euros, all travellers, flights included; 0 for none'),
+    home_airports: z.array(IATA).max(6).optional().describe('Airports the traveller can fly from, the main one first'),
+    regions: z.array(z.enum(REGIONS)).max(12).optional(),
+    interests: z.array(z.enum(INTERESTS)).max(4).optional(),
+    compare: z.array(z.string().min(2).max(60)).max(8).optional().describe('Countries to compare flights for'),
+    country: z.string().min(2).max(60).optional().describe('The country, when the traveller knows where to go'),
+    reset: z.boolean().optional().describe('Start a new draft, keeping only the departure airports and travellers'),
+    wishes: z.string().max(500).optional().describe('What the traveller has in mind, in their own words; empty to clear'),
+    focus: z.array(z.object({
+      country: z.string().min(2).max(60),
+      area: z.string().max(60).describe('The part of the country, e.g. "Sulawesi"; empty to clear the focus'),
+      airports: z.array(IATA).max(5).describe('That area\'s main airports with scheduled flights, busiest first; fares are searched to these'),
+    })).max(8).optional().describe('A part of a country to travel in, with its airports'),
+  };
   registerAppTool(server, 'plan_new_trip', {
     title: 'Plan a trip (where and when to go)',
     description: 'Use when someone wants to plan a trip, is deciding where or when to travel, or wants ideas for the days they are free. Shows Pinroute\'s new-trip planner and saves what the traveller said to their draft: when they are free, how many nights, how many travel, a budget, the airports they can fly from, regions, interests, countries to compare, their wishes in their own words, and a focus on part of a country with that area\'s airports. The planner ranks 60 countries by the weather in those months, the flight time and the budget, and shows the flight deals saved for each; with a focus, fares are looked up to that area\'s airports. With country set it shows that country\'s best months and the fares found in each. Fields left out stay as they were.',
-    inputSchema: {
-      way: z.enum(['when', 'where']).optional().describe('"when": the traveller knows their free dates; "where": they know the country'),
-      step: z.enum(['when', 'where', 'flights', 'country', 'season']).optional().describe('Screen to show: when, where, flights; or country, season for the "where" way'),
-      free_from: DATE.optional().describe('First day the traveller could leave'),
-      free_until: DATE.optional().describe('Last day they could be back'),
-      min_nights: z.number().int().min(1).max(60).optional(),
-      max_nights: z.number().int().min(1).max(60).optional(),
-      adults: z.number().int().min(1).max(9).optional(),
-      budget: z.number().min(0).max(1e6).optional().describe('Budget for the whole trip in euros, all travellers, flights included; 0 for none'),
-      home_airports: z.array(IATA).max(6).optional().describe('Airports the traveller can fly from, the main one first'),
-      regions: z.array(z.enum(REGIONS)).max(12).optional(),
-      interests: z.array(z.enum(INTERESTS)).max(4).optional(),
-      compare: z.array(z.string().min(2).max(60)).max(8).optional().describe('Countries to compare flights for'),
-      country: z.string().min(2).max(60).optional().describe('The country, when the traveller knows where to go'),
-      reset: z.boolean().optional().describe('Start a new draft, keeping only the departure airports and travellers'),
-      wishes: z.string().max(500).optional().describe('What the traveller has in mind, in their own words; empty to clear'),
-      focus: z.array(z.object({
-        country: z.string().min(2).max(60),
-        area: z.string().max(60).describe('The part of the country, e.g. "Sulawesi"; empty to clear the focus'),
-        airports: z.array(IATA).max(5).describe('That area\'s main airports with scheduled flights, busiest first; fares are searched to these'),
-      })).max(8).optional().describe('A part of a country to travel in, with its airports'),
-    },
+    inputSchema: draftSchema,
     annotations: { title: 'Plan a trip (where and when to go)', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     _meta: { ui: { resourceUri: PLANNER_URI } },
+  }, mine((a) => saveDraft(a)));
+
+  // The same changes without showing a planner: for when one is already open in the conversation, which refreshes itself
+  server.registerTool('save_new_trip_draft', {
+    title: 'Save the new-trip draft',
+    description: 'Saves the same fields as plan_new_trip to the traveller\'s new-trip draft without showing the planner, for when the planner is already open in the conversation: it refreshes itself. Fields left out stay as they were.',
+    inputSchema: draftSchema,
+    annotations: { title: 'Save the new-trip draft', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, mine(async (a) => {
+    const r = await saveDraft(a);
+    return r.isError ? r : { content: r.content, structuredContent: r.structuredContent };
+  }));
+
+  async function saveDraft(a) {
     const changes = Object.keys(a).filter((k) => a[k] !== undefined);
     if (!changes.length) return draftResult(draftOf());
     if (a.free_from && a.free_from < earliest()) return fail(`${a.free_from} has already passed; the window has to start today or later.`);
@@ -622,7 +639,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     }, freshDraft);
     if (bad) return fail(bad);
     return draftResult(dr);
-  }));
+  }
 
   // Fares for one window: departures spread over it, each with the trip length in the middle of the range
   function datePairs(from, until, minN, maxN, count) {
@@ -1053,10 +1070,38 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     return { content: [text(picks.length ? picks.map((p) => `${p.name} (${p.kind}): ${p.why}`).join('\n') : `No local picks saved for ${place} yet.`)], structuredContent: { place, picks } };
   }));
 
+  // ---- answers shown in the planner: a question asked there names a key, and Claude's answer is kept under it,
+  // so the open planner shows it where it was asked. The planner reads them with planner_answers, which only it sees.
+  const ANSWER_KEY = z.string().min(3).max(160).regex(/^[\w|:.,@>+\- ]+$/u, 'The key as the planner gave it');
+  server.registerTool('show_answer', {
+    title: 'Show an answer in the planner',
+    description: 'Shows Claude\'s answer inside the Pinroute planner, next to the question the traveller asked there. A message sent from the planner names the key to use. The answer is plain text: a blank line starts a paragraph, a line starting with "- " is a list item, **bold** works. Links go in links. A newer answer under the same key replaces the older one.',
+    inputSchema: {
+      key: ANSWER_KEY.describe('The key named in the planner\'s message'),
+      answer: z.string().min(1).max(6000),
+      links: z.array(z.object({ title: z.string().min(1).max(120), url: z.string().url().max(500).refine((u) => /^https?:\/\//.test(u), 'An http or https link') })).max(12).optional()
+        .describe('Booking pages, timetables or sources the answer mentions'),
+    },
+    annotations: { title: 'Show an answer in the planner', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, mine(async ({ key, answer, links }) => {
+    const saved = store.putAnswer(owner, key, { answer: answer.trim(), links: links || [] });
+    return { content: [text('Shown in the Pinroute planner, where the traveller asked. The open planner picks it up by itself, so a one-line reply in the chat that points there is enough.')], structuredContent: { answer: saved } };
+  }));
+  server.registerTool('planner_answers', {
+    title: 'Read answers for the planner',
+    description: 'For the planner itself: the answers saved with show_answer whose key starts with the prefix.',
+    inputSchema: { prefix: z.string().min(1).max(160) },
+    annotations: { title: 'Read answers for the planner', readOnlyHint: true },
+    _meta: { ui: { visibility: ['app'] } },
+  }, mine(async ({ prefix }) => {
+    const answers = store.getAnswers(owner, prefix);
+    return { content: [text(`${answers.length} answer${answers.length === 1 ? '' : 's'}.`)], structuredContent: { answers } };
+  }));
+
   // ---- the traveller's own data
   server.registerTool('delete_my_data', {
     title: 'Delete my Pinroute data',
-    description: 'Deletes everything the traveller has saved in Pinroute: all trips, chosen flights, the new-trip draft with its fares, local picks and search counts. This cannot be undone. Requires confirm set to true.',
+    description: 'Deletes everything the traveller has saved in Pinroute: all trips, chosen flights, the new-trip draft with its fares, local picks, answers shown in the planner and search counts. This cannot be undone. Requires confirm set to true.',
     inputSchema: { confirm: z.literal(true).describe('Must be true') },
     annotations: { title: 'Delete my Pinroute data', readOnlyHint: false, destructiveHint: true },
   }, mine(async () => {

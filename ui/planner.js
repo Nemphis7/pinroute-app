@@ -7,10 +7,11 @@
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
 import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play } from 'lucide';
-import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting } from './core.js';
+import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting, loadAnswers } from './core.js';
+import { answerBlock } from './answer.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
 import { takeHome, homeCard, homeScreen } from './home.js';
-import { takeNew, newCard, newSteps, newScreen, newKey, openFlightLink, commissionNote } from './newtrip.js';
+import { takeNew, newCard, newSteps, newScreen, newKey, openFlightLink, commissionNote, refresh as refreshNew } from './newtrip.js';
 import { navBar, navTabs } from './nav.js';
 import { airMapDialog } from './airmap.js';
 import { tripMenu, tripDialog } from './tripmenu.js';
@@ -356,6 +357,7 @@ function planCallout() {
   return h('div', { class: 'callout' },
     h('p', { class: 'meta', text: `You land in ${V.stops[0].place} and fly home from ${V.stops.at(-1).place}. Claude can suggest the stops in between.` }),
     waiting.plan ? skeleton('Claude is planning; the route appears here once saved.', 2) : null,
+    answerBlock('plan', { poll: refresh }),
     h('button', { class: 'primary', disabled: !t, onclick: askPlan }, icon(Route), 'Ask Claude to plan the route'));
 }
 function askPlan() {
@@ -448,6 +450,7 @@ function stopDetail(x) {
         h('p', { class: 'why', text: p.why })))) : waiting[`picks|${x.place}`] ? null : h('div', { class: 'empty-state' }, h('span', { class: 'kind-ic' }, icon(Sparkles)),
         h('p', { class: 'meta', text: `No picks for ${x.place} yet. Claude can look through recent Reddit threads, Instagram posts and travel blogs for the places locals love.` })),
       waiting[`picks|${x.place}`] ? skeleton(`Claude is researching picks for ${x.place}`) : null,
+      answerBlock(`picks|${x.place}`, { poll: refresh }),
       h('div', { class: 'acts' }, h('button', { class: picks.length ? '' : 'primary', onclick: () => askPicks(x) }, icon(MessageSquare), picks.length ? 'Ask Claude for more' : 'Ask Claude for local picks'))),
     V.activities?.on ? toursBlock(x, picks) : null,
   ];
@@ -596,6 +599,7 @@ function hotelBlock(x) {
       h('div', { class: 'tside' }, c.price != null ? h('span', { class: 'price', text: money(c.price, c.currency) }) : null,
         h('span', { class: 'small', text: nightsTxt(st.nights) }))) : null,
     waiting[key] ? skeleton(`Claude is looking for places to stay in ${x.place}`, 2) : null,
+    answerBlock(key, { poll: refresh }),
     h('div', { class: 'acts' },
       h('button', { class: c ? '' : 'primary', onclick: () => app.openLink({ url: c?.link || st.link }) }, icon(ExternalLink), c?.link ? 'Booking page' : 'Find hotels on Booking.com'),
       c ? h('button', { 'aria-pressed': String(!!c.booked), disabled: ui.busy, onclick: () => setStayBooked(st, !c.booked) }, icon(Check), c.booked ? 'Booked' : 'Mark booked') : null,
@@ -658,6 +662,8 @@ function flightBlock(l) {
         l.chosen.part === 'return' ? null : h('button', { class: 'ghost', onclick: () => openFlightLink(leg(l)) }, icon(ExternalLink), 'Compare on Aviasales'),
         h('button', { class: 'ghost', onclick: () => askFlights(l) }, icon(MessageSquare), 'Ask Claude again'),
         h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove')),
+      waiting[`flights|${l.key}`] ? skeleton('Claude is searching with your flight tools; the options show here.', 2) : null,
+      answerBlock(`flights|${l.key}`, { poll: refresh }),
       V.flights.partnerLinks && l.chosen.part !== 'return' ? commissionNote() : null].filter(Boolean);
   }
   const st = fares[l.key] || {};
@@ -670,7 +676,8 @@ function flightBlock(l) {
       h('button', { disabled: st.state === 'loading', onclick: () => findFlights(l) }, label),
       h('button', { class: 'ghost', onclick: () => openFlightLink(leg(l)) }, icon(ExternalLink), 'Compare on Aviasales')),
     V.flights.partnerLinks ? commissionNote() : null,
-    waiting[`flights|${l.key}`] ? skeleton('Claude is searching with your flight tools; the flight you pick appears here.', 2) : null,
+    waiting[`flights|${l.key}`] ? skeleton('Claude is searching with your flight tools; the options show here.', 2) : null,
+    answerBlock(`flights|${l.key}`, { poll: refresh }),
     st.state === 'loading' ? skeleton('Searching airline fares for the day and the days around it, and Aviasales…', 3) : null,
     st.state === 'error' ? h('p', { class: 'note warn', text: st.error }) : null,
     st.state === 'done' ? faresBlock(l, st) : null,
@@ -699,7 +706,8 @@ function transferBlock(l) {
     h('div', { class: 'acts' },
       h('button', { class: l.booked ? '' : 'primary', onclick: () => askRoute(l) }, icon(MessageSquare), 'Ask Claude how to get there'),
       bookedButton(l)),
-    waiting[`route|${l.key}`] ? h('p', { class: 'small', text: 'Claude is answering in the conversation.' }) : null,
+    waiting[`route|${l.key}`] ? skeleton('Claude is looking up the ferries and transfers; the answer shows here.', 2) : null,
+    answerBlock(`route|${l.key}`, { poll: refresh }),
   ].filter(Boolean);
 }
 
@@ -813,10 +821,12 @@ function askRoute(l) {
     `How do I get from ${l.fromName} to ${l.toName} on ${longDay(l.date)}? Give me the ferry or transfer options with times, journey length, price and how to book. When I've booked, mark that leg booked in Pinroute with mark_leg (trip_id "${V.trip.id}", leg_key "${l.key}").`);
 }
 
+// Redraws only when something changed, so a refresh in the background leaves the screen as it is
 async function refresh(quiet) {
   try {
+    const was = JSON.stringify(V);
     take(await call('open_planner', { trip_id: V.trip.id }));
-    render();
+    if (JSON.stringify(V) !== was) render();
   } catch (e) { if (!quiet) showError(e.message || String(e)); }
 }
 
@@ -829,14 +839,30 @@ function take(r) {
 // A tool result picks the screen: the start screen, the new-trip planner, or a trip
 function showResult(r) {
   const sc = r.structuredContent || {};
-  if (sc.screen === 'home') { takeHome(sc); screen = 'home'; setHere({ name: 'open_planner', args: {} }); }
-  else if (sc.screen === 'new') { takeNew(sc); screen = 'new'; setHere({ name: 'plan_new_trip', args: {} }); }
+  if (sc.screen === 'home') { takeHome(sc); screen = 'home'; ui.scope = ''; setHere({ name: 'open_planner', args: {} }); }
+  else if (sc.screen === 'new') { takeNew(sc); screen = 'new'; ui.scope = 'new|'; setHere({ name: 'plan_new_trip', args: {} }); }
   else if (sc.trip) {
     if (V?.trip.id !== sc.trip.id) { sel = null; pane = 'list'; }
-    take(r); screen = 'trip'; setHere({ name: 'open_planner', args: { trip_id: sc.trip.id } });
+    take(r); screen = 'trip'; ui.scope = `${sc.trip.id}|`; setHere({ name: 'open_planner', args: { trip_id: sc.trip.id } });
   }
   render();
+  loadAnswers().then((fresh) => { if (fresh) render(); });
 }
+
+// The open planner follows what Claude saves from the chat: while it is on screen it looks again every LIVE_MS, and
+// redraws only when the trip, the draft or an answer changed. So Claude doesn't need to show another planner card.
+const LIVE_MS = 15000;
+let live = false;
+async function follow() {
+  if (live || document.visibilityState === 'hidden' || ui.busy || !screen || screen === 'home') return;
+  live = true;
+  try {
+    const [, fresh] = await Promise.all([screen === 'trip' ? refresh(true) : refreshNew(true), loadAnswers()]);
+    if (fresh) render();
+  } finally { live = false; }
+}
+setInterval(follow, LIVE_MS);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') follow(); });
 onShow(showResult);
 
 // ---------------------------------------------------------------- host context: theme, fonts, display mode

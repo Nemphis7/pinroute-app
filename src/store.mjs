@@ -26,6 +26,7 @@ function open() {
     CREATE TABLE IF NOT EXISTS picks (owner TEXT NOT NULL, place TEXT NOT NULL, data TEXT NOT NULL, updated TEXT NOT NULL, PRIMARY KEY (owner, place));
     CREATE TABLE IF NOT EXISTS usage (owner TEXT NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (owner, day, kind));
     CREATE TABLE IF NOT EXISTS drafts (owner TEXT PRIMARY KEY, data TEXT NOT NULL, updated TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS answers (owner TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, updated TEXT NOT NULL, PRIMARY KEY (owner, key));
   `);
   importJson(dir);
   return db;
@@ -128,6 +129,23 @@ export function updateDraft(owner, fn, fresh) {
   });
 }
 
+// ---- Claude's answers to questions asked in the planner, keyed by what was asked ("<trip id>|route|<leg key>").
+// Each person keeps the latest ANSWERS_KEPT.
+const ANSWERS_KEPT = 60;
+export function putAnswer(owner, key, answer) {
+  const now = new Date().toISOString();
+  return tx((d) => {
+    d.prepare('INSERT INTO answers (owner, key, data, updated) VALUES (?, ?, ?, ?) ON CONFLICT (owner, key) DO UPDATE SET data = excluded.data, updated = excluded.updated')
+      .run(owner, key, JSON.stringify(answer), now);
+    d.prepare('DELETE FROM answers WHERE owner = ? AND key NOT IN (SELECT key FROM answers WHERE owner = ? ORDER BY updated DESC LIMIT ?)').run(owner, owner, ANSWERS_KEPT);
+    return { ...answer, key, at: now };
+  });
+}
+export function getAnswers(owner, prefix) {
+  return open().prepare("SELECT key, data, updated FROM answers WHERE owner = ? AND substr(key, 1, length(?)) = ? ORDER BY updated").all(owner, prefix, prefix)
+    .map((r) => ({ ...JSON.parse(r.data), key: r.key, at: r.updated }));
+}
+
 // ---- daily counters, for limits such as flight searches per person
 export function bumpUsage(owner, kind, day = new Date().toISOString().slice(0, 10)) {
   return tx((d) => {
@@ -147,6 +165,7 @@ export function deleteOwner(owner) {
     picks: d.prepare('DELETE FROM picks WHERE owner = ?').run(owner).changes,
     drafts: d.prepare('DELETE FROM drafts WHERE owner = ?').run(owner).changes,
     usage: d.prepare('DELETE FROM usage WHERE owner = ?').run(owner).changes,
+    answers: d.prepare('DELETE FROM answers WHERE owner = ?').run(owner).changes,
   }));
 }
 
@@ -164,4 +183,4 @@ export function adoptLocal(owner) {
 }
 
 // For tests: start from an empty store
-export function _reset() { open().exec('DELETE FROM trips; DELETE FROM picks; DELETE FROM usage; DELETE FROM drafts;'); }
+export function _reset() { open().exec('DELETE FROM trips; DELETE FROM picks; DELETE FROM usage; DELETE FROM drafts; DELETE FROM answers;'); }
