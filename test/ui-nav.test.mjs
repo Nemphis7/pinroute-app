@@ -97,6 +97,26 @@ test('on a phone: Back, the title and the way out on top; Home, New trip and Tri
   await page.close();
 });
 
+test('with a menu open, the next tap still does what it says', { skip }, async () => {
+  const trips = (await client.callTool({ name: 'list_trips', arguments: {} })).structuredContent.trips;
+  const { page, f } = await openHost({ trip_id: trips[0].id }, [1100, 800]);
+  await f.getByRole('button', { name: 'Open planner' }).click();
+  await f.locator('#app[data-layout="app"][data-screen="trip"]').waitFor();
+  const places = f.getByRole('navigation', { name: 'Pinroute' });
+  await f.locator('#trip-menu').click();
+  await f.getByRole('menuitem', { name: /Rename/ }).waitFor();
+  await places.getByRole('button', { name: 'Home' }).click();
+  await f.locator('.home').waitFor({ timeout: 5000 });
+  assert.equal(await f.getByRole('menuitem').count(), 0, 'the menu closed too');
+
+  await f.locator('#trips-tab').click();
+  await f.locator('#trips-menu .mi').first().waitFor();
+  await places.getByRole('button', { name: 'New trip' }).click();
+  await f.locator('.nt').waitFor({ timeout: 5000 });
+  assert.equal(await f.locator('#trips-menu').count(), 0);
+  await page.close();
+});
+
 test('in the chat: a trip card also leads to all trips', { skip }, async () => {
   const trips = (await client.callTool({ name: 'list_trips', arguments: {} })).structuredContent.trips;
   const { page, f } = await openHost({ trip_id: trips[0].id }, [1100, 800]);

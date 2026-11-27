@@ -63,3 +63,21 @@ test('says what is wrong with a comparison before searching', async () => {
   const many = ['FRA', 'MUC', 'STR', 'DUS', 'CGN'];
   assert.match((await call('scan_flight_deals', { country: 'Vietnam', origins: many, destinations: ['SGN', 'HAN', 'DAD', 'CXR'], depart, return: addDays(depart, 12) })).content[0].text, /20 routes is more than one comparison takes/);
 });
+
+test('names an airport by the city travellers fly to, not the suburb it stands in', async () => {
+  const city = async (q) => (await call('find_airports', { query: q })).structuredContent.airports[0];
+  assert.deepEqual([(await city('NRT')).city, (await city('DPS')).city, (await city('KUL')).city, (await city('MXP')).city], ['Tokyo', 'Bali', 'Kuala Lumpur', 'Milan']);
+  assert.equal((await city('MAN')).city, 'Manchester', 'a county after the town is left out');
+  assert.equal((await city('Narita')).code, 'NRT', 'the suburb still finds it');
+  const tokyo = (await call('find_airports', { query: 'Tokyo' })).structuredContent.airports.map((a) => a.code);
+  assert.deepEqual(tokyo.slice(0, 2).sort(), ['HND', 'NRT']);
+});
+
+test('three letters: a big airport\'s code comes first, a small one\'s follows the busy cities that start so', async () => {
+  const codes = async (q) => (await call('find_airports', { query: q })).structuredContent.airports.map((a) => a.code);
+  assert.equal((await codes('Mun'))[0], 'MUC', 'Munich before Maturín (MUN)');
+  assert.ok((await codes('Mun')).includes('MUN'));
+  assert.equal((await codes('Pra'))[0], 'PRG');
+  assert.equal((await codes('BER'))[0], 'BER', 'Berlin keeps its code first');
+  assert.equal((await codes('FRA'))[0], 'FRA');
+});

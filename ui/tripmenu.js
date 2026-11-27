@@ -21,7 +21,8 @@ export function tripMenu(trip) {
       trip.ticket && trip.countryId ? item(Plane, 'Change flights…', () => openFares(trip)) : null,
       item(Trash2, 'Delete trip…', () => openDelete(trip))) : null);
 }
-document.addEventListener('pointerdown', (e) => { if (M.open && !e.target.closest('.trip-menu')) { M.open = false; render(); } });
+// A tap anywhere else closes the menu, on click so the button tapped still gets it (see nav.js)
+document.addEventListener('click', (e) => { if (M.open && !e.target.closest('.trip-menu')) { M.open = false; render(); } });
 
 // ---------------------------------------------------------------- rename and details
 // trip: { id, name, start, adults, home, ticket? }; onDone(result) when saved
