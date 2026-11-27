@@ -69,7 +69,7 @@ export const tell = (line) => app.updateModelContext({ content: [{ type: 'text',
 // Asking Claude: a message in the conversation, then the screen watches the server for what Claude saves.
 // poll() fetches the latest state; done() says whether what was asked for has arrived.
 export const waiting = {};
-export async function ask(key, message, { poll, done, every = 8000, tries = 30 } = {}) {
+export async function ask(key, message, { poll, done, then, every = 8000, tries = 30 } = {}) {
   waiting[key] = true;
   render();
   await app.sendMessage({ role: 'user', content: [{ type: 'text', text: message }] }).catch((e) => showError(e.message || String(e)));
@@ -78,6 +78,6 @@ export async function ask(key, message, { poll, done, every = 8000, tries = 30 }
   const timer = setInterval(async () => {
     n += 1;
     await poll(true);
-    if (done() || n >= tries) { clearInterval(timer); if (done()) delete waiting[key]; render(); }
+    if (done() || n >= tries) { clearInterval(timer); if (done()) { delete waiting[key]; then?.(); } render(); }
   }, every);
 }

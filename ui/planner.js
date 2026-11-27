@@ -6,7 +6,7 @@
 // It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star } from 'lucide';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play } from 'lucide';
 import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting } from './core.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
 import { takeHome, homeCard, homeScreen } from './home.js';
@@ -16,6 +16,7 @@ import { airMapDialog } from './airmap.js';
 import { tripMenu, tripDialog } from './tripmenu.js';
 import { applyInsets } from './keyboard.js';
 import { scene, kindOf } from './scene.js';
+import { stageEl, updateStage } from './stage.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
@@ -121,7 +122,7 @@ function renderTrip(L) {
   // A leg whose date moved keeps its selection; anything else that's gone falls back to the starting point
   if (sel?.kind === 'leg' && !legByKey(sel.key)) { const same = V.legs.find((l) => route(l.key) === route(sel.key)); sel = same ? { kind: 'leg', key: same.key } : null; }
   if (!sel || (sel.kind === 'stop' && !V.stops[sel.index])) sel = startingPoint();
-  frame(`trip|${L}`, () => [...cardFrame(), h('main', { id: 'panes', class: 'panes', hidden: true }, h('nav', { id: 'list', class: 'list', 'aria-label': 'Route' }), h('section', { id: 'detail', class: 'detail', 'aria-live': 'polite' }))]);
+  frame(`trip|${L}`, () => [...cardFrame(), h('main', { id: 'panes', class: 'panes', hidden: true }, h('nav', { id: 'list', class: 'list', 'aria-label': 'Route' }), h('section', { id: 'detail', class: 'detail', 'aria-live': 'polite' }), stageEl())]);
   art(`trip|${V.trip.id}|${V.trip.name}|${L}`, () => scene(V.trip.name, tripKind(), { sky: 'golden', ...artSize(L) }));
   $('name').textContent = V.trip.name;
   const total = days(V.trip.start, V.trip.end);
@@ -149,6 +150,7 @@ function renderTrip(L) {
     $('list').replaceChildren(...listView());
     const det = $('detail'), key = JSON.stringify(sel);
     det.replaceChildren(...detailView());
+    updateStage({ V, M: MAP, sel, settled, onPick: pick, onHover: (i, on, k) => link(i, on, k) });
     if (det.dataset.sel !== key) { det.dataset.sel = key; det.classList.remove('enter'); void det.offsetWidth; det.classList.add('enter'); det.scrollTop = 0; }
     // Phone full screen scrolls as one page: a stop or leg opens at its top, the route comes back where it was
     const scr = $('screen');
@@ -289,6 +291,11 @@ function mapSvg({ mini = false } = {}) {
     if (on && !mini) selPath = { d, mode: l.mode };
   }
   svg.append(routes);
+  // On the card, a small traveller goes round the whole route
+  if (mini && !reduced()) {
+    const d = V.legs.filter((l) => l.after >= 0 && l.after < V.stops.length - 1).map((l) => { const a = M.points[l.after], b = M.points[l.after + 1]; return a && b ? `M${a[0]},${a[1]} L${b[0]},${b[1]}` : ''; }).join(' ');
+    if (d) { const g = s('g', { class: 'mover mini-mover' }); g.append(s('circle', { r: 4 }), s('animateMotion', { dur: `${Math.max(6, V.stops.length * 1.4)}s`, repeatCount: 'indefinite', path: d })); svg.append(g); }
+  }
   // On the selected leg, a plane or a boat travels along it
   if (selPath && !reduced()) {
     const g = s('g', { class: 'mover' });
@@ -383,11 +390,12 @@ function legState(l) {
 const legLine = (l) => (l.mode === 'flight' ? `${l.from} → ${l.to} · ${day(l.date)}` : `${l.mode === 'ferry' ? 'Ferry' : 'Road'} · ${day(l.date)}`);
 
 function legRow(l) {
-  const on = isSel('leg', l.key), st = legState(l);
-  return h('li', { class: `rl rl-leg ${st.tone}${l.mode === 'flight' ? ' fly' : ''}` }, h('button', { class: `row leg${on ? ' sel' : ''}`, 'aria-current': on ? 'true' : null, 'data-leg': l.key, onclick: () => pick({ kind: 'leg', key: l.key }),
+  const on = isSel('leg', l.key), st = legState(l), up = nextTodo()?.key === l.key;
+  return h('li', { class: `rl rl-leg ${st.tone}${l.mode === 'flight' ? ' fly' : ''}${up ? ' up' : ''}` }, h('button', { class: `row leg${on ? ' sel' : ''}`, 'aria-current': on ? 'true' : null, 'data-leg': l.key, onclick: () => pick({ kind: 'leg', key: l.key }),
     onmouseenter: () => link(null, true, l.key), onmouseleave: () => link(null, false, l.key) },
     h('span', { class: 'leg-ic' }, icon(MODE[l.mode] || Plane)),
     h('span', { class: 'main' }, h('span', { text: legLine(l) })),
+    up ? h('span', { class: 'up-badge', 'aria-hidden': 'true', text: 'Next' }) : null,
     h('span', { class: `state ${st.tone}` }, st.tone === 'done' ? icon(Check) : null, st.text)));
 }
 
@@ -407,12 +415,8 @@ function moveWithKeys(e) {
 // Wide: the selected item's details, and the map in a column beside them. One pane: a back button, no map.
 function detailView() {
   const body = sel.kind === 'stop' ? stopDetail(V.stops[sel.index]) : legDetail(legByKey(sel.key));
-  if (narrow()) {
-    const map = mapSvg();
-    return [h('button', { class: 'ghost back', onclick: () => { pane = 'list'; render(); } }, icon(ChevronLeft), 'Route'), ...body, map ? h('div', { class: 'list-map' }, map) : null].filter(Boolean);
-  }
-  const map = mapSvg();
-  return [h('div', { class: 'content' }, body), map ? h('div', { class: 'aside-map' }, map) : null].filter(Boolean);
+  if (narrow()) return [h('button', { class: 'ghost back', onclick: () => { pane = 'list'; render(); } }, icon(ChevronLeft), 'Route'), ...body, guide()].filter(Boolean);
+  return [h('div', { class: 'content' }, body, guide())];
 }
 
 function stopDetail(x) {
@@ -503,6 +507,66 @@ async function keepTour(x, a) {
     showError('');
   } catch (e) { showError(e.message || String(e)); }
   finally { ui.busy = false; render(); }
+}
+
+// ---------------------------------------------------------------- the guide: what to do after this, one or two steps
+// The route in travel order: the flight out, then each stop and the leg after it
+function order() {
+  const out = [];
+  const first = V.legs.find((l) => l.after === -1);
+  if (first) out.push({ kind: 'leg', key: first.key });
+  for (const x of V.stops) { out.push({ kind: 'stop', index: x.index }); for (const l of V.legs.filter((m) => m.after === x.index)) out.push({ kind: 'leg', key: l.key }); }
+  return out;
+}
+const sameSel = (a, b) => a && b && a.kind === b.kind && (a.kind === 'stop' ? a.index === b.index : a.key === b.key);
+// The next leg still to settle after this point on the route, else the first one left anywhere
+function nextAfter(cur) {
+  const all = order(), at = all.findIndex((o) => sameSel(o, cur));
+  const legs = [...all.slice(at + 1), ...all.slice(0, Math.max(0, at))].filter((o) => o.kind === 'leg').map((o) => legByKey(o.key));
+  return legs.find((l) => l && !settled(l)) || null;
+}
+const legTitle = (l) => `${doWhat(l)}: ${l.mode === 'flight' ? `${l.from} → ${l.to}` : `${l.fromName} → ${l.toName}`}`;
+function nextStopAfter(cur) {
+  const all = order(), at = all.findIndex((o) => sameSel(o, cur));
+  const o = all.slice(at + 1).find((x) => x.kind === 'stop' && V.stops[x.index].nights > 0);
+  return o ? V.stops[o.index] : null;
+}
+function guide() {
+  if (!sel || unplanned()) return null;
+  const cur = sel.kind === 'leg' ? legByKey(sel.key) : null;
+  if (cur && !settled(cur)) {                                  // the step on screen comes first; offer only to skip it
+    const nx = nextAfter(sel);
+    return nx ? h('div', { class: 'guide quiet' }, h('span', { class: 'small', text: 'Not now?' }),
+      h('button', { class: 'ghost', onclick: () => pick({ kind: 'leg', key: nx.key }) }, `Skip to: ${legTitle(nx)}`, icon(ArrowRight))) : null;
+  }
+  const nx = nextAfter(sel), ns = nextStopAfter(sel);
+  const done = V.legs.filter(settled).length, all = V.legs.length;
+  if (!nx) {
+    return h('div', { class: 'guide done' }, h('span', { class: 'guide-ic' }, icon(PartyPopper)),
+      h('div', { class: 'guide-t' }, h('b', { text: 'Your whole route is settled' }), h('span', { class: 'small', text: 'Every flight and transfer is chosen or booked. Watch the trip on the map, or keep adding local picks.' })),
+      h('div', { class: 'acts' }, h('button', { class: 'primary', onclick: () => document.querySelector('.stage .stage-btn')?.click() }, icon(Play), 'Play your trip'),
+        ns ? h('button', { onclick: () => pick({ kind: 'stop', index: ns.index }) }, `Next stop: ${ns.place}`) : null));
+  }
+  return h('div', { class: 'guide' },
+    h('span', { class: 'guide-ic' }, icon(cur ? CircleCheck : MODE[nx.mode] || Plane)),
+    h('div', { class: 'guide-t' }, h('span', { class: 'small', text: `${cur ? 'Settled. ' : ''}Next up · ${day(nx.date)} · ${done} of ${all} legs ready` }), h('b', { text: legTitle(nx) })),
+    h('div', { class: 'acts' },
+      h('button', { class: 'primary', onclick: () => pick({ kind: 'leg', key: nx.key }) }, 'Go to it', icon(ArrowRight)),
+      ns && sel.kind === 'stop' ? h('button', { class: 'ghost', onclick: () => pick({ kind: 'stop', index: ns.index }) }, `Next stop: ${ns.place}`) : null));
+}
+
+// A moment when something is settled: a check, what it was, and the one next step
+let toastTimer = 0;
+function celebrate(what, after) {
+  const nx = nextAfter(after);
+  const el = h('div', { class: 'toast', role: 'status' },
+    h('span', { class: 'toast-ic' }, icon(Check)),
+    h('span', { class: 'toast-t' }, h('b', { text: what }), nx ? h('span', { class: 'small', text: `Next: ${legTitle(nx)}` }) : h('span', { class: 'small', text: 'Everything on the route is settled' })),
+    nx ? h('button', { class: 'primary', onclick: () => { el.remove(); pick({ kind: 'leg', key: nx.key }); } }, 'Next', icon(ArrowRight)) : null);
+  document.querySelector('.toast')?.remove();
+  $('app').append(el);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, 6500);
 }
 
 // While Claude works: a line saying so, and grey rows where the answer will appear; Refresh only after a while
@@ -657,11 +721,16 @@ async function save(name, args, told) {
 }
 
 const setNights = (x, n) => save('set_nights', { trip_id: V.trip.id, stop: x.index, nights: n }, `the traveller changed ${x.place} to ${nightsTxt(n)}; the later dates moved with it.`);
-const setBooked = (l, booked) => save('mark_leg', { trip_id: V.trip.id, leg_key: l.key, booked }, `the traveller marked ${l.fromName} → ${l.toName} on ${l.date} as ${booked ? 'booked' : 'not booked yet'}.`);
+const setBooked = async (l, booked) => {
+  const r = await save('mark_leg', { trip_id: V.trip.id, leg_key: l.key, booked }, `the traveller marked ${l.fromName} → ${l.toName} on ${l.date} as ${booked ? 'booked' : 'not booked yet'}.`);
+  if (r && booked) celebrate(`${l.mode === 'flight' ? 'Flight' : l.mode === 'ferry' ? 'Ferry' : 'Transfer'} booked: ${l.fromName} → ${l.toName}`, { kind: 'leg', key: l.key });
+  return r;
+};
 // The server removes the flight saved for this hop whatever its date, so a choice left on an old date goes too
 const clearFlight = (l) => save('clear_flight', { trip_id: V.trip.id, leg_key: l.key }, `the traveller removed the flight saved for ${l.fromName} → ${l.toName}.`);
 const choose = (l, f, line) => save('choose_flight', { trip_id: V.trip.id, leg_key: l.key, summary: line, price: f.total, currency: f.currency, source: f.demo ? 'Demo data' : V.flights.provider, ...(f.link ? { link: f.link } : {}) },
-  `the traveller chose ${line} for ${l.fromName} → ${l.toName} on ${l.date}, ${money(f.total, f.currency)} for ${V.trip.adults}.`);
+  `the traveller chose ${line} for ${l.fromName} → ${l.toName} on ${l.date}, ${money(f.total, f.currency)} for ${V.trip.adults}.`)
+  .then((r) => { if (r) celebrate(`Flight chosen: ${l.from} → ${l.to}, ${money(f.total, f.currency)}`, { kind: 'leg', key: l.key }); return r; });
 
 async function findFlights(l) {
   fares[l.key] = { ...(fares[l.key] || {}), state: 'loading' };
@@ -682,7 +751,7 @@ function askFlights(l) {
   const before = JSON.stringify(l.chosen);
   return ask(`flights|${l.key}`,
     `Find flights from ${l.fromName} (${l.from}) to ${l.toName} (${l.to} or another airport nearby) on ${longDay(l.date)} for ${n} adult${n === 1 ? '' : 's'}, using my flight search tools. Show me the best options, and when I pick one, save it to Pinroute with choose_flight (trip_id "${V.trip.id}", leg_key "${l.key}").`,
-    { poll: refresh, done: () => JSON.stringify(legByKey(l.key)?.chosen) !== before });
+    { poll: refresh, done: () => JSON.stringify(legByKey(l.key)?.chosen) !== before, then: () => celebrate(`Claude saved a flight: ${l.from} → ${l.to}`, { kind: 'leg', key: l.key }) });
 }
 
 function askPicks(x) {
