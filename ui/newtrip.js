@@ -3,7 +3,7 @@
 //   I know where: Country → Best time (weather and fares by month) → Flights
 // Both end with "Plan <country> with this flight", which creates the trip from the fare. Fares come from Pinroute's
 // own airline search (a quick check) or from Claude, searching with the traveller's own flight tools.
-import { ArrowLeft, ArrowRight, MessageSquare, ExternalLink, X, Building2, Landmark, Trees, Waves, Search, MapPin, RotateCcw } from 'lucide';
+import { ArrowLeft, ArrowRight, MessageSquare, ExternalLink, X, Building2, Landmark, Trees, Waves, Search, MapPin, RotateCcw, Check } from 'lucide';
 import {
   REGIONS, DESTS, INTERESTS, INTEREST_NAME, LENGTHS, MONTHS, MON, destById, windowMonths, seasonFit, fitLabel, rankDests,
   addDays, diffDays, dealPP, dealRatio, dealLabel, dealsFor, dealNights, budgetFit, roughCost, bestMonthsText, nextMonths, monthsToCheck,
@@ -154,9 +154,11 @@ function mapPane() {
 const head = (title, lead) => h('header', { class: 'nt-head' }, h('h2', { text: title }), lead ? h('p', { class: 'meta lead', text: lead }) : null);
 const field = (label, control, id) => h('label', { class: 'field', for: id || null }, h('span', { text: label }), control);
 const box = (...kids) => h('section', { class: 'box' }, ...kids);
-function stepNav(back, next) {
+// done: what this step has set, shown with a check beside the way on, once it is enough to go on
+function stepNav(back, next, done) {
   return h('nav', { class: 'stepnav' },
-    back ? h('button', { class: 'ghost', onclick: back[1] }, icon(ArrowLeft), back[0]) : h('span'),
+    back ? h('button', { class: 'ghost', onclick: back[1] }, icon(ArrowLeft), back[0]) : null,
+    done ? h('p', { class: 'stepnav-done' }, icon(Check), h('span', { text: done })) : h('span', { class: 'stepnav-done' }),
     next ? h('button', { class: 'primary', disabled: !!next[2], onclick: next[1] }, next[0], icon(ArrowRight)) : null);
 }
 function dateInput(id, value, min, onSet) {
@@ -194,7 +196,7 @@ function whenStep() {
         field('Travellers', numInput('w-adults', d.adults, 1, 9, (v) => save({ adults: v })), 'w-adults'),
         field('Budget for the whole trip, € (optional)', numInput('w-budget', d.budget || '', 0, 1000000, (v) => save({ budget: v }), { step: 100, placeholder: 'e.g. 4000' }), 'w-budget')),
       fromField('w')),
-    stepNav(null, ['Next: where is good then', () => goStep('where'), bad]),
+    stepNav(null, ['Next: where is good then', () => goStep('where'), bad], bad ? null : [`Free ${span(d.from, d.until)}`, `${nightsRange()} nights`, plural(d.adults, 'traveller'), N.homes.length ? `from ${N.homes.map((a) => a.code).join(', ')}` : null].filter(Boolean).join(' · ')),
   ];
 }
 
@@ -268,7 +270,8 @@ function whereStep() {
       h('span', { class: 'small', text: waiting.take ? 'Claude answers in the conversation.' : 'Festivals, crowds and weather caveats for your dates.' })),
     h('ul', { class: 'dests' }, shown.map((r, i) => destRow(r, i, ms))),
     ranked.length > 12 ? h('button', { class: 'ghost', onclick: () => { N.all = !N.all; render(); } }, N.all ? 'Show the top 12' : `Show all ${ranked.length}`) : null,
-    stepNav(['When', () => goStep('when')], [`Next: compare flights (${d.compare.length})`, () => goStep('flights'), !d.compare.length]),
+    stepNav(['When', () => goStep('when')], [`Next: compare flights (${d.compare.length})`, () => goStep('flights'), !d.compare.length],
+      d.compare.length ? d.compare.map((id) => destById(id)?.name).filter(Boolean).join(', ') : null),
   ];
 }
 
@@ -495,7 +498,8 @@ function countryStep() {
     h('div', { class: 'acwrap' }, icon(Search), h('input', { id: 'c-q', type: 'search', placeholder: 'Vietnam, Japan, Peru…', value: N.q, autocomplete: 'off', 'aria-label': 'Find a country',
       oninput: (e) => { N.q = e.target.value; list.replaceChildren(...countryGroups()); } })),
     list,
-    stepNav(null, [destById(N.d.country) ? `Next: best time for ${destById(N.d.country).name}` : 'Next: best time', () => goStep('season'), !destById(N.d.country)]),
+    stepNav(null, [destById(N.d.country) ? `Next: best time for ${destById(N.d.country).name}` : 'Next: best time', () => goStep('season'), !destById(N.d.country)],
+      destById(N.d.country) ? `${destById(N.d.country).name} chosen` : null),
   ];
 }
 function countryGroups() {
