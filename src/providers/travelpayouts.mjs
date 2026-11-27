@@ -72,18 +72,21 @@ const withMarker = (url, env) => `${url}${url.includes('?') ? '&' : '?'}marker=$
 // One warning line when links fall back to marker=, at most once per reason every 10 minutes so the logs stay readable.
 // The reason names what went wrong, never a token, ID or link.
 const warned = new Map();                      // reason → when it was last logged
-function warnFallback(reason, count, log) {
+function warnFallback(reason, count, log, how = 'marker=') {
   const now = Date.now();
   if (now - (warned.get(reason) || 0) < 10 * 60_000) return;
   warned.set(reason, now);
-  log(`Travelpayouts partner links: ${count} link${count === 1 ? '' : 's'} fell back to marker= (${reason}).`);
+  log(`Travelpayouts partner links: ${count} link${count === 1 ? '' : 's'} fell back to ${how} (${reason}).`);
 }
-// Partner links for up to any number of Aviasales links, ten to a request, in the same order
-export async function partnerLinks(urls, { env = process.env, fetchImpl = fetch, timeoutMs = 4000, log = console.warn } = {}) {
+// Partner links for any number of brand links (Aviasales, GetYourGuide, Klook...), ten to a request, in the same order.
+// A link that can't be converted gets marker= (how Aviasales counts it), or stays as it is with fallback 'plain', for
+// brands where a marker= would not count.
+export async function partnerLinks(urls, { env = process.env, fetchImpl = fetch, timeoutMs = 4000, log = console.warn, fallback = 'marker' } = {}) {
   if (!linksOn(env)) return urls.slice();
   const todo = [...new Set(urls.filter((u) => u && !made.has(u)))];
+  const warn = (reason, count) => warnFallback(reason, count, log, fallback === 'plain' ? 'plain links' : 'marker=');
   if (todo.length && !(env.TRAVELPAYOUTS_TOKEN && env.TRAVELPAYOUTS_TRS)) {
-    warnFallback(`${env.TRAVELPAYOUTS_TOKEN ? 'TRAVELPAYOUTS_TRS' : 'TRAVELPAYOUTS_TOKEN'} is not set`, todo.length, log);
+    warn(`${env.TRAVELPAYOUTS_TOKEN ? 'TRAVELPAYOUTS_TRS' : 'TRAVELPAYOUTS_TOKEN'} is not set`, todo.length);
   } else if (todo.length) {
     for (let i = 0; i < todo.length; i += 10) {
       const batch = todo.slice(i, i + 10);
@@ -99,15 +102,15 @@ export async function partnerLinks(urls, { env = process.env, fetchImpl = fetch,
           const j = await res.json();
           for (const l of j.result?.links || []) if (l.code === 'success' && l.partner_url) made.set(l.url, l.partner_url);
           const missed = batch.filter((u) => !made.has(u)).length;
-          if (missed) warnFallback('Links API did not return a partner link for them', missed, log);
+          if (missed) warn('Links API did not return a partner link for them', missed);
         }
       } catch (e) {
         reason = e?.name === 'TimeoutError' ? `Links API took over ${timeoutMs / 1000}s` : `could not reach the Links API (${e?.cause?.code || e?.name || 'error'})`;
       }
-      if (reason) { warnFallback(reason, todo.length - i, log); break; }
+      if (reason) { warn(reason, todo.length - i); break; }
     }
     while (made.size > 2000) made.delete(made.keys().next().value);
   }
-  return urls.map((u) => (u ? made.get(u) || withMarker(u, env) : u));
+  return urls.map((u) => (u ? made.get(u) || (fallback === 'plain' ? u : withMarker(u, env)) : u));
 }
 export const _forget = () => { made.clear(); warned.clear(); };      // for tests

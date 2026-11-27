@@ -45,9 +45,9 @@ Everything the submission portal at [claude.ai/directory/manage](https://claude.
 
 ## 7. Data handling
 
-- **Underlying API:** Pinroute's own API for trips, the new-trip draft, picks and the planner. Live flight search calls Amadeus Travel Builder with Pinroute's key under Amadeus's terms; recent prices and partner links come from Travelpayouts (Aviasales Data API and Links API) under Pinroute's partner account.
+- **Underlying API:** Pinroute's own API for trips, the new-trip draft, picks and the planner. Live flight search and tour search call Amadeus Travel Builder with Pinroute's key under Amadeus's terms; recent prices and partner links come from Travelpayouts (Aviasales Data API and Links API) under Pinroute's partner account.
 - **Personal health data:** no.
-- **Sponsored content:** no paid placement. Countries are ranked by weather, interests, flight time and budget; fares by price, deal rating or weather, never by commission. Links to Aviasales carry Pinroute's Travelpayouts partner ID, so Pinroute may earn a commission on bookings made through them; the planner says so next to those links, and the help page and privacy policy say so too.
+- **Sponsored content:** no paid placement. Countries are ranked by weather, interests, flight time and budget; fares by price, deal rating or weather, never by commission. Links to Aviasales, GetYourGuide and Klook carry Pinroute's Travelpayouts partner ID, so Pinroute may earn a commission on bookings made through them; the planner says so next to those links, and the help page and privacy policy say so too.
 
 ## 8. Test & launch
 

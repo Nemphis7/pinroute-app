@@ -33,7 +33,8 @@ Claude (the traveller's own plan)
 | `flight_link` | A link to compare and book a flight on Aviasales, as a partner link when Travelpayouts is set up | reads |
 | `hotel_link` | A Booking.com search for each stop's place and check-in/check-out dates, or for any place and dates; a partner link when Booking.com partner links are set up | reads |
 | `choose_stay` / `clear_stay` | Saves or removes the hotel picked for a stop, from any hotel search (the Booking.com connector in Claude, for one), with price, link, booked and a note; it shows as needing a new pick when the stop's dates move | writes / deletes |
-| `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link | writes / reads |
+| `find_activities` | Tours, activities and tickets at a trip stop or place (Amadeus Travel Builder), popular or matching interests, budget, traveller type and day; each with GetYourGuide and Klook links, as partner links when Travelpayouts is set up; daily limit per person | reads |
+| `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link; a kept tour also has its booking link and price | writes / reads |
 | `delete_my_data` | Deletes everything the person saved | deletes |
 
 Every tool has a title and a read-only or destructive annotation, and its description says what it does without steering Claude, as the [directory review](https://claude.com/docs/connectors/building/review-criteria) asks.
@@ -59,9 +60,9 @@ All settings are environment variables: on Railway under **Variables**, locally 
 
 | Variable | What it does |
 | --- | --- |
-| `AMADEUS_API_KEY` | Live fares from Amadeus Travel Builder. Without it, demo fares. |
+| `AMADEUS_API_KEY` | Live fares and tours and activities from Amadeus Travel Builder. Without it, demo fares and no activity search. `ACTIVITY_LIMIT_PER_DAY`: activity searches per person per day (default 100). |
 | `TRAVELPAYOUTS_TOKEN` | Recent prices from Aviasales (Travelpayouts Data API), low-cost airlines included, and the Links API. Profile → API token. |
-| `TRAVELPAYOUTS_MARKER`, `TRAVELPAYOUTS_TRS` | Your Travelpayouts partner ID and project ID: links to Aviasales become your partner links. `RECENT_LIMIT_PER_DAY`: look-ups of recent prices per person per day (default 200). |
+| `TRAVELPAYOUTS_MARKER`, `TRAVELPAYOUTS_TRS` | Your Travelpayouts partner ID and project ID: links to Aviasales, GetYourGuide and Klook become your partner links (the project must be connected to each program; a link it can't convert stays a plain link). `RECENT_LIMIT_PER_DAY`: look-ups of recent prices per person per day (default 200). |
 | `BOOKING_LINK_TEMPLATE` | Booking.com partner links through an affiliate network: the network's tracking link with `{url}` where the Booking.com address goes, e.g. `https://www.anrdoezrs.net/click-<PID>-<AID>?url={url}` for CJ. `BOOKING_AID`: instead, a Booking.com affiliate ID added as `aid=`, for partners of Booking.com's own programme. Without either, plain Booking.com links. |
 | `AUTH_ISSUER` | Turns sign-in on: the sign-in service's issuer URL, e.g. `https://<name>.authkit.app`. |
 | `PUBLIC_URL` | The server's public address, e.g. `https://pinroute.app`. On Railway, the generated domain is used until you set this. |
