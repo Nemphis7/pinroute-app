@@ -208,9 +208,10 @@ test('a ferry: asks Claude how to get there, then marks it booked', { skip }, as
 test('moves along the route with the arrow keys', { skip }, async () => {
   await frame().locator('.row.stop', { hasText: 'Khao Sok' }).click();
   await frame().locator('.row.stop', { hasText: 'Khao Sok' }).press('ArrowDown');
-  assert.match(await frame().locator('.detail h2').textContent(), /^Khao Sok → Khao Lak$/);
+  // Each key press re-renders the detail: wait for the heading rather than reading it at once
+  await frame().locator('.detail h2', { hasText: /^Khao Sok → Khao Lak$/ }).waitFor();
   await page.keyboard.press('ArrowDown');
-  assert.equal(await frame().locator('.detail h2').textContent(), 'Khao Lak');
+  await frame().locator('.detail h2', { hasText: /^Khao Lak$/ }).waitFor({ timeout: 5000 });
 });
 
 test('back to chat returns to the card', { skip }, async () => {

@@ -10,7 +10,9 @@ import { flightProvider } from './providers/index.mjs';
 import { linksOn as bookingLinksOn } from './hotels.mjs';
 import { authConfig, resourceMetadata, challenge, bearer, verifyToken, needsSignIn } from './auth.mjs';
 import { helpPage, privacyPage, ICON_SVG } from './pages.mjs';
-import { LOCAL } from './store.mjs';
+import { LOCAL, tripByCalendar, getPicks } from './store.mjs';
+import { tripCalendar, TOKEN } from './calendar.mjs';
+import { schedule } from './trips.mjs';
 
 // On Railway (it sets RAILWAY_PROJECT_ID) the server listens on all interfaces and accepts its public domain by itself
 const onRailway = (env) => !!(env.RAILWAY_PROJECT_ID || env.RAILWAY_ENVIRONMENT_NAME);
@@ -66,6 +68,18 @@ export function createApp(env = process.env) {
     app.get('/.well-known/oauth-protected-resource', prm);
     app.get('/.well-known/oauth-protected-resource/mcp', prm);
   }
+
+  // A trip's calendar, for the calendar apps subscribed to it. The secret token in the address is the key, as with
+  // a private calendar address in Google Calendar: calendar apps can't sign in. calendar_link makes, renews or stops it.
+  app.get('/calendar/:file', (req, res) => {
+    const m = /^(.+)\.ics$/.exec(req.params.file);
+    const found = m && TOKEN.test(m[1]) ? tripByCalendar(m[1]) : null;
+    if (!found) return res.status(404).type('text').send('No calendar at this address. The link may have been renewed or switched off in Pinroute.');
+    const { owner, trip } = found;
+    const picks = Object.fromEntries(schedule(trip).map((s) => [s.place, getPicks(owner, s.place)]));
+    const name = String(trip.name).replace(/[^A-Za-z0-9 _-]+/g, '').trim().replace(/\s+/g, '-') || 'trip';
+    res.set({ 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': `inline; filename="${name}.ics"`, 'Cache-Control': 'private, max-age=300', 'X-Robots-Tag': 'noindex' }).send(tripCalendar(trip, picks));
+  });
 
   // Public pages for people and for the directory listing
   app.get('/help', (req, res) => res.type('html').send(helpPage(env)));

@@ -909,6 +909,17 @@ input, textarea, select { scroll-margin-top: var(--s-6); }
 @keyframes nudge { 0%, 100% { box-shadow: 0 1px 2px rgb(11 110 133 / 0.25), 0 4px 12px rgb(11 110 133 / 0.18); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent), 0 4px 12px rgb(11 110 133 / 0.18); } }
 .rl-leg.up .state { display: none; }
 .stage .clouds ellipse { fill: rgb(10 30 40 / 0.035); }
+/* ---- add a trip to the traveller's own calendar */
+.trip-menu { gap: var(--s-2); }
+.dlg-body:has(.cal-opts) { align-content: start; }
+.cal-opts { display: grid; gap: var(--s-2); }
+button.cal-opt { display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: 56px; padding: var(--s-2) var(--s-3); text-align: left; border: 1px solid var(--line); border-radius: var(--r-2); background: var(--paper); }
+button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--paper)); }
+#cal-apple { --k: #e0453a; } #cal-google { --k: #1a73e8; } #cal-file { --k: var(--ink-3); }
+.cal-url { display: flex; gap: var(--s-2); }
+.cal-url input { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-2); }
+@media (max-width: 520px) { #trip-cal { font-size: 0; gap: 0; } #trip-cal svg { margin: 0; } }
+
 /* Where to stay: the hotel picked for a stop */
 .stay-ticket .tsum { display: flex; align-items: center; gap: var(--s-2); }
 .stay-ticket .tsum .kind-ic { flex: none; }
