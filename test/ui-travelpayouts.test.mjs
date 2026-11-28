@@ -40,10 +40,10 @@ test('deals from recent prices first, live airline fares second, and the commiss
   assert.deepEqual((await bar.locator('.acts button').allTextContents()).map((t) => t.trim()), ['Find flights']);
   assert.match(await f().locator('.foot').last().textContent(), /Pinroute may earn a commission on a booking\. The price you pay is the same\./);
   await bar.getByRole('button', { name: 'Find flights' }).click();
-  await f().locator('.country .deal.main').nth(1).waitFor({ timeout: 30000 });
+  await f().locator('.country .fare-card.fc-lead').nth(1).waitFor({ timeout: 30000 });
   await bar.getByRole('button', { name: 'Find flights' }).waitFor();  // both look-ups done: recent prices, then airline fares
-  const main = f().locator('.country .deal.main').first();
-  assert.match(await main.textContent(), /via Aviasales · a recent price, check it before booking/);
+  const main = f().locator('.country .fare-card.fc-lead').first();
+  assert.match(await main.textContent(), /Aviasales.*A recent price, check it before booking/);
   await main.getByRole('button', { name: 'Check on Aviasales' }).click();
   await page.waitForFunction(() => window.__links.length > 0);
   assert.match(await page.evaluate(() => window.__links.at(-1)), /^https:\/\/aviasales\.tp\.st\//, 'the fare opens as a partner link');

@@ -134,11 +134,14 @@ export const rankDests = (draft, home) => DESTS.filter((d) => !draft.regions?.le
 
 // ---- deals: return fares saved for a country, from Pinroute's own search or from the traveller's flight tools
 export const dealPP = (x) => x.price / Math.max(1, x.adults || 1);
-export const dealNights = (x) => diffDays(x.depart, x.return);           // nights away, as flight searches count them
+// Nights away by the calendar: the day the flight leaves to the day the flight home leaves (14 → 30 June is 16 nights),
+// whatever time the flights leave or land. The traveller counts so, and so does every screen and message.
+export const dealNights = (x) => diffDays(x.depart, x.return);
+export const dealFits = (x, draft) => dealNights(x) >= draft.minNights && dealNights(x) <= draft.maxNights;
 export const dealRatio = (x) => (x.currency === 'EUR' && x.km ? dealPP(x) / typicalFare(x.km) : null);
 // The fares for a window, cheapest first; fares outside the trip length go last
 export function dealsFor(list, draft) {
   return (list || []).filter((x) => x.depart >= draft.from && x.depart <= draft.until)
-    .map((x) => ({ ...x, fits: dealNights(x) >= draft.minNights - 1 && dealNights(x) <= draft.maxNights + 1 }))
+    .map((x) => ({ ...x, fits: dealFits(x, draft) }))
     .sort((a, b) => (b.fits - a.fits) || dealPP(a) - dealPP(b));
 }

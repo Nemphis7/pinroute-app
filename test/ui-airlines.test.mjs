@@ -60,10 +60,10 @@ for (const [label, opts] of [
     const { page, f } = await openHost({}, { ...opts, tool: 'plan_new_trip' });
     if (!opts.modes) await f.getByRole('button', { name: 'Open planner' }).click();
     const vietnam = f.locator('.country', { hasText: 'Vietnam' });
-    await vietnam.locator('.deal.main').waitFor();
-    assert.match(await vietnam.locator('.deal.main').textContent(), /VietJet Air · /);
+    await vietnam.locator('.fare-card.fc-lead').waitFor();
+    assert.match(await vietnam.locator('.fare-card.fc-lead').textContent(), /VietJet Air · /);
     const thailand = f.locator('.country', { hasText: 'Thailand' });
-    assert.match(await thailand.locator('.deal.main').textContent(), /Myanmar Airways International · 1 change/);
+    assert.match(await thailand.locator('.fare-card.fc-lead').textContent(), /Myanmar Airways International · 1 change/);
     assert.doesNotMatch(await f.locator('.nt').innerText(), NO_CODE);
     assert.ok(await fits(page), 'nothing wider than the planner');
     await page.close();

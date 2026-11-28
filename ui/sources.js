@@ -13,6 +13,7 @@ export const CONNECT_URL = 'https://claude.ai/settings/connectors';
 
 // A site's monogram, in its own colour
 const MARK = { pinroute: ['P', 190], kiwi: ['K', 170], expedia: ['E', 48], edreams: ['eD', 215], lastminute: ['lm', 330] };
+export const siteMark = (id, name) => mark(id, name);
 const mark = (id, name) => {
   const [t, hue] = MARK[id] || [String(name || '?').slice(0, 2), 0];
   return h('span', { class: 'site-mark', style: `--hue:${hue}`, 'aria-hidden': 'true', text: t });
@@ -48,9 +49,15 @@ export function sitePicker(d, { toggle, busy }) {
       })),
     searching ? h('p', { class: 'meta busy', text: `Claude is searching ${connectorsPicked(d).map((id) => siteById(id).name).join(', ')}…` }) : null,
     missing.length ? connectHelp(missing) : null,
-    failed.length ? h('p', { class: 'note warn', text: failed.map((id) => `${siteById(id).name}: the search failed${status[id].note ? ` (${status[id].note})` : ''}.`).join(' ') }) : null,
+    failed.length ? h('p', { class: 'note warn site-failed', title: failed.map((id) => status[id].note).filter(Boolean).join(' · ') || null,
+      text: `${listOf(failed.map((id) => siteById(id).name))} couldn't be searched this time, so ${failed.length > 1 ? 'they are' : 'it is'} left out of the results.` }) : null,
     h('p', { class: 'small foot', text: 'Kiwi.com, Expedia, eDreams and lastminute.com are searched by Claude with your own connectors; Pinroute\'s search runs on its server. Skyscanner and Google Flights have no Claude connector yet.' }));
 }
+
+const listOf = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]);
+// A site picked whose last search failed: its fares are left out of the results until it searches again
+export { siteOf };
+export const failedSites = (d) => connectorsPicked(d).filter((id) => d.siteStatus?.[id]?.status === 'failed');
 
 // How to add a connector the traveller picked but doesn't have
 function connectHelp(ids) {
@@ -90,6 +97,17 @@ export function siteCompare(d, list, { picked, pick }) {
     }));
 }
 
+// ---------------------------------------------------------------- the Book button
+// Where a fare's Book button goes, and what it says: the site's own booking link (or its search for those dates, made
+// on the server when the site gave none). A fare without a link books through Trip.com's search; url is then null.
+export function bookOn(x) {
+  if (x.recent) return { label: 'Check on Aviasales', url: x.link || null };
+  const site = siteById(siteOf(x.source));
+  const name = site && !site.own ? site.name : site?.own ? null : x.source;
+  if (x.link) return { label: name ? `Book on ${name}` : 'Book', url: x.link };
+  return { label: 'Book on Trip.com', url: null };
+}
+
 // ---------------------------------------------------------------- the message to Claude
 // The exact-date sites get a few date pairs to search: the cheapest windows found so far, else ones spread over the dates
 function datePairs(dr, windows, deals) {
@@ -107,23 +125,29 @@ export function sitesMessage(dr, { countries, homes, stops }) {
   const ids = connectorsPicked(dr), names = ids.map((id) => siteById(id).name);
   const lastOut = addDays(dr.until, -dr.minNights);
   const stopTxt = stops == null ? '' : stops === 0 ? ', direct flights only' : ', at most one change each way';
+  const nights = `${dr.minNights}–${dr.maxNights} nights`;
   const lines = [
     `Find flight deals for my new trip in Pinroute with my own flight-search connectors in Claude: ${names.join(', ')}. Use only these sites for the search (Pinroute's own search already runs in the planner).`,
-    `The trip: return flights for ${plural(dr.adults, 'adult')}, ${dr.minNights}–${dr.maxNights} nights, leaving ${dr.from} at the earliest and back by ${dr.until}${stopTxt}. Prices in EUR where the site lets me choose.`,
+    `The trip: return flights for ${plural(dr.adults, 'adult')}, ${nights}, leaving ${dr.from} at the earliest and back by ${dr.until}${stopTxt}. Prices in EUR where the site lets me choose.`,
+    `Nights count by the calendar, from the day the flight leaves to the day the flight home leaves (14 to 30 June is 16 nights), whatever time the flights leave or land. Keep only fares whose dates give ${nights}.`,
     `From: ${homes.join(', ')}.`,
-    ...countries.map((c) => `To ${c.name} (country "${c.id}"): ${c.airports.join(', ')}.`),
+    ...countries.map((c) => `To ${c.name} (country "${c.id}"): ${c.airports.join(', ')}. Search every one of these airports on each site, the small ones too: low-cost airlines often fly cheapest to them.`),
   ];
-  if (ids.includes('kiwi')) lines.push(`Kiwi.com (search-flight) searches date ranges: for each departure airport and each arrival airport, one search with departureDate ${ddmmyyyy(dr.from)}, departureDateTo ${ddmmyyyy(lastOut)}, nights_in_dst_from ${dr.minNights}, nights_in_dst_to ${dr.maxNights}, adults ${dr.adults}, currency EUR, sort price${stops == null ? '' : `, max_sector_stopovers ${stops}`}.`);
-  const exact = ids.filter((id) => id !== 'kiwi').map((id) => siteById(id).name);
+  if (ids.includes('kiwi')) lines.push(`Kiwi.com (search-flight) searches date ranges: for each departure airport and each arrival airport, one search with departureDate ${ddmmyyyy(dr.from)}, departureDateTo ${ddmmyyyy(lastOut)}, nights_in_dst_from ${Math.max(0, dr.minNights - 1)}, nights_in_dst_to ${dr.maxNights}, adults ${dr.adults}, currency EUR, sort price${stops == null ? '' : `, max_sector_stopovers ${stops}`}. Kiwi.com counts nights from the landing, so a flight landing after midnight shows one night less; count by the dates as above. price is for all travellers; link is bookingUrl.`);
+  const exact = ids.filter((id) => id !== 'kiwi');
   if (exact.length) {
-    lines.push(`${exact.join(', ')} search exact dates: for each departure and arrival airport, search these date pairs${ids.includes('kiwi') ? ', and the cheapest dates Kiwi.com finds' : ''}:`);
+    lines.push(`${exact.map((id) => siteById(id).name).join(', ')} search exact dates: for each departure and arrival airport, search these date pairs${ids.includes('kiwi') ? ', and the cheapest dates Kiwi.com finds' : ''}:`);
     for (const c of countries) lines.push(`- ${c.name}: ${c.pairs.map(([a, b]) => `${a} to ${b}`).join('; ')}`);
-    lines.push('Keep to about 12 searches per site, main airports first.');
+    lines.push('Keep to about 16 searches per site: every arrival airport at least once from the main departure airport first, then the other departure airports and dates for the cheapest routes.');
+    if (ids.includes('expedia')) lines.push(`Expedia (search_flights): origin and destination as airport codes, departure_date and return_date as YYYY-MM-DD, adult_count ${dr.adults}, filter_nearby_airport true, sort_type PRICE, client_device_info with device_type and agent_name, and query_text. The price is options[].price.total_price (all travellers, in its own currency, often USD: save it in that currency). Expedia gives no booking link: leave link out and Pinroute adds one. An error that says no (additional) flights were found or all results were returned means no fares on that route, not a failure: go on with the next search.`);
+    if (ids.includes('edreams')) lines.push(`eDreams (search_flights): origin and destination as 3-letter airport codes, departure_date and return_date as YYYY-MM-DD, adults ${dr.adults}, market a European locale such as en-GB or de-DE so prices come in EUR. Each fare is in itineraries[]: price total_booking_price (the regular price for all travellers, not the Prime price), the currency at the top, flights from departure_leg and return_leg, link clickout_url. Save the fares from the tool result itself; if a result holds only a count and no itineraries, report eDreams as failed with the note "no fares in the result".`);
+    if (ids.includes('lastminute')) lines.push(`lastminute.com (search_flights): departure and arrival as airport codes, start_date and end_date as YYYY-MM-DD, adults ${dr.adults}, max_results 5. price_amount is in cents; the link is deeplink.`);
   }
   lines.push(
+    'If a search on a site returns an error, try it once more. If that site still fails, report it as failed and go on with the other sites: one site failing never stops the search.',
     `Then save each country's cheapest fares from each site, up to 5 per site, with Pinroute's save_flight_deals: source exactly ${names.map((n) => `"${n}"`).join(' / ')}, price the total for all travellers both ways, the fare's currency, the airline, out and back with flight numbers and times, stops, and link the site's booking link.`,
     `In the same call, report each site in sites (${ids.join(', ')}): searched, no_fares, not_connected if you don't have that connector, or failed with a short note. Report every site for every country, even with no fares.`,
-    'The planner compares the sites side by side and refreshes itself; in the chat, one short line on the best deal is enough.',
+    'The planner shows the fares as cards, cheapest first, each with its Book button, and refreshes itself. Don\'t list the fares or compare them in the chat: one short line on the best deal is enough.',
   );
   return lines.join('\n');
 }

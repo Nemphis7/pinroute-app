@@ -93,26 +93,25 @@ test('Flights: one Find flights button prices every country, the best deal leads
   assert.deepEqual((await frame().locator('.toolbar .acts button').allTextContents()).map((t) => t.trim()), ['Find flights'], 'no Ask Claude or quick-check buttons');
   await frame().locator('.toolbar').getByRole('button', { name: 'Find flights' }).click();
   await frame().locator('.banner').waitFor({ timeout: 30000 });
-  await frame().locator('.country .deal.main').nth(4).waitFor({ timeout: 30000 });
+  await frame().locator('.country .fare-card.fc-lead').nth(4).waitFor({ timeout: 30000 });
   assert.match(await frame().locator('.banner h3').textContent(), /^.+ from €[\d,]+ per person$/);
-  assert.match(await frame().locator('.country .deal.main').first().textContent(), /per person · €[\d,]+ for 2/);
+  assert.match(await frame().locator('.country .fare-card.fc-lead').first().textContent(), /per person · €[\d,]+ for 2/);
 });
 
-test('Flights: the best dates lead, other dates follow, and Stops narrows every fare to direct or one change', { skip }, async () => {
+test('Flights: every fare is a card, cheapest first, each with a Book button, and Stops narrows them to direct or one change', { skip }, async () => {
   const card = frame().locator('.country').first();
-  assert.equal(await card.locator('.eyebrow').first().textContent(), 'Best dates found');
-  const alts = card.locator('.alts .alt');
-  assert.ok(await alts.count() >= 1, 'other date combinations to pick from');
-  const mainDates = (await card.locator('.deal.main .meta').nth(1).textContent()).split(' · ')[0];
-  const altDates = await alts.first().locator('.ad').textContent();
-  assert.notEqual(altDates, mainDates, 'other dates, not the same dates again');
-  await alts.first().click();
-  assert.equal(await card.locator('.eyebrow').first().textContent(), 'Your pick');
-  assert.equal((await card.locator('.deal.main .meta').nth(1).textContent()).split(' · ')[0], altDates);
+  assert.match(await card.locator('.eyebrow').first().textContent(), /^\d+ fares? found, cheapest first$/);
+  const cards = card.locator('.fare-cards').first().locator('.fare-card:not(.outside)');
+  assert.ok(await cards.count() >= 2, 'more than one fare to choose from');
+  const pp = (await cards.locator('.pp').allTextContents()).map((t) => Number(t.replace(/[^\d.]/g, '')));
+  assert.deepEqual(pp, pp.slice().sort((a, b) => a - b), 'cheapest first');
+  assert.match(await cards.first().locator('.fc-dates').textContent(), /^.+ → .+ · \d+ nights$/);
+  for (const c of await cards.all()) assert.match(await c.locator('button.book').textContent(), /^Book/);
+  assert.equal(await card.locator('.fare-card.fc-win').count(), 1, 'the cheapest marked');
   const stops = frame().locator('.sorter[aria-label="Changes"]');
   assert.deepEqual((await stops.locator('button').allTextContents()), ['Any', 'Max 1', 'Direct']);
   await stops.getByRole('button', { name: 'Direct' }).click();
-  for (const t of await frame().locator('.country .deal.main .small').first().allTextContents()) assert.match(t, /Direct/);
+  for (const t of await frame().locator('.country .fare-card .small:not(.fc-leg):not(.fc-when)').allTextContents()) if (/ → /.test(t)) assert.match(t, /Direct/);
   await stops.getByRole('button', { name: 'Any' }).click();
 });
 
@@ -142,7 +141,12 @@ test('Flights: the traveller taps the sites to search, Claude searches them, the
   await page.waitForFunction((n) => window.__messages.length > n, before);
   const msg = await lastMessage();
   assert.match(msg, /^Find flight deals for my new trip in Pinroute with my own flight-search connectors in Claude: Kiwi\.com, eDreams\./);
-  assert.match(msg, /Kiwi\.com \(search-flight\) searches date ranges: .*nights_in_dst_from 13, nights_in_dst_to 16, adults 2/);
+  assert.match(msg, /Kiwi\.com \(search-flight\) searches date ranges: .*nights_in_dst_from 12, nights_in_dst_to 16, adults 2/);
+  assert.match(msg, /Nights count by the calendar, from the day the flight leaves to the day the flight home leaves/);
+  assert.match(msg, /Search every one of these airports on each site/);
+  assert.match(msg, /eDreams \(search_flights\): .*total_booking_price .*clickout_url/);
+  assert.match(msg, /If that site still fails, report it as failed and go on with the other sites/);
+  assert.match(msg, /Don't list the fares or compare them in the chat/);
   assert.match(msg, /eDreams search exact dates: for each departure and arrival airport, search these date pairs, and the cheapest dates Kiwi\.com finds:\n- /);
   assert.match(msg, /From: (FRA, MUC|MUC, FRA)\./);
   assert.match(msg, /save_flight_deals: source exactly "Kiwi\.com" \/ "eDreams"/);
@@ -167,8 +171,23 @@ test('Flights: the traveller taps the sites to search, Claude searches them, the
   assert.match(await cmp.locator('.sc-row.sc-win').textContent(), /LetsFG€\d+ less.*€150$/);
   await cmp.locator('.sc-row').nth(1).click();
   await frame().locator('.country').first().locator('.sc-row.sc-picked').nth(0).waitFor();
-  assert.equal(await frame().locator('.country').first().locator('.eyebrow').first().textContent(), 'Your pick');
+  assert.match(await frame().locator('.country').first().locator('.fare-card.fc-lead .fc-site').textContent(), new RegExp(await cmp.locator('.sc-row.sc-picked .sc-name').textContent()), 'the fare picked leads the cards');
   await cmp.locator('.sc-row').first().click();
+
+  // the Kiwi.com fare books on Kiwi.com, with the link Claude saved
+  const kiwi = frame().locator('.country').first().locator('.fare-card', { hasText: 'Kiwi Air' }).first();
+  assert.equal((await kiwi.locator('button.book').textContent()).trim(), 'Book on Kiwi.com');
+  await kiwi.locator('button.book').click();
+  await page.waitForFunction(() => window.__links.at(-1) === 'https://www.kiwi.com/deep?x=1');
+
+  // a site that fails is left out of the results, said in one line, and the search goes on
+  await client.callTool({ name: 'save_flight_deals', arguments: { country: first, deals: [{ from: 'MUC', to: 'BKK', depart: addDays(FROM, 2), return: addDays(FROM, 16), price: 200, currency: 'EUR', adults: 2, airline: 'Dreams Air', source: 'eDreams' }],
+    sites: [{ site: 'edreams', status: 'searched' }] } });
+  await frame().locator('.fare-card', { hasText: 'Dreams Air' }).first().waitFor({ timeout: 20000 });
+  await client.callTool({ name: 'save_flight_deals', arguments: { country: first, sites: [{ site: 'edreams', status: 'failed', note: 'no fares in the result' }] } });
+  await frame().locator('.site-failed', { hasText: 'eDreams couldn\'t be searched this time, so it is left out of the results.' }).waitFor({ timeout: 20000 });
+  assert.equal(await frame().locator('.fare-card', { hasText: 'Dreams Air' }).count(), 0, 'its fares are hidden');
+  assert.ok(await frame().locator('.fare-card', { hasText: 'Kiwi Air' }).count() >= 1, 'the other sites stay');
 });
 
 test('plans a trip with the best fare, then Claude plans the route', { skip }, async () => {
@@ -229,7 +248,7 @@ test('I know where: a country, its best months with fares, then the flights of o
   await frame().locator('.country').waitFor();
   assert.equal(await frame().locator('.country').count(), 1);
   assert.equal(await frame().locator('.country h3').textContent(), 'Japan');
-  assert.ok(await frame().locator('.country .deal').count() >= 1, `fares for ${month}`);
+  assert.ok(await frame().locator('.country .fare-card').count() >= 1, `fares for ${month}`);
   assert.equal(await frame().locator('.step[aria-current="step"]').textContent(), '3Flights');
 });
 
