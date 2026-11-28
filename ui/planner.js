@@ -600,7 +600,7 @@ function hotelBlock(x) {
     h('div', { class: 'block-head' }, h('h3', { text: 'Where to stay' }),
       h('span', { class: `pill ${state.tone}` }, state.tone === 'done' ? icon(Check) : null, state.text),
       h('span', { class: 'small', text: `${day(st.checkin)} to ${day(st.checkout)} · ${nightsTxt(st.nights)}` })),
-    st.stale ? h('div', { class: 'note warn' }, `${st.stale.name} was saved for ${day(st.stale.checkin)} to ${day(st.stale.checkout)}, before the dates moved. Choose a place for the new dates. `,
+    st.stale ? h('div', { class: 'note warn' }, `${st.stale.name} was saved for ${day(st.stale.checkin)} to ${day(st.stale.checkout)}, before the dates moved. ${st.stale.booked ? 'It was marked booked, so change or cancel it with the hotel. ' : ''}Choose a place for the new dates. `,
       h('button', { class: 'link', disabled: ui.busy, onclick: () => clearStay(st, st.stale) }, 'Remove it')) : null,
     c ? h('div', { class: 'ticket stay-ticket' },
       h('div', { class: 'tmain' },
@@ -668,7 +668,7 @@ function flightBlock(l) {
       ...results(l)].filter(Boolean);
   }
   return [
-    l.stale ? h('div', { class: 'note warn' }, `A flight was chosen for ${day(l.stale.date)}, before the dates moved: ${l.stale.summary}, ${money(l.stale.price, l.stale.currency)}. Choose one for ${day(l.date)}. `,
+    l.stale ? h('div', { class: 'note warn' }, `A flight was chosen for ${day(l.stale.date)}, before the dates moved: ${l.stale.summary}, ${money(l.stale.price, l.stale.currency)}. ${l.stale.booked ? 'It was marked booked, so change or cancel it with the airline. ' : ''}Choose one for ${day(l.date)}. `,
       h('button', { class: 'link', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove it')) : null,
     h('div', { class: 'acts' }, findButton(l, fares[l.key]?.state === 'done' ? '' : 'primary')),
     ...results(l),
