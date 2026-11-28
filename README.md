@@ -35,7 +35,7 @@ Claude (the traveller's own plan)
 | `choose_flight` / `clear_flight` | Saves or removes the flight picked for a leg, such as a fare from `search_flights` or the new-trip draft | writes / deletes |
 | `search_flights` | Airline fares for one day or a return, cheapest first; daily limit per person | reads |
 | `find_airports` | Airports by city, name or code, or within a distance of a point (with a map for the picker); works without signing in | reads |
-| `flight_link` | A link to compare and book a flight on Aviasales, as a partner link when Travelpayouts is set up | reads |
+| `flight_link` | A link to compare and book a flight on Trip.com, as a partner link when Travelpayouts is set up | reads |
 | `hotel_link` | A Booking.com search for each stop's place and check-in/check-out dates, or for any place and dates; a partner link when Booking.com partner links are set up | reads |
 | `choose_stay` / `clear_stay` | Saves or removes the hotel picked for a stop, such as one the traveller found through the stop's Booking.com search, with price, link, booked and a note; it shows as needing a new pick when the stop's dates move | writes / deletes |
 | `find_transport` | Where to book a ferry, bus, minivan or train between two stops on the leg's own day: a 12Go search in Asia, an Omio search in Europe and the Rome2Rio route everywhere; 12Go and Omio as partner links when Travelpayouts is set up. No booking site gives partners a timetable feed, so times and prices come from the sites and from Claude | reads |
@@ -69,8 +69,9 @@ All settings are environment variables: on Railway under **Variables**, locally 
 | Variable | What it does |
 | --- | --- |
 | `AMADEUS_API_KEY` | Live fares and tours and activities from Amadeus Travel Builder. Without it, demo fares and no activity search. `ACTIVITY_LIMIT_PER_DAY`: activity searches per person per day (default 100). |
-| `TRAVELPAYOUTS_TOKEN` | Recent prices from Aviasales (Travelpayouts Data API), low-cost airlines included, and the Links API. Profile → API token. |
-| `TRAVELPAYOUTS_MARKER`, `TRAVELPAYOUTS_TRS` | Your Travelpayouts partner ID and project ID: links to Aviasales, GetYourGuide and Klook become your partner links (the project must be connected to each program; a link it can't convert stays a plain link). `TRANSPORT_PARTNER_LINKS`: the ferry, bus and train programs that accepted you, e.g. `12go` or `12go,omio`; until it is set, 12Go and Omio links stay plain links and no commission note shows. `RECENT_LIMIT_PER_DAY`: look-ups of recent prices per person per day (default 200). |
+| `TRAVELPAYOUTS_TOKEN` | The Links API (partner links), and recent prices from Aviasales (Travelpayouts Data API) when `AVIASALES_PRICES=on`. Profile → API token. |
+| `AVIASALES_PRICES` | Off by default: Aviasales's recent prices were often far from what travellers could book, so flight prices come from the live airline search alone. `on` brings back the recent-price scans, the Best time month prices and the Aviasales quote next to each search. |
+| `TRAVELPAYOUTS_MARKER`, `TRAVELPAYOUTS_TRS` | Your Travelpayouts partner ID and project ID: links to Trip.com, GetYourGuide and Klook become your partner links (the project must be connected to each program; a link it can't convert stays a plain link). `TRANSPORT_PARTNER_LINKS`: the ferry, bus and train programs that accepted you, e.g. `12go` or `12go,omio`; until it is set, 12Go and Omio links stay plain links and no commission note shows. `RECENT_LIMIT_PER_DAY`: look-ups of recent prices per person per day (default 200). |
 | `BOOKING_LINK_TEMPLATE` | Booking.com partner links through an affiliate network: the network's tracking link with `{url}` where the Booking.com address goes, e.g. `https://www.anrdoezrs.net/click-<PID>-<AID>?url={url}` for CJ. `BOOKING_AID`: instead, a Booking.com affiliate ID added as `aid=`, for partners of Booking.com's own programme. Without either, plain Booking.com links. |
 | `AUTH_ISSUER` | Turns sign-in on: the sign-in service's issuer URL, e.g. `https://<name>.authkit.app`. |
 | `PUBLIC_URL` | The server's public address, e.g. `https://pinroute.app`. On Railway, the generated domain is used until you set this. |
@@ -107,7 +108,11 @@ Amadeus Travel Builder covers a set of mostly full-service airlines; many region
 
 `scan_flight_deals` takes up to 6 departure dates in a window and `max_stops` for live fares.
 
-## Travelpayouts: recent prices and partner links
+## Travelpayouts: partner links (and optional recent prices)
+
+Flight links go to a Trip.com search for the route and dates (`showfarefirst?dcity=…&acity=…&ddate=…&rdate=…`), where airlines and agencies show live prices, low-cost airlines included. Through the Links API they become partner links once the Travelpayouts project is connected to the Trip.com program; until then they stay plain links. Each search result carries it as `compare.tripcom_link`, shown as **Compare on Trip.com**. Trip.com gives affiliates no flight price API, so the prices Pinroute shows are Amadeus's live fares.
+
+The rest of this section describes Aviasales's recent prices, which are off unless `AVIASALES_PRICES=on`.
 
 Amadeus has no low-cost airlines. Travelpayouts, Aviasales's partner network, fills that gap for prices and pays a commission on bookings:
 

@@ -784,7 +784,7 @@ function flightBlock(l) {
   ].filter(Boolean);
 }
 
-// One button finds flights with Pinroute's own search: Amadeus airline fares and the Aviasales price, the days around too
+// One button finds flights with Pinroute's own search: Amadeus airline fares and a Trip.com search, the days around too
 const findButton = (l, cls) => h('button', { class: cls || null, disabled: fares[l.key]?.state === 'loading', onclick: () => findFlights(l) }, icon(Plane), 'Find flights');
 function results(l) {
   const st = fares[l.key] || {};
@@ -893,7 +893,7 @@ function faresBlock(l, st) {
   const top = [quotes(st, open, open), dateStrip(st, l.date)].filter(Boolean);
   if (!st.fares.length) {
     return h('div', { class: 'block fresults' }, ...top,
-      h('p', { class: 'note', text: `No offers from ${st.live ? 'the airlines Amadeus covers' : 'this source'} on this day. Check the days around it above, or Aviasales.` }));
+      h('p', { class: 'note', text: `No offers from ${st.live ? 'the airlines Amadeus covers' : 'this source'} on this day. Check the days around it above, or Trip.com.` }));
   }
   const list = filtered(st), tags = standouts(st.fares);
   const line = (f) => {

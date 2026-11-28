@@ -6,7 +6,7 @@ import { fakeTravelpayouts } from './fake-travelpayouts.mjs';
 import * as tp from '../src/providers/travelpayouts.mjs';
 
 let fake, srv, client;
-const TP = (url) => ({ TRAVELPAYOUTS_API_URL: url, TRAVELPAYOUTS_TOKEN: 'tp-test', TRAVELPAYOUTS_MARKER: '123456', TRAVELPAYOUTS_TRS: '987' });
+const TP = (url) => ({ TRAVELPAYOUTS_API_URL: url, TRAVELPAYOUTS_TOKEN: 'tp-test', AVIASALES_PRICES: 'on', TRAVELPAYOUTS_MARKER: '123456', TRAVELPAYOUTS_TRS: '987' });
 before(async () => {
   fake = await fakeTravelpayouts();
   srv = await startServer(null, TP(fake.url));
@@ -98,10 +98,17 @@ test('exact dates go to live airline fares unless recent prices are asked for', 
   assert.deepEqual(recent.structuredContent.deals.map((x) => [x.depart, x.return, x.price]), [[depart, ret, 666]]);
 });
 
-test('a link to compare and book any flight on Aviasales, as a partner link', async () => {
-  const r = await call('flight_link', { from: 'KBV', to: 'BKK', depart: addDays(START, 14), adults: 2 });
+test('a link to compare and book any flight on Trip.com, as a partner link', async () => {
+  const d = addDays(START, 14), back = addDays(START, 21);
+  assert.equal(tp.tripSearchUrl({ from: 'KBV', to: 'BKK', depart: d, ret: back, adults: 2 }),
+    `https://www.trip.com/flights/showfarefirst?dcity=kbv&acity=bkk&ddate=${d}&rdate=${back}&triptype=rt&class=y&quantity=2&curr=EUR`);
+  assert.match(tp.tripSearchUrl({ from: 'KBV', to: 'BKK', depart: d }), /&triptype=ow&/);
+  const before = fake.calls.filter((c) => c.path === '/links/v1/create').length;
+  const r = await call('flight_link', { from: 'KBV', to: 'BKK', depart: d, adults: 2 });
   assert.ok(!r.isError);
-  assert.match(r.structuredContent.url, /^https:\/\/aviasales\.tp\.st\//);
+  assert.match(r.structuredContent.url, /^https:\/\/aviasales\.tp\.st\//, 'the stand-in Links API answers every brand with this host');
+  const asked = fake.calls.filter((c) => c.path === '/links/v1/create').slice(before).flatMap((c) => c.body?.links || []).map((l) => l.url);
+  assert.ok(asked.some((u) => u.startsWith('https://www.trip.com/flights/showfarefirst?dcity=kbv&acity=bkk')), JSON.stringify(asked));
   assert.equal(r.structuredContent.partner, true);
   const tools = (await client.listTools()).tools;
   assert.match(tools.find((t) => t.name === 'flight_link').description, /may earn a commission/);
@@ -111,10 +118,10 @@ test('says what is missing when Travelpayouts is not set up, or refuses the toke
   const plain = await startServer();
   const c = await connect(plain.url);
   try {
-    assert.match((await c.callTool({ name: 'scan_flight_deals', arguments: { country: 'Vietnam', source: 'recent' } })).content[0].text, /need Travelpayouts on the server/);
-    assert.match((await c.callTool({ name: 'scan_flight_deals', arguments: { country: 'Vietnam', by_month: true } })).content[0].text, /by_month works with recent prices/);
+    assert.match((await c.callTool({ name: 'scan_flight_deals', arguments: { country: 'Vietnam', source: 'recent' } })).content[0].text, /Recent Aviasales prices are off on this server/);
+    assert.match((await c.callTool({ name: 'scan_flight_deals', arguments: { country: 'Vietnam', by_month: true } })).content[0].text, /by_month works with recent Aviasales prices/);
     const link = await c.callTool({ name: 'flight_link', arguments: { from: 'FRA', to: 'BKK', depart: addDays(START, 1) } });
-    assert.match(link.structuredContent.url, /^https:\/\/www\.aviasales\.com\/search\/FRA\d{4}BKK1$/);
+    assert.match(link.structuredContent.url, /^https:\/\/www\.trip\.com\/flights\/showfarefirst\?dcity=fra&acity=bkk&ddate=\d{4}-\d\d-\d\d&triptype=ow&class=y&quantity=1&curr=EUR$/);
     assert.equal(link.structuredContent.partner, false);
     assert.doesNotMatch((await c.listTools()).tools.find((t) => t.name === 'flight_link').description, /commission/);
   } finally { await c.close(); plain.server.close(); }
