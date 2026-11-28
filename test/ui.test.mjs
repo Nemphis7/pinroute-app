@@ -138,11 +138,30 @@ test('asks Claude for local picks and shows them once saved', { skip }, async ()
   assert.match(await lastMessage(), /save_local_picks \(place: "Koh Lanta"\)/);
   await client.callTool({ name: 'save_local_picks', arguments: { place: 'Koh Lanta', picks: [{ name: 'Time for Lime', kind: 'food', why: 'Cooking class and dinner on Klong Dao beach.', source_url: 'https://www.reddit.com/r/Thailand/' }] } });
   await frame().getByRole('button', { name: 'Refresh' }).click();
-  await frame().locator('.picks', { hasText: 'Time for Lime' }).waitFor();
-  assert.match(await frame().locator('.detail h3', { hasText: 'Local picks' }).textContent(), /Local picks \(1\)/);
+  await frame().locator('.pickdeck .dcard.front', { hasText: 'Time for Lime' }).waitFor();
+  assert.match(await frame().locator('.pickdeck h3').textContent(), /Pick what you like in Koh Lanta/);
   assert.match(await frame().locator('.row.stop', { hasText: 'Koh Lanta' }).textContent(), /1$/, 'the route shows how many picks');
-  await frame().getByRole('button', { name: 'Source for Time for Lime' }).click();
+  await frame().getByRole('button', { name: 'Source · reddit.com' }).click();
   await page.waitForFunction(() => window.__links.includes('https://www.reddit.com/r/Thailand/'));
+  // Kept: it leaves the deck and lands on an evening of the stay
+  await frame().getByRole('button', { name: 'Keep Time for Lime' }).click();
+  await frame().locator('.plan .s-evening .plan-item', { hasText: 'Time for Lime' }).waitFor();
+  assert.equal(await frame().locator('.pickdeck').count(), 0);
+  assert.match(await frame().locator('.sorted').textContent(), /All sorted: 1 kept in Koh Lanta/);
+  const saved = (await client.callTool({ name: 'get_local_picks', arguments: { place: 'Koh Lanta' } })).structuredContent.picks;
+  assert.equal(saved[0].status, 'keep');
+  // Moved to the first day's afternoon: pinned there for good
+  await frame().locator('.pi-main', { hasText: 'Time for Lime' }).click();
+  await frame().locator('.pi-edit').getByRole('button', { name: 'Afternoon' }).click();
+  await frame().locator('.plan .pday').first().locator('.s-afternoon .plan-item', { hasText: 'Time for Lime' }).waitFor();
+  const moved = (await client.callTool({ name: 'get_local_picks', arguments: { place: 'Koh Lanta' } })).structuredContent.picks[0];
+  assert.equal(moved.slot, 'afternoon');
+  assert.match(moved.date, /^\d{4}-\d{2}-\d{2}$/);
+  // Taken out again: skipped, with a way back
+  await frame().locator('.pi-main', { hasText: 'Time for Lime' }).click();
+  await frame().locator('.pi-edit').getByRole('button', { name: 'Remove' }).click();
+  await frame().locator('.skipped summary', { hasText: 'Skipped (1)' }).waitFor();
+  assert.equal(await frame().locator('.plan').count(), 0);
 });
 
 test('a stop\'s hotel: a Booking.com search for its nights, Claude\'s pick saved, marked booked and removed', { skip }, async () => {

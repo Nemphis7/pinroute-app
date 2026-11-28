@@ -1570,7 +1570,9 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     currency: CURRENCY.optional(),
     date: DATE.optional().describe('For a tour or ticket the traveller plans on a set day: that day, so it shows in their calendar'),
     time: z.string().max(20).optional().describe('Its start time as HH:MM local, or "HH:MM–HH:MM"'),
+    status: z.enum(['keep', 'skip']).optional().describe('Only when the traveller already said: "keep" for one they want to do, "skip" for one they don\'t'),
   });
+  const SLOT = z.enum(['morning', 'afternoon', 'evening']);
 
   server.registerTool('save_local_picks', {
     title: 'Save local picks',
@@ -1585,6 +1587,27 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     return { content: [text(`${saved.length} local picks saved for ${place}.`)], structuredContent: { place, picks: saved } };
   }));
 
+  server.registerTool('plan_local_picks', {
+    title: 'Keep, skip or schedule local picks',
+    description: 'Records the traveller\'s choices on local picks already saved for a place, by name: keep or skip each one, and for a kept one the day and part of the day (morning, afternoon or evening) it is planned for. '
+      + 'The planner arranges kept picks into a day-by-day plan for the stay by itself; a day and part of the day set here pin a pick there. null puts a choice back: undecided, or back to the planner\'s own arrangement.',
+    inputSchema: {
+      place: z.string().min(1).max(80),
+      choices: z.array(z.object({
+        name: z.string().min(1).max(80).describe('The pick\'s name as saved'),
+        status: z.enum(['keep', 'skip']).nullable().optional(),
+        date: DATE.nullable().optional().describe('The day it is planned for, during the stay'),
+        slot: SLOT.nullable().optional(),
+      })).min(1).max(60),
+    },
+    annotations: { title: 'Keep, skip or schedule local picks', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, mine(async ({ place, choices }) => {
+    const { picks, missing } = store.choosePicks(owner, place, choices);
+    if (missing.length === choices.length) return fail(`No saved pick${missing.length === 1 ? '' : 's'} named ${missing.map((n) => `"${n}"`).join(', ')} for ${place}. ${picks.length ? `Saved: ${picks.map((p) => p.name).join(', ')}.` : 'save_local_picks saves some first.'}`);
+    const kept = picks.filter((p) => p.status === 'keep').length, skipped = picks.filter((p) => p.status === 'skip').length;
+    return { content: [text(`${place}: ${kept} kept, ${skipped} skipped, ${picks.length - kept - skipped} still to decide.${missing.length ? ` Not found: ${missing.join(', ')}.` : ''}`)], structuredContent: { place, picks } };
+  }));
+
   server.registerTool('get_local_picks', {
     title: 'Get local picks',
     description: 'Returns the local picks saved in the traveller\'s Pinroute account for a place.',
@@ -1592,7 +1615,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     annotations: { title: 'Get local picks', readOnlyHint: true },
   }, mine(async ({ place }) => {
     const picks = store.getPicks(owner, place);
-    return { content: [text(picks.length ? picks.map((p) => `${p.name} (${p.kind}): ${p.why}`).join('\n') : `No local picks saved for ${place} yet.`)], structuredContent: { place, picks } };
+    return { content: [text(picks.length ? picks.map((p) => `${p.name} (${p.kind}${p.status ? `, ${p.status === 'keep' ? 'kept' : 'skipped'}` : ''}${p.date ? `, ${p.date}${p.slot ? ` ${p.slot}` : ''}` : ''}): ${p.why}`).join('\n') : `No local picks saved for ${place} yet.`)], structuredContent: { place, picks } };
   }));
 
   // ---- a country's weather by month, for the Best time step and for Claude

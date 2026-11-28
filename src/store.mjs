@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { repairStop } from './geo.mjs';
 
 export const LOCAL = 'local';
 
@@ -61,7 +62,13 @@ function importJson(dir) {
 export const newId = (p) => `${p}_${randomBytes(6).toString('base64url')}`;
 export const placeKey = (place) => String(place || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-const row2trip = (r) => (r ? { ...JSON.parse(r.data), id: r.id, updated: r.updated } : null);
+const row2trip = (r) => {
+  if (!r) return null;
+  const t = JSON.parse(r.data);
+  if (Array.isArray(t.stops)) t.stops = t.stops.map(repairStop);
+  if (Array.isArray(t.options)) t.options = t.options.map((o) => ({ ...o, stops: (o.stops || []).map(repairStop) }));
+  return { ...t, id: r.id, updated: r.updated };
+};
 
 // ---- trips
 export function getTrip(owner, id) {
@@ -109,6 +116,29 @@ export function mergePicks(owner, place, picks) {
     d.prepare('INSERT INTO picks (owner, place, data, updated) VALUES (?, ?, ?, ?) ON CONFLICT (owner, place) DO UPDATE SET data = excluded.data, updated = excluded.updated')
       .run(owner, key, JSON.stringify(list), now);
     return list;
+  });
+}
+
+// The traveller's choices on saved picks, by name: keep or skip (null: undecided again), and the day and part of the
+// day it is planned for (null: back to Pinroute's own plan). Returns the list and the names it did not find.
+export function choosePicks(owner, place, choices) {
+  const key = placeKey(place), now = new Date().toISOString();
+  return tx((d) => {
+    const r = d.prepare('SELECT data FROM picks WHERE owner = ? AND place = ?').get(owner, key);
+    const list = r ? JSON.parse(r.data) : [];
+    const byName = new Map(list.map((p) => [p.name.toLowerCase(), p]));
+    const missing = [];
+    for (const c of choices) {
+      const p = byName.get(c.name.toLowerCase());
+      if (!p) { missing.push(c.name); continue; }
+      for (const f of ['status', 'date', 'slot']) {
+        if (c[f] === undefined) continue;
+        if (c[f] === null) delete p[f]; else p[f] = c[f];
+      }
+      if (p.status === 'skip') { delete p.date; delete p.slot; }
+    }
+    if (r) d.prepare('UPDATE picks SET data = ?, updated = ? WHERE owner = ? AND place = ?').run(JSON.stringify(list), now, owner, key);
+    return { picks: list, missing };
   });
 }
 

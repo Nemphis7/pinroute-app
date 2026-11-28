@@ -87,7 +87,7 @@ export function tripEvents(trip, picks = {}) {
   for (const s of rows) {
     if (!s.nights) continue;
     const hotel = stays[`stay|${s.place}|${s.arrive}|${s.depart}`] || null;
-    const here = (picks[s.place] || []);
+    const here = (picks[s.place] || []).filter((p) => p.status !== 'skip');
     const desc = [
       `Stop ${s.i + 1} of ${rows.length} on "${trip.name}": ${s.nights} night${s.nights === 1 ? '' : 's'}.`,
       hotel ? `Hotel: ${hotel.name}${hotel.price != null ? `, ${money(hotel.price, hotel.currency)}` : ''}${hotel.booked ? ' (booked)' : ' (not booked yet)'}${hotel.note ? `. ${hotel.note}` : ''}${hotel.link ? `\n${hotel.link}` : ''}` : null,

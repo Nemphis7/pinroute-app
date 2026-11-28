@@ -21,6 +21,7 @@ import { stageEl, updateStage } from './stage.js';
 import { builderOn, openBuilder, closeBuilder, builderList, builderMapEl, updateBuilderMap, builderSync } from './builder.js';
 import { filtered, filterBar, quotes, dateStrip, searching, fareCard, standouts, clearFilters } from './fares.js';
 import { ownLink, ownPanel } from './ownflight.js';
+import { initPicks, picksSection } from './picks.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
@@ -35,8 +36,6 @@ const tours = {};          // trip id|stop|place → { state, list, more, error,
 const fares = {};          // leg key → { state, fares, note, live, error, filter, sort, facets, calendar, compare }
 const rides = {};          // ground leg key → { state, sites, error }: where to book it, from find_transport
 
-const KIND = { food: 'Food', drink: 'Drinks', beach: 'Beach', view: 'View', activity: 'Activity', stay: 'Stay', shop: 'Shopping', other: 'Other' };
-const KIND_ICON = { food: Utensils, drink: Wine, beach: Umbrella, view: Mountain, activity: Compass, stay: BedDouble, shop: ShoppingBag, other: Sparkles };
 const MODE = { flight: Plane, ferry: Ship, road: Car };
 // A ferry or road leg by the ride saved for it: a bus, a train, a speedboat...
 const RIDE = { ferry: Ship, speedboat: Ship, bus: Bus, minivan: Bus, train: TrainFront, taxi: CarTaxiFront, combined: Bus, drive: Car };
@@ -540,7 +539,6 @@ function detailView() {
 }
 
 function stopDetail(x) {
-  const picks = V.picks[x.place] || [];
   const where = [x.region, x.iata && `nearest airport ${x.iata}`].filter(Boolean).join(' · ');
   const nights = x.nights || 0, first = x.index === 0, last = x.index === V.stops.length - 1;
   return [
@@ -557,78 +555,27 @@ function stopDetail(x) {
     nights ? h('div', { class: 'moons', 'aria-hidden': 'true' }, Array.from({ length: Math.min(nights, 21) }, (_, i) => h('i', { style: `animation-delay:${i * 40}ms` }))) : null,
     where ? h('p', { class: 'small where', text: where }) : null,
     hotelBlock(x),
-    h('section', { class: 'block' },
-      h('div', { class: 'block-head' }, h('h3', { text: picks.length ? `Local picks (${picks.length})` : 'Local picks' }),
-        picks.length ? h('span', { class: 'small', text: 'What locals and recent travellers recommend' }) : null),
-      picks.length ? h('ul', { class: 'picks' }, picks.map((p, i) => h('li', { class: `pick k-${KIND[p.kind] ? p.kind : 'other'}`, style: `animation-delay:${i * 50}ms` },
-        h('div', { class: 'pick-head' }, h('span', { class: 'kind-ic' }, icon(KIND_ICON[p.kind] || Sparkles)),
-          h('span', { class: 'pick-t' }, h('span', { class: 'pname', text: p.name }), h('span', { class: 'kind', text: [KIND[p.kind] || p.kind, p.area].filter(Boolean).join(' · ') })),
-          p.source_url ? h('button', { class: 'icon ghost', title: 'Source', 'aria-label': `Source for ${p.name}`, onclick: () => app.openLink({ url: p.source_url }) }, icon(ExternalLink)) : null),
-        h('p', { class: 'why', text: p.why })))) : waiting[`picks|${x.place}`] ? null : h('div', { class: 'empty-state' }, h('span', { class: 'kind-ic' }, icon(Sparkles)),
-        h('p', { class: 'meta', text: `No picks for ${x.place} yet. Claude can look through recent Reddit threads, Instagram posts and travel blogs for the places locals love.` })),
-      waiting[`picks|${x.place}`] ? skeleton(`Claude is researching picks for ${x.place}`) : null,
-      answerBlock(`picks|${x.place}`, { poll: refresh }),
-      h('div', { class: 'acts' }, h('button', { class: picks.length ? '' : 'primary', onclick: () => askPicks(x) }, icon(MessageSquare), picks.length ? 'Ask Claude for more' : 'Ask Claude for local picks'))),
-    V.activities?.on ? toursBlock(x, picks) : null,
+    ...picksSection(x),
   ];
 }
 
 // ---- tours and activities at a stop: found with Amadeus, booked on GetYourGuide or Klook
 const tourKey = (x) => `${V.trip.id}|${x.index}|${x.place}`;
-function toursBlock(x, picks) {
-  const t = tours[tourKey(x)] || {};
-  const kept = new Set(picks.map((p) => p.name.toLowerCase()));
-  const facts = (a) => [a.priceFrom != null ? `from ${money(a.priceFrom, a.currency)}${a.perPerson ? ' pp' : ''}` : null, a.duration].filter(Boolean).join(' · ');
-  return h('section', { class: 'block tours' },
-    h('div', { class: 'block-head' }, h('h3', { text: t.list?.length ? `Tours & activities (${t.list.length})` : 'Tours & activities' }),
-      h('span', { class: 'small', text: 'Popular with travellers, to book on GetYourGuide or Klook' })),
-    t.state === 'loading' ? h('div', { class: 'skel', role: 'status' }, h('p', { class: 'small skel-line' }, h('span', { class: 'spark' }, icon(Sparkles)), `Finding tours in ${x.place}`),
-      Array.from({ length: 2 }, () => h('div', { class: 'skel-row' }, h('i', { class: 'a' }), h('i', { class: 'b' }), h('i', { class: 'c' }), h('i', { class: 'd' })))) : null,
-    t.state === 'error' ? h('p', { class: 'note warn', text: t.error }) : null,
-    t.state === 'done' && !t.list.length ? h('p', { class: 'meta', text: `No tours found around ${x.place}.` }) : null,
-    t.list?.length ? h('ul', { class: 'picks' }, t.list.map((a, i) => h('li', { class: 'pick k-activity tour', style: `animation-delay:${i * 50}ms` },
-      a.image ? h('img', { class: 'tour-img', src: a.image, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: (e) => e.currentTarget.remove() }) : null,
-      h('div', { class: 'pick-head' }, h('span', { class: 'kind-ic' }, icon(Ticket)),
-        h('span', { class: 'pick-t' }, h('span', { class: 'pname', text: a.title }), h('span', { class: 'kind', text: facts(a) }))),
-      a.rating ? h('p', { class: 'small rating' }, icon(Star), ` ${a.rating.toFixed(1)}${a.reviews ? ` (${a.reviews.toLocaleString('en-GB')} reviews)` : ''}`) : null,
-      a.summary ? h('p', { class: 'why', text: a.summary }) : null,
-      h('div', { class: 'acts tour-acts' },
-        a.links.map((l, j) => h('button', { class: j ? 'ghost' : '', onclick: () => app.openLink({ url: l.url }) }, icon(ExternalLink), l.site)),
-        kept.has(a.title.toLowerCase()) ? h('span', { class: 'small kept' }, icon(Check), ' Kept')
-          : h('button', { class: 'ghost', disabled: ui.busy, onclick: () => keepTour(x, a) }, icon(Plus), 'Keep'))))) : null,
-    t.more?.length ? h('p', { class: 'small' }, `More in ${x.place}: `, t.more.flatMap((l, j) => [j ? ' · ' : '', h('button', { class: 'link', text: l.site, onclick: () => app.openLink({ url: l.url }) })])) : null,
-    t.state === 'done' && V.activities.partnerLinks ? h('p', { class: 'small foot', text: 'GetYourGuide and Klook links carry Pinroute\'s partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.' }) : null,
-    t.state === 'loading' ? null : h('div', { class: 'acts' }, h('button', { class: t.list?.length ? '' : 'primary', onclick: () => findTours(x) }, icon(Ticket), t.list ? 'Search again' : `Find tours in ${x.place}`)));
-}
+initPicks({ view: () => V, render: () => render(), refresh, askPicks, findTours, skeleton, tourState: (x) => tours[tourKey(x)] || (tours[tourKey(x)] = {}) });
 
 async function findTours(x) {
   const k = tourKey(x);
   tours[k] = { ...(tours[k] || {}), state: 'loading' };
   render();
   try {
-    const r = await app.callServerTool({ name: 'find_activities', arguments: { trip_id: V.trip.id, stop: x.index, limit: 6 } });
+    const r = await app.callServerTool({ name: 'find_activities', arguments: { trip_id: V.trip.id, stop: x.index, limit: 8 } });
     if (r.isError) throw new Error(textOf(r) || 'The search failed.');
-    tours[k] = { state: 'done', list: r.structuredContent?.activities || [], more: r.structuredContent?.more || [] };
+    const seen = new Set((tours[k].list || []).map((a) => a.title));
+    tours[k] = { state: 'done', list: [...(tours[k].list || []), ...(r.structuredContent?.activities || []).filter((a) => !seen.has(a.title))], more: r.structuredContent?.more || [], skipped: tours[k].skipped || [] };
   } catch (e) {
     tours[k] = { ...tours[k], state: 'error', error: e.message || String(e) };
   }
   render();
-}
-
-// Keeps a tour with the stop's local picks, with its first booking link
-async function keepTour(x, a) {
-  const url = a.links[0]?.url;
-  if (!url) return;
-  ui.busy = true; render();
-  try {
-    const r = await app.callServerTool({ name: 'save_local_picks', arguments: { place: x.place, picks: [{
-      name: a.title.slice(0, 80), kind: 'activity', why: (a.summary || a.title).slice(0, 300), source_url: url, book_url: url,
-      ...(a.priceFrom != null ? { price_from: a.priceFrom, currency: a.currency } : {}) }] } });
-    if (r.isError) throw new Error(textOf(r) || 'Could not save it.');
-    V.picks[x.place] = r.structuredContent?.picks || V.picks[x.place];
-    showError('');
-  } catch (e) { showError(e.message || String(e)); }
-  finally { ui.busy = false; render(); }
 }
 
 // ---------------------------------------------------------------- the guide: what to do after this, one or two steps

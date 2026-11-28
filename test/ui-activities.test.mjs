@@ -32,20 +32,26 @@ before(async () => {
 after(async () => { await browser?.close(); await client?.close(); srv?.server.close(); am?.close(); });
 const frame = () => page.frameLocator('#planner');
 
-test('finds tours at a stop, opens one on GetYourGuide and keeps one with the local picks', { skip }, async () => {
+test('finds tours at a stop, shows them as cards to keep or skip, and keeps one in the plan for the stay', { skip }, async () => {
   await frame().getByRole('button', { name: 'Open planner' }).click();
   await frame().locator('.row.stop', { hasText: 'Koh Lanta' }).click();
   await frame().getByRole('button', { name: 'Find tours in Koh Lanta' }).click();
-  const cards = frame().locator('.tours .tour');
-  await cards.first().waitFor();
-  assert.equal(await cards.count(), 6);
-  const first = cards.first();
-  assert.match(await first.textContent(), /Tour 30.*from €70 pp · 3 hours.*4\.7 \(475 reviews\).*Experience authentic culture & food\./);
-  await first.getByRole('button', { name: 'GetYourGuide' }).click();
+  const front = frame().locator('.pickdeck .dcard.front');
+  await front.waitFor();
+  assert.match(await frame().locator('.pickdeck .block-head').textContent(), /8 to go/);
+  assert.match(await front.textContent(), /Tour.*Tour 30.*from €70 pp · 3 hours.*Experience authentic culture & food\./);
+  assert.match(await front.textContent(), /4\.7 \(475\)/);
+  await front.getByRole('button', { name: 'GetYourGuide' }).click();
   await page.waitForFunction(() => window.__links.some((l) => l.startsWith('https://www.getyourguide.com/s/?q=Tour%2030%20Koh%20Lanta')));
-  await first.getByRole('button', { name: 'Keep' }).click();
-  await first.locator('.kept').waitFor();
+  await frame().getByRole('button', { name: 'Keep Tour 30' }).click();
+  await frame().locator('.plan .plan-item', { hasText: 'Tour 30' }).waitFor();
   const picks = (await client.callTool({ name: 'get_local_picks', arguments: { place: 'Koh Lanta' } })).structuredContent.picks;
-  assert.deepEqual(picks.map((p) => [p.name, p.kind, p.price_from]), [['Tour 30', 'activity', 70]]);
-  assert.match(await frame().locator('.detail h3', { hasText: 'Local picks' }).textContent(), /Local picks \(1\)/);
+  assert.deepEqual(picks.map((p) => [p.name, p.kind, p.price_from, p.status]), [['Tour 30', 'activity', 70, 'keep']]);
+  // Skipped with the arrow key, and back with Undo
+  const next = (await frame().locator('.pickdeck .dcard.front .dname').textContent()).trim();
+  await frame().locator('.pickdeck .dcard.front').focus();
+  await frame().locator('.pickdeck .dcard.front').press('ArrowLeft');
+  await frame().locator('.pickdeck .block-head', { hasText: '6 to go' }).waitFor();
+  await frame().getByRole('button', { name: `Undo: ${next}` }).click();
+  await frame().locator('.pickdeck .dcard.front', { hasText: next }).waitFor();
 });

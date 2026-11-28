@@ -7,7 +7,7 @@ let srv, client, trip;
 before(async () => { srv = await startServer(null, { SEARCH_LIMIT_PER_DAY: '6' }); client = await connect(srv.url); });
 after(async () => { await client.close(); srv.server.close(); });
 
-const TOOLS = ['add_booked_flight', 'calendar_link', 'choose_flight', 'choose_route', 'choose_stay', 'choose_transport', 'clear_flight', 'clear_stay', 'country_weather', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'find_transport', 'flight_link', 'get_local_picks', 'hotel_link', 'list_trips', 'mark_leg', 'open_planner',
+const TOOLS = ['add_booked_flight', 'calendar_link', 'choose_flight', 'choose_route', 'choose_stay', 'choose_transport', 'clear_flight', 'clear_stay', 'country_weather', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'find_transport', 'flight_link', 'get_local_picks', 'hotel_link', 'list_trips', 'mark_leg', 'open_planner', 'plan_local_picks',
   'plan_new_trip', 'planner_answers', 'route_map', 'save_flight_deals', 'save_local_picks', 'save_new_trip_draft', 'save_route_ideas', 'save_transport_options', 'scan_flight_deals', 'search_flights', 'set_nights', 'set_trip_fare', 'show_answer', 'start_trip_from_flight', 'suggest_routes', 'update_trip'];
 
 test('lists every tool, each with a title and the right read or write annotation', async () => {
@@ -133,6 +133,34 @@ test('saves a chosen flight on an existing leg only', async () => {
   assert.match(wrong.content[0].text, /Its legs are: .*leg\|KBV\|BKK/);
 });
 
+test('keeps, skips and schedules saved picks by name; Claude saving them again keeps the choices', async () => {
+  const pk = (name, kind) => ({ name, kind, why: 'Locals love it.', source_url: 'https://example.com/a' });
+  await client.callTool({ name: 'save_local_picks', arguments: { place: 'Trapani', picks: [pk('Pizzeria Calvino', 'food'), pk('Erice', 'view'), pk('Salt pans', 'activity')] } });
+  const r = await client.callTool({ name: 'plan_local_picks', arguments: { place: 'trapani', choices: [
+    { name: 'pizzeria calvino', status: 'keep', date: '2027-06-20', slot: 'evening' }, { name: 'Erice', status: 'skip' }, { name: 'Nowhere', status: 'keep' }] } });
+  assert.match(r.content[0].text, /1 kept, 1 skipped, 1 still to decide\. Not found: Nowhere\./);
+  const by = (list) => Object.fromEntries(list.map((p) => [p.name, [p.status, p.date, p.slot]]));
+  assert.deepEqual(by(r.structuredContent.picks), { 'Pizzeria Calvino': ['keep', '2027-06-20', 'evening'], Erice: ['skip', undefined, undefined], 'Salt pans': [undefined, undefined, undefined] });
+  await client.callTool({ name: 'save_local_picks', arguments: { place: 'Trapani', picks: [{ ...pk('Pizzeria Calvino', 'food'), why: 'Newer note.' }] } });
+  const back = await client.callTool({ name: 'plan_local_picks', arguments: { place: 'Trapani', choices: [{ name: 'Pizzeria Calvino', date: null, slot: null }, { name: 'Erice', status: null }] } });
+  assert.deepEqual(by(back.structuredContent.picks), { 'Pizzeria Calvino': ['keep', undefined, undefined], Erice: [undefined, undefined, undefined], 'Salt pans': [undefined, undefined, undefined] });
+  assert.match((await client.callTool({ name: 'get_local_picks', arguments: { place: 'Trapani' } })).content[0].text, /Pizzeria Calvino \(food, kept\): Newer note\./);
+  const none = await client.callTool({ name: 'plan_local_picks', arguments: { place: 'Trapani', choices: [{ name: 'Nowhere', status: 'keep' }] } });
+  assert.equal(none.isError, true);
+});
+
+test('a place outside Thailand is never taken for a Thailand place inside its name, and trips saved so are put right', async () => {
+  const geo = await import('../src/geo.mjs');
+  for (const [place, at] of [['Favignana', { lat: 37.93, lon: 12.33 }], ['Favignana', {}], ['Spain', {}]]) assert.equal(geo.resolvePlace(place, place === 'Spain' ? null : 'TPS', at).placeId, null, place);
+  assert.equal(geo.resolvePlace('Koh Tao island').placeId, 'koh-tao');
+  assert.equal(geo.resolvePlace('Khao Sok').placeId, 'khao-sok');
+  assert.equal(geo.resolvePlace('Nan', 'TPS', { lat: 37.9, lon: 12.3 }).placeId, null, 'a position far from the Thailand place wins');
+  const fixed = geo.repairStop({ place: 'Favignana', placeId: 'nan', region: 'North', lat: 18.78, lon: 100.78, iata: 'TPS', nights: 3 });
+  assert.deepEqual([fixed.placeId, fixed.region, Math.round(fixed.lat), Math.round(fixed.lon), fixed.nights], [null, 'Italy', 38, 12, 3]);
+  const nan = { place: 'Nan', placeId: 'nan', lat: 18.78, lon: 100.78, iata: 'NNT' };
+  assert.equal(geo.repairStop(nan), nan);
+});
+
 test('keeps local picks per place and merges by name', async () => {
   const pick = { name: 'Time for Lime', kind: 'food', why: 'Cooking school and dinner on Klong Dao beach, praised in recent threads.', source_url: 'https://www.reddit.com/r/Thailand/' };
   await client.callTool({ name: 'save_local_picks', arguments: { place: 'Koh Lanta', picks: [pick] } });
@@ -215,7 +243,7 @@ test('deletes one trip, then everything', async () => {
   const refused = await client.callTool({ name: 'delete_my_data', arguments: {} });
   assert.equal(refused.isError, true, 'needs confirm: true');
   const all = await client.callTool({ name: 'delete_my_data', arguments: { confirm: true } });
-  assert.match(all.content[0].text, /Deleted 1 trip, the new-trip draft and the local picks for 1 place/);
+  assert.match(all.content[0].text, /Deleted 1 trip, the new-trip draft and the local picks for 2 places/);
   assert.equal(all.structuredContent.deleted.answers, 2, 'answers shown in the planner go too');
   assert.equal((await client.callTool({ name: 'list_trips', arguments: {} })).structuredContent.trips.length, 0);
 });

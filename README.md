@@ -42,6 +42,7 @@ Claude (the traveller's own plan)
 | `save_transport_options` / `choose_transport` | The ways to make a ferry or road leg (kind, operator, usual times, journey length, usual price, pier or station), each with the leg's booking search, and the one the traveller picked; the pick goes in the calendar with its times, and `clear_flight` removes it | writes |
 | `find_activities` | Tours, activities and tickets at a trip stop or place (Amadeus Travel Builder), popular or matching interests, budget, traveller type and day; each with GetYourGuide and Klook links, as partner links when Travelpayouts is set up; daily limit per person | reads |
 | `save_local_picks` / `get_local_picks` | Local favourites per place, each with its source link; a kept tour also has its booking link and price | writes / reads |
+| `plan_local_picks` | The traveller's choices on saved picks: keep or skip each one, and the day and part of the day a kept one is planned for; the planner arranges the rest into the days of the stay | changes |
 | `calendar_link` | A trip in the traveller's own calendar (Apple, Google/Android, Outlook): a secret subscription address `/calendar/<token>.ics` with each stop and its hotel, each flight, ferry and drive at its times when known, and dated tours; calendars follow changes; `new` renews the link, `stop` switches it off. Needs `PUBLIC_URL` (or Railway's domain) | writes |
 | `delete_my_data` | Deletes everything the person saved | deletes |
 

@@ -64,12 +64,22 @@ export function findAirports(query, limit = 8) {
 
 // A stop typed by the traveller ("Ao Nang", "Koh Lanta", "Hoi An") → name, coordinates and its airport. Pinroute's
 // Thailand list knows its places; anywhere else Claude gives the nearest airport and, best, the place's own position.
-export function resolvePlace(text, airportHint, { lat, lon, island } = {}) {
+// Pinroute's Thailand place a name means: the same name, or one that holds the other as whole words ("Khao Sok",
+// "Koh Tao island"). Never part of a word: "Favignana" is not Nan, "Spain" is not Pai.
+const words = (a, b) => b && ` ${a} `.includes(` ${b} `);
+export function curatedPlace(text) {
   const q = norm(text);
-  const p = PLACES.find((x) => norm(x.id) === q.replace(/ /g, '-') || norm(x.name) === q || norm(x.short) === q)
-    || PLACES.find((x) => norm(x.name).includes(q) || q.includes(norm(x.short)));
-  const hint = airportHint ? airport(airportHint) : null;
+  if (!q) return null;
+  return PLACES.find((x) => norm(x.id) === q.replace(/ /g, '-') || norm(x.name) === q || norm(x.short) === q)
+    || PLACES.find((x) => words(norm(x.name), q) || words(q, norm(x.short))) || null;
+}
+
+export function resolvePlace(text, airportHint, { lat, lon, island } = {}) {
   const at = Number.isFinite(lat) && Number.isFinite(lon);
+  let p = curatedPlace(text);
+  // A position Claude gave wins over a Thailand place of the same name far from it
+  if (p && at && km(p, { lat, lon }) > 75) p = null;
+  const hint = airportHint ? airport(airportHint) : null;
   if (at && !p) {
     const a = hint || nearestAirport({ lat, lon });
     return { place: String(text).trim(), placeId: null, region: a?.country || null, lat, lon, iata: a?.code || null, island: !!island };
@@ -143,3 +153,12 @@ export function countryCities(cc, limit = 24) {
 
 // Pinroute's curated places for a country, when it has them (Thailand)
 export const curatedPlaces = (cc) => (cc === 'TH' ? PLACES.map((p) => ({ id: p.id, name: p.name.split(' & ')[0], lat: p.lat, lon: p.lon, iata: p.iata, region: p.region, island: !!p.island })) : []);
+
+// A stop saved before curatedPlace matched whole words only may sit on a Thailand place it was never meant to be
+// ("Favignana" on Nan): it moves to its own airport, where Claude put it.
+export function repairStop(s) {
+  if (!s?.placeId || curatedPlace(s.place)?.id === s.placeId) return s;
+  const a = s.iata ? airport(s.iata) : null;
+  if (!a || a.country === 'Thailand') return s;
+  return { ...s, placeId: null, region: a.country, lat: a.lat, lon: a.lon, island: !!s.island };
+}
