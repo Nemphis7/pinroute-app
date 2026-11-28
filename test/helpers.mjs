@@ -6,6 +6,12 @@ import { join } from 'node:path';
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'pinroute-'));
 process.env.FLIGHT_PROVIDER ||= 'demo';
 
+// Weather by month comes from a stand-in for Open-Meteo, never the real one
+const { fakeOpenMeteo } = await import('./fake-openmeteo.mjs');
+export const openMeteo = await fakeOpenMeteo();
+process.env.OPEN_METEO_ARCHIVE_URL = openMeteo.base;
+process.env.OPEN_METEO_MARINE_URL = openMeteo.base;
+
 const { createApp } = await import('../src/server.mjs');
 const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
 const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');

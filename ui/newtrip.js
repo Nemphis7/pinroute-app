@@ -17,6 +17,7 @@ import { openAirMap } from './airmap.js';
 import { openConfirm } from './tripmenu.js';
 import { scene, kindOfTags } from './scene.js';
 import { ownLink, ownPanel } from './ownflight.js';
+import { climatePanel } from './climate.js';
 
 // A country's postcard, from what it is known for
 const destArt = (d, w = 400, hgt = 200, sky) => scene(d.name, kindOfTags(d.tags), { w, h: hgt, sky });
@@ -617,6 +618,7 @@ function seasonStep() {
   const scanning = check.some((mo) => N.scan[`m|${mo.ym}`] === 'loading') || N.scan[`y|${d.id}`] === 'loading';
   return [
     head(`When is best for ${N.d.focus?.[d.id] ? `${N.d.focus[d.id].area}, ${d.name}` : d.name}?`, `${d.why} Weather by month for the next year, and fares from ${N.homes.map((a) => a.code).join(' or ') || 'your airport'}${N.d.focus?.[d.id] ? ` to ${N.d.focus[d.id].airports[0]}` : ''} for the good months.`),
+    climatePanel(d, ms, N.d.focus?.[d.id]?.airports?.[0]),
     h('section', { class: 'months', 'aria-label': 'Weather and fares by month' },
       h('div', { class: 'mgrid' }, ms.map((mo) => {
         const c = d.months[mo.m], x = cheapest(mo), dl = x && dealLabel(dealRatio(x)), st = N.scan[`m|${mo.ym}`];

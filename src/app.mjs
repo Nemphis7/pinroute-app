@@ -10,8 +10,9 @@ import * as store from './store.mjs';
 import { schedule, legs, endDate, legRoute } from './trips.mjs';
 import {
   REGIONS, INTERESTS, MONTHS, findDest, destById, rankDests, fitLabel, windowMonths, addDays, diffDays, monthOf,
-  dealPP, dealRatio, dealLabel, dealsFor, budgetFit, bestMonthsText,
+  dealPP, dealRatio, dealLabel, dealsFor, budgetFit, bestMonthsText, MON,
 } from './discover.mjs';
+import { climateFor, climateText } from './climate.mjs';
 import { tripMap, regionMap, pickMap } from './map.mjs';
 import { routePlaces } from './places.mjs';
 import { flightProvider } from './providers/index.mjs';
@@ -1493,6 +1494,29 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   }, mine(async ({ place }) => {
     const picks = store.getPicks(owner, place);
     return { content: [text(picks.length ? picks.map((p) => `${p.name} (${p.kind}): ${p.why}`).join('\n') : `No local picks saved for ${place} yet.`)], structuredContent: { place, picks } };
+  }));
+
+  // ---- a country's weather by month, for the Best time step and for Claude
+  server.registerTool('country_weather', {
+    title: 'Weather by month',
+    description: 'A country\'s weather in each month of the year: average day and night temperatures, rain (mm and rainy days), hours of sunshine a day and, for countries with beaches, the sea temperature. Ten-year averages from Open-Meteo, near the country\'s main airport or near the airport given. Use it to say when a country is warm, dry or sunny; the planner\'s Best time step shows it as a chart.',
+    inputSchema: {
+      country: z.string().min(2).max(60),
+      airport: IATA.optional().describe('A part of the country, by its airport (Sapporo is CTS); the main airport if left out'),
+    },
+    annotations: { title: 'Weather by month', readOnlyHint: true, openWorldHint: true },
+  }, mine(async ({ country, airport: code }) => {
+    const d = findDest(country);
+    if (!d) return fail(destIds([country]).error);
+    const ap = code ? airport(code) : null;
+    if (code && !ap) return fail(`No airport with the code ${code.toUpperCase()}.`);
+    const at = ap ? { lat: ap.lat, lon: ap.lon } : { lat: d.lat, lon: d.lon };
+    let climate;
+    try { climate = await climateFor(d.id, { ...at, sea: d.tags.includes('beach') }, { env }); }
+    catch (e) { return fail(`The weather by month for ${d.name} could not be loaded just now (${e.message}). Try again in a minute.`); }
+    const where = ap ? `${ap.city} (${ap.code})` : `${d.name} near ${d.gw}`;
+    return { content: [text(`Weather by month, ${where}. ${climateText(climate, MON)}`)],
+      structuredContent: { country: d.id, name: d.name, place: ap ? ap.city : null, airport: ap ? ap.code : d.gw, climate } };
   }));
 
   // ---- answers shown in the planner: a question asked there names a key, and Claude's answer is kept under it,

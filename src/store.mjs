@@ -27,6 +27,7 @@ function open() {
     CREATE TABLE IF NOT EXISTS usage (owner TEXT NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (owner, day, kind));
     CREATE TABLE IF NOT EXISTS drafts (owner TEXT PRIMARY KEY, data TEXT NOT NULL, updated TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS answers (owner TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, updated TEXT NOT NULL, PRIMARY KEY (owner, key));
+    CREATE TABLE IF NOT EXISTS shared (key TEXT PRIMARY KEY, data TEXT NOT NULL, updated TEXT NOT NULL);
   `);
   importJson(dir);
   return db;
@@ -144,6 +145,16 @@ export function putAnswer(owner, key, answer) {
 export function getAnswers(owner, prefix) {
   return open().prepare("SELECT key, data, updated FROM answers WHERE owner = ? AND substr(key, 1, length(?)) = ? ORDER BY updated").all(owner, prefix, prefix)
     .map((r) => ({ ...JSON.parse(r.data), key: r.key, at: r.updated }));
+}
+
+// ---- public data kept for everyone, such as a country's weather by month: no owner, nothing personal
+export function getShared(key) {
+  const r = open().prepare('SELECT data, updated FROM shared WHERE key = ?').get(key);
+  return r ? { data: JSON.parse(r.data), updated: r.updated } : null;
+}
+export function putShared(key, data) {
+  open().prepare('INSERT INTO shared (key, data, updated) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET data = excluded.data, updated = excluded.updated')
+    .run(key, JSON.stringify(data), new Date().toISOString());
 }
 
 // ---- daily counters, for limits such as flight searches per person
