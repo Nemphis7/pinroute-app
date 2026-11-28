@@ -48,6 +48,11 @@ test('serves the planner as one self-contained MCP App page', async () => {
   assert.doesNotMatch(c.text, /<script[^>]+src=/i, 'no outside scripts: the sandbox would block them');
 });
 
+test('asks Claude to keep the planner in the side panel beside the chat, so it does not scroll away', async () => {
+  const r = await client.readResource({ uri: 'ui://pinroute/planner' });
+  assert.equal(r.contents[0]._meta.ui.preferredDisplayMode, 'fullscreen');
+});
+
 test('creates the Thailand trip with airports, dates and flight legs', async () => {
   const r = await client.callTool({ name: 'create_trip', arguments: THAILAND_TRIP });
   assert.ok(!r.isError, JSON.stringify(r.content));

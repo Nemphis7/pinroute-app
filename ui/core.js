@@ -3,7 +3,9 @@
 import { App } from '@modelcontextprotocol/ext-apps';
 
 // Size reports start once the host has answered (see the start in planner.js), so none is sent into a closed channel
-export const app = new App({ name: 'Pinroute planner', version: '0.8.0' }, {}, { autoResize: false });
+// The planner works in all three modes; the host lists which of them it offers (Claude: inline and full screen, where
+// full screen is the side panel beside the chat when the panel can open; pip is a small window that stays on screen)
+export const app = new App({ name: 'Pinroute planner', version: '0.8.0' }, { availableDisplayModes: ['inline', 'fullscreen', 'pip'] }, { autoResize: false });
 export const $ = (id) => document.getElementById(id);
 // scope: what the screen shows, as the start of the keys its answers are kept under ("<trip id>|", "new|")
 export const ui = { ctx: {}, busy: false, scope: '' };
@@ -17,6 +19,8 @@ export const show = (r) => open(r);
 
 export const canFull = () => (ui.ctx.availableDisplayModes || []).includes('fullscreen');
 export const isFull = () => ui.ctx.displayMode === 'fullscreen';
+export const canPip = () => (ui.ctx.availableDisplayModes || []).includes('pip');
+export const isPip = () => ui.ctx.displayMode === 'pip';
 export const layout = () => (isFull() ? 'app' : canFull() ? 'card' : 'stacked');
 export const narrow = () => layout() === 'stacked' || window.innerWidth < 720;
 

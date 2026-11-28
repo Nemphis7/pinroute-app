@@ -210,7 +210,11 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   registerAppResource(server, 'Pinroute planner', PLANNER_URI, { description: 'Interactive trip planner: route, flights and local picks' }, async () => ({
     // Tour photos come from Amadeus's image host; the host's sandbox loads only images from domains named here
-    contents: [{ uri: PLANNER_URI, mimeType: RESOURCE_MIME_TYPE, text: plannerHtml(), ...(acts.configured(env) ? { _meta: { ui: { csp: { resourceDomains: acts.IMAGE_DOMAINS } } } } : {}) }],
+    // preferredDisplayMode is Claude's own addition: Claude moves the planner into the side panel beside the chat
+    // once it starts, where the panel can open, so it stays in sight while the chat goes on instead of scrolling away.
+    // Where the panel can't open, the planner stays in the chat as a card. Other hosts ignore it.
+    contents: [{ uri: PLANNER_URI, mimeType: RESOURCE_MIME_TYPE, text: plannerHtml(),
+      _meta: { ui: { preferredDisplayMode: 'fullscreen', ...(acts.configured(env) ? { csp: { resourceDomains: acts.IMAGE_DOMAINS } } : {}) } } }],
   }));
 
   // ---- trips
