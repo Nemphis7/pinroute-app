@@ -25,6 +25,7 @@ const TOOLS = [
   ['save_new_trip_draft', 'Saves the same new-trip details without showing another planner, when one is already open', 'Writes'],
   ['scan_flight_deals', 'Looks up return fares to a country across your window or by month (recent prices from Aviasales), or live airline fares, also comparing departure and arrival airports for one pair of dates (Amadeus Travel Builder); keeps the cheapest', 'Writes'],
   ['save_flight_deals', 'Keeps return fares Claude found with any flight search, for one country', 'Writes'],
+  ['add_booked_flight', 'Saves flights the traveller booked themselves (read from a booking or filled in): a new trip from them, a trip fitted to them, or one leg, marked booked and in the calendar at their times', 'Writes'],
   ['start_trip_from_flight', 'Creates a trip from a saved fare: from landing to the flight home, with the fare on both flights', 'Writes'],
   ['set_trip_fare', 'Moves a trip to another saved fare: its dates follow the flights, nights are added to or taken from the longest stays', 'Changes'],
   ['create_trip', 'Saves a new multi-stop trip; dates and legs are worked out', 'Writes'],

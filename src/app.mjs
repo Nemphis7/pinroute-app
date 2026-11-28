@@ -689,7 +689,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const view = {
       screen: 'new',
       draft: { way: dr.way, step: dr.step, from: dr.from, until: dr.until, minNights: dr.minNights, maxNights: dr.maxNights, adults: dr.adults, budget: dr.budget,
-        homes: dr.homes, regions: dr.regions, interests: dr.interests, compare: dr.compare, country: dr.country, wishes: dr.wishes || '', focus: dr.focus || {}, updated: dr.updated },
+        homes: dr.homes, regions: dr.regions, interests: dr.interests, compare: dr.compare, country: dr.country, wishes: dr.wishes || '', focus: dr.focus || {}, updated: dr.updated, booked: dr.booked || null },
       homes,
       top: ranked.slice(0, 8).map((r) => ({ id: r.d.id, name: r.d.name, fit: fitLabel(r.fit)[1], hours: r.hours, cost: r.cost.total, budget: budgetFit(r.cost, dr.budget)?.[1] || null })),
       deals,
@@ -1143,6 +1143,148 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const saved = store.putTrip(owner, { ...fit.trip, country: t.country || x.country });
     const moved = saved.start !== t.start || endDate(saved) !== endDate(t);
     return viewResult(saved, `"${saved.name}" now flies ${x.from} → ${x.to} on ${x.depart} and home from ${x.back_from || x.to} on ${x.return} (${x.airline}, ${x.currency} ${Math.round(x.price)} for ${x.adults || saved.adults}).${moved ? ` The trip now runs ${saved.start} to ${endDate(saved)}, ${fit.total} nights.${movedNote(tripView(saved))}` : ''}`);
+  }));
+
+  // ---- flights the traveller already booked themselves: no search, the leg is booked, the trip fits their times
+  const HHMM = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, 'a time as HH:MM, local at the airport');
+  const ownIn = z.object({
+    from: IATA, to: IATA,
+    date: DATE.describe('Day the flight leaves, local'),
+    departs: HHMM.optional().describe('Departure time, local at the departure airport'),
+    arrives: HHMM.optional().describe('Arrival time, local at the arrival airport'),
+    arrive_date: DATE.optional().describe('Day it lands, when that is after the day it leaves'),
+    number: z.string().max(40).optional().describe('Flight number or numbers, e.g. "LH 772" or "QR 70, QR 970"'),
+    airline: z.string().max(80).optional(),
+  });
+  const pad = (t) => (t ? t.padStart(5, '0') : t);
+  // "Lufthansa LH 772, 21:10 FRA → 13:40 SGN (+1)": the line the planner's ticket and the calendar read times from
+  function ownLine(f) {
+    const lands = f.arrive_date && f.arrive_date > f.date ? diffDays(f.date, f.arrive_date) : 0;
+    const who = [f.airline ? airlineName(f.airline) : null, f.number].filter(Boolean).join(' ');
+    const times = f.departs && f.arrives ? `${pad(f.departs)} ${f.from.toUpperCase()} → ${pad(f.arrives)} ${f.to.toUpperCase()}${lands ? ` (+${lands})` : ''}`
+      : f.departs ? `${pad(f.departs)} ${f.from.toUpperCase()} → ${f.to.toUpperCase()}` : `${f.from.toUpperCase()} → ${f.to.toUpperCase()}`;
+    return withAirlineName(who ? `${who}, ${times}` : times);
+  }
+  const ownChoice = (f, extra) => ({ summary: ownLine(f), price: extra.price ?? null, currency: (extra.currency || 'EUR').toUpperCase(), link: null, source: 'Your booking', own: true, at: new Date().toISOString(), ...(extra.part ? { part: extra.part } : {}) });
+  function checkOwn(f) {
+    if (!f) return null;
+    if (!airport(f.from) || !airport(f.to)) return `Unknown airport code in ${f.from} → ${f.to}.`;
+    if (f.from.toUpperCase() === f.to.toUpperCase()) return `A flight from ${f.from} to itself.`;
+    if (f.arrive_date && f.arrive_date < f.date) return `A flight can't land (${f.arrive_date}) before it leaves (${f.date}).`;
+    return null;
+  }
+  // Fits a trip to booked flights: out sets the first day (the day it lands), back the last; a side not given keeps the
+  // trip's own day, or `nights` after landing. Booked legs get the flight and a booked mark with the booking reference.
+  function fitOwn(trip, { out, back, nights, booking_ref, price, currency }) {
+    const stops = trip.stops || [];
+    const t = trip.ticket || {};
+    const firstIata = stops[0]?.iata, lastIata = stops.at(-1)?.iata;
+    const land = out ? (out.arrive_date && out.arrive_date > out.date ? out.arrive_date : out.date) : trip.start;
+    const ret = back ? back.date : nights ? addDays(land, nights) : stops.length ? endDate(trip) : null;
+    if (!ret) return { error: 'Give the flight home, or how many nights the trip is.' };
+    const homeCode = (out?.from || back?.to || trip.home || '').toUpperCase();
+    if (!homeCode) return { error: 'Give the flight out, so Pinroute knows where home is.' };
+    const x = {
+      from: homeCode, to: (out?.to || firstIata || back?.from || '').toUpperCase(), back_from: (back?.from || lastIata || out?.to || '').toUpperCase(),
+      depart: out ? out.date : t.depart || trip.start, arrive: land, return: ret,
+      price: price ?? null, currency: (currency || t.currency || 'EUR').toUpperCase(), airline: out?.airline || out?.number || back?.airline || back?.number || t.airline || 'Your booking',
+      out: out ? ownLine(out) : t.out || null, back: back ? ownLine(back) : t.back || null, link: null, source: 'Your booking',
+    };
+    if (!airport(x.to) || !airport(x.back_from)) return { error: 'Pinroute needs the airports the trip lands at and flies home from.' };
+    const keep = Object.fromEntries(Object.entries(trip.choices || {}));
+    const fit = fitToFare(trip, x);
+    if (fit.error) return fit;
+    const next = fit.trip;
+    next.ticket = { ...next.ticket, own: true, price: price ?? null };
+    const ls = legs(next);
+    const outLeg = ls.find((l) => l.kind === 'out'), homeLeg = ls.find((l) => l.kind === 'home');
+    const choices = Object.fromEntries(Object.entries(next.choices).filter(([k]) => k !== outLeg?.key && k !== homeLeg?.key));
+    const marks = { ...(trip.marks || {}) };
+    const now = new Date().toISOString();
+    const note = booking_ref ? `Booking reference ${booking_ref}` : null;
+    // A side not given keeps the flight it had, when the leg is still the same
+    for (const [leg, f, part] of [[outLeg, out, 'out'], [homeLeg, back, 'return']]) {
+      if (!leg) continue;
+      if (f) { choices[leg.key] = ownChoice(f, { price: part === 'out' ? price : price == null ? null : 0, currency, part }); marks[leg.key] = { booked: true, note, at: now }; }
+      else if (keep[leg.key]) choices[leg.key] = keep[leg.key];
+    }
+    return { trip: { ...next, choices, marks }, total: fit.total, outLeg, homeLeg };
+  }
+  const ownSaid = (out, back) => [out ? `out ${ownLine(out)} on ${out.date}` : null, back ? `home ${ownLine(back)} on ${back.date}` : null].filter(Boolean).join(', ');
+
+  registerAppTool(server, 'add_booked_flight', {
+    title: 'Add a flight already booked',
+    description: 'Saves flights the traveller booked themselves, such as ones read from a booking confirmation, so no flight search is needed and the legs show as booked. '
+      + 'Without trip_id it starts a new trip from them, like start_trip_from_flight: from the day the flight out lands to the day the flight home leaves (or nights after landing when there is no flight home yet), with the new-trip draft\'s wishes and focus. '
+      + 'With trip_id it fits that trip to them: the flight out sets the first day, the flight home the last, nights move as with set_trip_fare. '
+      + 'With trip_id and leg_key it saves one flight for that leg of the route, booked; for a leg between stops the flight has to leave on the leg\'s day. '
+      + 'Times are local at each airport and go in the trip\'s calendar. Shows the trip in the planner.',
+    inputSchema: {
+      trip_id: z.string().max(40).optional(),
+      leg_key: z.string().max(80).optional().describe('With trip_id: the leg this one flight is for (give it as out)'),
+      out: ownIn.optional().describe('The flight out, or with leg_key the flight for that leg'),
+      back: ownIn.optional().describe('The flight home'),
+      nights: z.number().int().min(1).max(120).optional().describe('For a new trip with no flight home yet: nights after landing'),
+      booking_ref: z.string().max(40).optional().describe('Booking reference (PNR), kept as the legs\' note'),
+      price: z.number().nonnegative().max(1e6).optional().describe('What the traveller paid, all travellers, both ways'),
+      currency: CURRENCY.optional(),
+      adults: z.number().int().min(1).max(9).optional(),
+      country: z.string().min(2).max(60).optional().describe('For a new trip: the country it is in, when not the arrival airport\'s'),
+      name: z.string().min(1).max(80).optional(),
+    },
+    annotations: { title: 'Add a flight already booked', readOnlyHint: false, destructiveHint: false },
+    _meta: { ui: { resourceUri: PLANNER_URI } },
+  }, mine(async ({ trip_id, leg_key, out, back, nights, booking_ref, price, currency, adults, country, name }) => {
+    if (!out && !back) return fail('Give the flight out (out), the flight home (back), or both.');
+    const bad = checkOwn(out) || checkOwn(back);
+    if (bad) return fail(bad);
+    if (out && back && back.date < (out.arrive_date || out.date)) return fail(`The flight home (${back.date}) leaves before the flight out lands.`);
+    const money = { booking_ref, price, currency };
+
+    if (trip_id && leg_key) {
+      const t = store.getTrip(owner, trip_id);
+      if (!t) return noTrip(trip_id);
+      const f = out || back;
+      const l = legs(t).find((y) => y.key === leg_key);
+      if (!l) return fail(`Trip ${trip_id} has no leg ${leg_key}. Its legs are: ${legs(t).map((y) => y.key).join(', ')}.`);
+      if (l.kind === 'out' || l.kind === 'home') {
+        const fit = fitOwn(t, { ...money, ...(l.kind === 'out' ? { out: f } : { back: f }) });
+        if (fit.error) return fail(fit.error);
+        const saved = store.putTrip(owner, fit.trip);
+        return viewResult(saved, `Saved your booked flight ${l.kind === 'out' ? 'out' : 'home'}: ${ownLine(f)} on ${f.date}, marked booked. "${saved.name}" runs ${saved.start} to ${endDate(saved)}.${movedNote(tripView(saved))}`);
+      }
+      if (f.date !== l.date) return fail(`The leg ${l.fromName} → ${l.toName} is on ${l.date}, the flight leaves on ${f.date}. Change the nights before it with set_nights first, so the leg falls on that day.`);
+      const choices = Object.fromEntries(Object.entries(t.choices || {}).filter(([k]) => legRoute(k) !== legRoute(leg_key)));
+      choices[leg_key] = ownChoice(f, money);
+      const marks = { ...(t.marks || {}), [leg_key]: { booked: true, note: booking_ref ? `Booking reference ${booking_ref}` : null, at: new Date().toISOString() } };
+      return viewResult(store.putTrip(owner, { ...t, choices, marks }), `Saved your booked flight for ${l.fromName} → ${l.toName}: ${ownLine(f)} on ${f.date}, marked booked.`);
+    }
+
+    if (trip_id) {
+      const t = store.getTrip(owner, trip_id);
+      if (!t) return noTrip(trip_id);
+      const fit = fitOwn({ ...t, adults: adults || t.adults }, { out, back, ...money });
+      if (fit.error) return fail(fit.error);
+      const saved = store.putTrip(owner, fit.trip);
+      return viewResult(saved, `Saved your booked flights (${ownSaid(out, back)}), marked booked. "${saved.name}" now runs ${saved.start} to ${endDate(saved)}, ${fit.total} nights.${movedNote(tripView(saved))}`);
+    }
+
+    if (!out) return fail('A new trip needs the flight out; give the flight home as back.');
+    if (!back && !nights) return fail('Give the flight home (back), or how many nights the trip is (nights).');
+    if (store.countTrips(owner) >= limits.trips) return fail(`Your Pinroute account already has ${limits.trips} trips, the most it keeps. Delete one with delete_trip first.`);
+    const dr = draftOf();
+    const arr = airport(out.to);
+    const d = (country && findDest(country)) || findDest(arr?.country || '') || (dr.country ? destById(dr.country) : null);
+    const fit = fitOwn({ stops: [], choices: {}, adults: adults || dr.adults || 2 }, { out, back, nights, ...money });
+    if (fit.error) return fail(fit.error);
+    const focus = d ? dr.focus?.[d.id] : null;
+    const start = fit.trip.start;
+    const trip = { ...fit.trip, id: store.newId('trp'), adults: adults || dr.adults || 2,
+      name: name || `${focus?.area || d?.name || cityOf(arr)} · ${MONTHS[monthOf(start)]} ${start.slice(0, 4)}`,
+      country: d?.id || null, wishes: dr.wishes || null, area: focus?.area || null, created: new Date().toISOString() };
+    const saved = store.putTrip(owner, trip);
+    if (store.getDraft(owner)) store.updateDraft(owner, (cur) => ({ ...cur, booked: { trip: saved.id, at: new Date().toISOString() } }), freshDraft);
+    return viewResult(saved, `Created "${saved.name}" (${saved.id}) from your booked flights (${ownSaid(out, back)}): ${saved.start} to ${endDate(saved)}, ${fit.total} nights, landing at ${out.to}${back ? ` and flying home from ${back.from}` : '; the flight home is still to choose'}. The booked flights are marked booked.${trip.wishes ? ` The traveller's wishes: "${trip.wishes}".` : ''} The route is still one stop; update_trip with the stops in travel order plans it, keeping the first and last stop.`);
   }));
 
   server.registerTool('flight_link', {

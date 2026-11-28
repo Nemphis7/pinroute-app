@@ -16,6 +16,7 @@ import { worldSvg, legend } from './world.js';
 import { openAirMap } from './airmap.js';
 import { openConfirm } from './tripmenu.js';
 import { scene, kindOfTags } from './scene.js';
+import { ownLink, ownPanel } from './ownflight.js';
 
 // A country's postcard, from what it is known for
 const destArt = (d, w = 400, hgt = 200, sky) => scene(d.name, kindOfTags(d.tags), { w, h: hgt, sky });
@@ -155,6 +156,8 @@ function promptStep() {
         manualWays())),
     waiting.start ? h('p', { class: 'note busy', text: 'Claude is setting up your trip from your words; the planner moves on by itself.' }) : null,
     answerBlock('start', { poll: refresh }),
+    ownLine(),
+    ownPanel('new', ownTrip),
   ];
 }
 function manualWays() {
@@ -380,6 +383,8 @@ function flightsStep() {
         h('button', { class: top ? '' : 'primary', disabled: off, title: findTitle(), onclick: () => findAll(ids) }, icon(Plane), scanning ? 'Searching…' : 'Find flights')),
       h('div', { class: 'sorter', role: 'group', 'aria-label': 'Sort' }, h('span', { class: 'small', text: 'Sort' }),
         [['deal', 'Deal'], ['price', 'Price'], ['weather', 'Weather']].map(([k, l]) => h('button', { 'aria-pressed': String(N.sort === k), onclick: () => { N.sort = k; render(); } }, l)))),
+    ownLine(),
+    ownPanel('new', ownTrip),
     !N.homes.length ? h('p', { class: 'note warn' }, 'Add a departure airport first. ', h('button', { class: 'link', onclick: () => goStep(d.way === 'where' ? 'season' : 'when') }, 'Add one')) : null,
     top ? bestBanner(top) : null,
     rows.length ? h('div', { class: 'deal-rows' }, rows.map(countryDeals))
@@ -519,6 +524,24 @@ async function findAll(ids) {
   }
   render();
 }
+
+// ---------------------------------------------------------------- flights the traveller already booked
+// A quiet line under the search; the panel (ownflight.js) reads a pasted booking with Claude or takes the flights as
+// filled in, and the trip starts from them with add_booked_flight: no search, both flights booked, planned around their times.
+const ownLine = () => h('p', { class: 'small own-line' }, 'Booked your flights already? ', ownLink('new', 'Start from your flights'));
+const ownTrip = {
+  mode: 'trip',
+  save: async (args) => {
+    const r = await go('add_booked_flight', args);
+    if (r) tell(`the traveller started the trip "${r.structuredContent.trip.name}" (trip_id "${r.structuredContent.trip.id}") from flights they booked themselves: ${args.out.from} → ${args.out.to} on ${args.out.date}, home ${args.back.from} → ${args.back.to} on ${args.back.date}. Both are marked booked. Its route is one stop so far.`);
+    return r;
+  },
+  ask: (words, key) => {
+    const since = N.d.booked?.at || '';
+    ask(key, `I already booked my flights for a new trip. Here is my booking, or what I know of it: """${words}""". Read the flights from it: airports as IATA codes, the day each flight leaves, departure and arrival times as local times on the ticket, the day it lands when that is later, flight numbers, the airline, the booking reference and what I paid if it says. Save them in Pinroute with add_booked_flight, without trip_id: out is the flight there, back the flight home${N.d.adults ? `, adults ${N.d.adults} unless the booking says otherwise` : ''}. If there is no flight home, ask me how many nights I stay first. If something can't be read, ask me rather than guess. Don't search for flights. In the chat, one line on what you saved is enough; the planner I'm looking at opens the trip.`,
+      { poll: refresh, done: () => (N.d.booked?.at || '') > since, then: () => go('open_planner', { trip_id: N.d.booked.trip }), answer: false, tries: 45 });
+  },
+};
 
 async function startFrom(d, x) {
   const r = await go('start_trip_from_flight', { deal_id: x.id });
