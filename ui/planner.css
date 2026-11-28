@@ -499,6 +499,62 @@ details[open] > summary { margin-bottom: var(--s-2); }
 .mdeal { font-size: 10px; line-height: 14px; color: var(--accent); }
 #app[data-narrow="true"] .mgrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 
+/* ---- weather by month (climate.js): temperature capsules, rain bars, sun and sea, one column per month */
+.clim { --rain: #4f8fd6; --sea: #2aa3b8; display: grid; gap: var(--s-3); padding: var(--s-4); border-radius: var(--r-1); border: 1px solid var(--line);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 7%, var(--paper)), var(--paper) 60%); box-shadow: var(--sh-1); }
+:root[data-theme="dark"] .clim { --rain: #7fb2ec; --sea: #5ccbd9; }
+.clim-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: var(--s-3); }
+.clim-head h3 { font-size: 16px; line-height: 22px; font-weight: var(--semibold); color: var(--ink); }
+.clim-head .small { color: var(--ink-3); }
+.clim-facts { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.cfact { display: inline-flex; align-items: center; gap: var(--s-2); padding: 4px 10px 4px 6px; border-radius: 999px; background: var(--paper); border: 1px solid var(--line); font-size: 12px; line-height: 15px; }
+.cfact svg.i { width: 22px; height: 22px; padding: 4px; border-radius: 999px; flex: none; }
+.cfact.warm svg.i { color: #fff; background: #e8734f; } .cfact.rain svg.i { color: #fff; background: var(--rain); }
+.cfact.sun svg.i { color: #fff; background: #e9a93a; } .cfact.sea svg.i { color: #fff; background: var(--sea); }
+.cfact > span { display: grid; } .cf-l { color: var(--ink-3); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+.cfact b { font-weight: var(--medium); color: var(--ink); font-variant-numeric: tabular-nums; }
+.cgrid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--s-1); }
+.ccol { display: grid; grid-template-rows: 132px 52px auto auto auto; justify-items: center; gap: 6px; padding: var(--s-2) 0; border-radius: var(--r-2); font-variant-numeric: tabular-nums; min-width: 0; }
+.ccol.good { background: color-mix(in srgb, var(--accent) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent); }
+.ctrack { position: relative; width: 26px; height: 100%; margin: 14px 0; border-radius: 999px; background: color-mix(in srgb, var(--ink) 4%, transparent); box-sizing: border-box; height: calc(100% - 28px); }
+.ccap { position: absolute; left: 0; right: 0; border-radius: 999px; box-shadow: 0 2px 8px rgb(20 20 10 / 0.12); transform-origin: 50% 100%; }
+.ccap b { position: absolute; left: 50%; transform: translateX(-50%); font-size: 11px; line-height: 14px; font-weight: var(--medium); white-space: nowrap; }
+.chi { bottom: calc(100% + 1px); color: var(--ink); } .clo { top: calc(100% + 1px); color: var(--ink-3); }
+.crain { display: grid; grid-template-rows: 1fr auto; justify-items: center; width: 100%; height: 52px; }
+.cbar { align-self: end; width: 12px; border-radius: 4px 4px 2px 2px; background: linear-gradient(to top, var(--rain), color-mix(in srgb, var(--rain) 55%, var(--paper))); transform-origin: 50% 100%; }
+.crain .cval { font-size: 10px; line-height: 13px; color: var(--rain); }
+.csun { display: grid; justify-items: center; gap: 1px; }
+.cglyph { display: grid; place-items: center; width: 22px; height: 22px; }
+.cglyph svg.i { width: 22px; height: 22px; color: #e9a93a; transform: scale(var(--k)); fill: color-mix(in srgb, #f2c14e 45%, transparent); }
+.csun .cval { font-size: 10px; line-height: 13px; color: var(--ink-2); }
+.csea { font-size: 10px; line-height: 16px; padding: 0 6px; border-radius: 999px; color: #fff; background: var(--sea); font-weight: var(--medium); }
+.cmon { font-size: 12px; line-height: 16px; color: var(--ink-2); font-weight: var(--medium); }
+.ccol.good .cmon { color: var(--accent); }
+.clim-key { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); color: var(--ink-3); }
+.clim-key > span { display: inline-flex; align-items: center; gap: 6px; }
+.clim-key i { display: inline-block; width: 10px; height: 10px; border-radius: 999px; }
+.clim-key svg.i { width: 13px; height: 13px; color: #e9a93a; }
+.k-temp { background: linear-gradient(to top, #6faad6, #f19356); height: 14px !important; width: 8px !important; }
+.k-rain { background: var(--rain); border-radius: 2px !important; } .k-sea { background: var(--sea); }
+.k-good { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 3px !important; }
+.clim.anim .ccap { animation: capin 800ms calc(var(--i) * 45ms) var(--spring) both; }
+.clim.anim .ccap b { animation: fade 400ms calc(500ms + var(--i) * 45ms) var(--ease) both; }
+.clim.anim .cbar { animation: barin 600ms calc(250ms + var(--i) * 45ms) var(--ease) both; }
+.clim.anim .cglyph svg.i { animation: sunin 900ms calc(350ms + var(--i) * 45ms) var(--spring) both; }
+.clim.anim .csea, .clim.anim .cval { animation: fade 500ms calc(450ms + var(--i) * 45ms) var(--ease) both; }
+@keyframes capin { from { transform: scaleY(0.05); opacity: 0; } }
+@keyframes barin { from { transform: scaleY(0); } }
+@keyframes sunin { from { transform: scale(0) rotate(-90deg); opacity: 0; } }
+.clim.loading .ccol.sk .ctrack, .clim.loading .ccol.sk .crain { background: linear-gradient(90deg, var(--paper-2), var(--paper-3), var(--paper-2)); background-size: 200% 100%; animation: cshimmer 1.4s linear infinite; border-radius: 999px; }
+.clim.loading .ccol.sk .crain { width: 12px; border-radius: 4px; }
+@keyframes cshimmer { to { background-position: -200% 0; } }
+.clim-err { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) var(--s-4); }
+#app[data-narrow="true"] .cgrid { grid-template-columns: repeat(6, minmax(0, 1fr)); row-gap: var(--s-3); }
+#app[data-narrow="true"] .clim { padding: var(--s-3); }
+#app[data-narrow="true"] .ccol { grid-template-rows: 112px 44px auto auto auto; }
+#app[data-narrow="true"] .crain { height: 44px; }
+@media (prefers-reduced-motion: reduce) { .clim.anim *, .clim.loading * { animation: none !important; } }
+
 /* ---- start screen */
 .home { display: grid; gap: var(--s-5); max-width: 1040px; margin: 0 auto; padding-bottom: var(--s-6); }
 .home-hero { position: relative; isolation: isolate; overflow: hidden; border-radius: var(--r-0); min-height: 200px; padding: var(--s-6); display: flex; align-items: flex-end; color: #fff; box-shadow: var(--sh-2); }

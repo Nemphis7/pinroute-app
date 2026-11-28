@@ -22,6 +22,7 @@ Claude (the traveller's own plan)
 | `open_planner` | The start screen, or a trip (the MCP App screen) | reads |
 | `plan_new_trip` | The new-trip planner; saves free dates, length, travellers, budget, airports, regions, interests, countries to compare, the traveller's wishes and a focus on part of a country (its airports are used for fares) | writes |
 | `scan_flight_deals` | Return fares to a country: recent prices across the window or by month (Travelpayouts), or live fares (Amadeus) including one pair of dates across several departure and arrival airports; keeps the cheapest | writes |
+| `country_weather` | A country's weather in each month: day and night temperatures, rain, sunshine and, for beach countries, the sea; ten-year averages from Open-Meteo (free, no key), kept 60 days. The Best time step shows it as a chart | reads |
 | `save_flight_deals` | Keeps fares Claude found with any flight search, per country | writes |
 | `add_booked_flight` | Flights the traveller booked themselves, read by Claude from a pasted booking or filled in on the planner: a new trip from them, a trip fitted to them, or one leg of the route; no search, the legs marked booked with the booking reference, times in the calendar | writes |
 | `start_trip_from_flight` | A trip from a saved fare: from landing to the flight home, the fare on both flights | writes |

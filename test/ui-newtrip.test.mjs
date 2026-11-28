@@ -154,6 +154,12 @@ test('I know where: a country, its best months with fares, then the flights of o
   await frame().locator('.mgrid').waitFor();
   assert.equal(await frame().locator('.mcell').count(), 12);
   assert.match(await frame().locator('.nt-head h2').textContent(), /When is best for Japan\?/);
+  // the weather by month, from Open-Meteo through the server, one column per month in the order of the fares
+  await frame().locator('.clim .ccol').first().waitFor();
+  assert.equal(await frame().locator('.clim .ccol').count(), 12);
+  assert.deepEqual(await frame().locator('.clim .cmon').allTextContents(), await frame().locator('.mcell .mlbl').allTextContents());
+  assert.match(await frame().locator('.clim .ccol').first().getAttribute('aria-label'), /^\w+: -?\d+° to -?\d+°C, \d+ mm of rain on \d+ days, [\d.]+ hours of sun a day/);
+  assert.equal(await frame().locator('.clim .cfact').count(), 3, 'warmest, driest and sunniest; Japan has no beach tag, so no sea');
   await frame().getByRole('button', { name: 'Find flights' }).click();
   await frame().locator('.banner', { hasText: 'Cheapest good month' }).waitFor({ timeout: 30000 });
   const month = await frame().locator('.banner h3').textContent();
