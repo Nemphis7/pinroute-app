@@ -37,11 +37,11 @@ after(async () => { await browser?.close(); await client?.close(); srv?.server.c
 
 test('deals from recent prices first, live airline fares second, and the commission said plainly', { skip }, async () => {
   const bar = f().locator('.toolbar');
-  // with Amadeus set the last one reads "Live airline fares"; here the live source is demo data
-  assert.deepEqual(await bar.locator('.acts button').allTextContents(), ['Ask Claude to find deals', 'Quick check: recent prices', 'Quick check: demo fares']);
+  assert.deepEqual((await bar.locator('.acts button').allTextContents()).map((t) => t.trim()), ['Find flights']);
   assert.match(await f().locator('.foot').last().textContent(), /Pinroute may earn a commission on a booking\. The price you pay is the same\./);
-  await bar.getByRole('button', { name: 'Quick check: recent prices' }).click();
+  await bar.getByRole('button', { name: 'Find flights' }).click();
   await f().locator('.country .deal.main').nth(1).waitFor({ timeout: 30000 });
+  await bar.getByRole('button', { name: 'Find flights' }).waitFor();  // both look-ups done: recent prices, then airline fares
   const main = f().locator('.country .deal.main').first();
   assert.match(await main.textContent(), /via Aviasales · a recent price, check it before booking/);
   await main.getByRole('button', { name: 'Check on Aviasales' }).click();
@@ -55,8 +55,9 @@ test('the best time to go fills every month from one look-up', { skip }, async (
   await f().locator('.home').waitFor();
   await f().getByRole('button', { name: 'Continue' }).click();
   await f().locator('.mgrid').waitFor();
-  await f().getByRole('button', { name: 'Quick check: recent prices' }).click();
+  await f().getByRole('button', { name: 'Find flights' }).click();
   await f().locator('.banner', { hasText: 'Cheapest good month' }).waitFor({ timeout: 30000 });
+  await f().getByRole('button', { name: 'Find flights' }).waitFor({ timeout: 30000 });   // recent prices, then airline fares for the good months
   const priced = await f().locator('.mcell .mprice').allTextContents();
   assert.ok(priced.filter((t) => /^€/.test(t)).length >= 11, priced.join(' '));
   assert.equal(fake.calls.filter((c) => c.path === '/aviasales/v3/grouped_prices').length, 1);

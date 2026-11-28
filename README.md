@@ -87,7 +87,7 @@ npm run check:amadeus            # one real search, BKK → FRA in 30 days; prin
 npm run check:amadeus LHR CDG    # any other pair
 ```
 
-Amadeus Travel Builder covers a set of mostly full-service airlines; many regional low-cost airlines aren't in it (Krabi → Bangkok returns nothing, for example). That is why the planner's **Ask Claude** buttons exist: Claude searches with whatever flight tools the traveller has connected (LetsFG's flexible-date search fits the new-trip flow best) and saves deals with `save_flight_deals` or a leg's pick with `choose_flight`. The planner's **Quick check** is the server's own Amadeus search: three departure dates per country, each counted toward the daily limit.
+Amadeus Travel Builder covers a set of mostly full-service airlines; many regional low-cost airlines aren't in it (Krabi → Bangkok returns nothing, for example). That is why the planner's **Find flights** button also asks Aviasales for recent prices (low-cost airlines included) when the server has Travelpayouts. On the new-trip Flights step it looks up recent prices from every home airport, then live fares from the main one on three departure dates per country, each live search counted toward the daily limit. `scan_flight_deals` takes any number of departure and arrival airports in one call: past 16 routes it looks up a spread that includes every airport and lists the routes it left out.
 
 ## Flight search options
 
