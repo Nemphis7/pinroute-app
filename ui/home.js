@@ -1,14 +1,14 @@
 // The start screen: the two ways to plan a new trip, the draft to carry on with, and the trips, the one under way
 // first. In the chat it is a small card; full screen it is Pinroute's home.
-import { CalendarDays, Globe, ArrowRight, Maximize2, Pencil, Trash2 } from 'lucide';
+import { CalendarDays, Globe, ArrowRight, Maximize2, Pencil, Trash2, Sparkles } from 'lucide';
 import { go, setMode, canFull, isFull, render, call, show } from './core.js';
 import { h, icon, span, days, today, plural, nightsTxt } from './dom.js';
-import { startWay, continueDraft } from './newtrip.js';
+import { startWay, continueDraft, startFromWords, startPrompt } from './newtrip.js';
 import { openEdit, openDelete } from './tripmenu.js';
 import { scene, kindOfTags } from './scene.js';
 import { destById } from '../src/discover.mjs';
 
-const H = { view: null };
+const H = { view: null, words: '' };
 export function takeHome(sc) { H.view = sc; }
 export const homeState = H;
 
@@ -26,23 +26,22 @@ export function homeCard() {
   return {
     title: 'Pinroute',
     sub: v.trips.length ? plural(v.trips.length, 'trip') : 'No trips yet',
-    status: lead ? `${lead.name} · ${when(lead)}` : v.draft ? `New trip in progress · free ${span(v.draft.from, v.draft.until)}` : 'Plan a trip from the days you are free, or from where you want to go.',
+    status: lead ? `${lead.name} · ${when(lead)}` : v.draft ? `New trip in progress · free ${span(v.draft.from, v.draft.until)}` : 'Tell Claude where you want to go, and Pinroute plans the trip with you.',
     eyebrow: lead ? when(lead) : null,
     art: { seed: lead ? lead.name : 'Pinroute', kind: 'island', sky: 'golden' },
     side: null,
     actions: [
       h('button', { class: 'primary', onclick: () => (canFull() && !isFull() ? setMode('fullscreen') : render()) }, icon(Maximize2), 'Open Pinroute'),
-      h('button', { onclick: () => startWay('when') }, 'Plan a new trip'),
+      h('button', { onclick: startPrompt }, 'Plan a new trip'),
     ],
   };
 }
 
 export function homeScreen() {
   const v = H.view, d = v.draft;
-  const way = (id, ic, title, text, flow, art) => h('button', { class: 'way', onclick: () => startWay(id) },
-    h('span', { class: 'way-art' }, scene(art.seed, art.kind, { sky: art.sky, w: 480, h: 180 }), h('span', { class: 'way-ic' }, icon(ic))),
-    h('span', { class: 'way-body' }, h('span', { class: 'way-t', text: title }), h('span', { class: 'meta', text }),
-      h('span', { class: 'flow' }, flow.split(' → ').map((step, i) => [i ? h('span', { class: 'flow-arrow', text: '→' }) : null, h('span', { class: 'flow-step', text: step })]))));
+  // The other way in, kept small: setting the trip up by hand when the words don't say enough
+  const way = (id, ic, title, flow) => h('button', { class: 'way ghost', title: flow, onclick: () => startWay(id) }, icon(ic), h('span', { text: title }));
+  const go = () => { const t = H.words.trim(); if (t) { H.words = ''; startFromWords(t); } };
   const dc = d?.country ? destById(d.country) : null;
   return h('div', { class: 'home' },
     h('header', { class: 'home-hero' },
@@ -50,10 +49,18 @@ export function homeScreen() {
       h('div', { class: 'home-hero-t' },
         h('span', { class: 'eyebrow', text: v.trips.length ? `${plural(v.trips.length, 'trip')} planned` : 'Pinroute' }),
         h('h2', { text: 'Where to next?' }),
-        h('p', { class: 'meta lead', text: 'Start a new trip from the days you are free or from the country you want to see, or open one you are planning.' }))),
-    h('div', { class: 'ways' },
-      way('when', CalendarDays, 'I know when', 'Start from your days off: see where the weather is good then, compare flight deals, pick one.', 'When → Where → Flights', { seed: 'I know when', kind: 'beach', sky: 'tropic' }),
-      way('where', Globe, 'I know where', 'Start from a country: see the best months to go and what flights cost in each.', 'Country → Best time → Flights', { seed: 'I know where', kind: 'nature', sky: 'tropic' })),
+        h('p', { class: 'meta lead', text: 'Say it the way you would tell a friend. Claude fills in the trip, and you pick from there.' }))),
+    h('section', { class: 'prompt' },
+      h('label', { class: 'sr-only', for: 'start-words', text: 'Describe your trip' }),
+      h('textarea', { id: 'start-words', rows: 2, maxlength: 500, value: H.words,
+        placeholder: 'I want to go on a trip to Japan in April for two weeks, cities and some hiking…',
+        oninput: (e) => { H.words = e.target.value; const b = document.getElementById('start-go'); if (b) b.disabled = !e.target.value.trim(); },
+        onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } } }),
+      h('div', { class: 'prompt-acts' },
+        h('button', { id: 'start-go', class: 'primary', disabled: !H.words.trim(), onclick: go }, icon(Sparkles), 'Plan it with Claude'),
+        h('span', { class: 'ways' }, h('span', { class: 'small', text: 'Or set it up yourself:' }),
+          way('when', CalendarDays, 'I know when', 'When → Where → Flights'),
+          way('where', Globe, 'I know where', 'Country → Best time → Flights')))),
     d ? h('div', { class: 'resume' },
       h('span', { class: 'resume-art' }, scene(dc ? dc.name : 'New trip', dc ? kindOfTags(dc.tags) : 'island', { w: 120, h: 120 })),
       h('div', { class: 'resume-t' }, h('b', { text: d.country ? `New trip: ${d.country}` : 'New trip in progress' }),
@@ -70,5 +77,5 @@ export function homeScreen() {
       h('span', { class: 'row-acts' },
         h('button', { class: 'ghost icon', 'aria-label': `Rename ${t.name}`, title: 'Rename', onclick: () => openEdit({ id: t.id, name: t.name }, reload) }, icon(Pencil)),
         h('button', { class: 'ghost icon', 'aria-label': `Delete ${t.name}`, title: 'Delete', onclick: () => openDelete(t, reload) }, icon(Trash2))))))
-      : h('p', { class: 'empty', text: 'No trips yet. Both ways above end with a trip you can plan here.' }));
+      : h('p', { class: 'empty', text: 'No trips yet. Tell Claude about one above, and it ends up here.' }));
 }
