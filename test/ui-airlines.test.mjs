@@ -40,7 +40,7 @@ before(async () => {
   srv = await startServer((app) => {
     app.get('/__host', (req, res) => res.type('html').send('<!doctype html><meta charset="utf-8"><body style="margin:0"><script src="/__host.js"></script>'));
     app.get('/__host.js', (req, res) => res.type('js').send(hostJs));
-  }, { TRAVELPAYOUTS_API_URL: fake.url, TRAVELPAYOUTS_TOKEN: 'tp-test' });
+  }, { TRAVELPAYOUTS_API_URL: fake.url, TRAVELPAYOUTS_TOKEN: 'tp-test', AVIASALES_PRICES: 'on' });
   client = await connect(srv.url);
   await client.callTool({ name: 'plan_new_trip', arguments: { free_from: FROM, free_until: addDays(FROM, 27), adults: 2, home_airports: ['FRA'], compare: ['Vietnam', 'Thailand'], step: 'flights' } });
   await client.callTool({ name: 'scan_flight_deals', arguments: { country: 'Vietnam' } });

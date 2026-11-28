@@ -45,7 +45,7 @@ export function searching(from, to, date, refresh) {
     h('div', { class: 'fs-card' },
       sky,
       h('p', { class: 'fs-title', text: `Finding flights for ${day(date)}` }),
-      h('ul', { class: 'fs-steps' }, step('Airline fares', 0), step('Aviasales prices', 1), step('2 days either side', 2))),
+      h('ul', { class: 'fs-steps' }, step('Airline fares', 0), step('2 days either side', 1), step('Trip.com to compare', 2))),
     h('div', { class: 'fs-ghosts' }, [0, 1, 2].map((i) => h('div', { class: 'fs-ghost', style: `--i:${i}` }, h('i', { class: 'a' }), h('i', { class: 'b' }), h('i', { class: 'c' }), h('i', { class: 'd' })))),
     refresh ? h('button', { class: 'link skel-refresh', text: 'Refresh', onclick: refresh }) : null);
 }
@@ -89,10 +89,11 @@ export function filterBar(st, render, provider) {
 export const clearFilters = (st, render) => h('button', { onclick: () => { st.filter = {}; render(); } }, icon(X), 'Clear filters');
 
 // ---------------------------------------------------------------- the two quotes
-// Amadeus's cheapest offer against Aviasales's recent price: one bar each, as long as the price, the cheaper one marked
+// Amadeus's cheapest offer, and Aviasales's recent price when the server has it on: one bar each, as long as the price,
+// the cheaper one marked; then Trip.com's search for the same route and dates, to compare live prices there
 export function quotes(st, openLink, openAviasales) {
   const c = st.compare;
-  if (!c || (!c.amadeus && !c.aviasales && !c.aviasales_link)) return null;
+  if (!c || (!c.amadeus && !c.aviasales && !c.aviasales_link && !c.tripcom_link)) return null;
   const hi = Math.max(c.amadeus?.total || 0, c.aviasales?.total || 0) || 1;
   const row = (who, q, sub, link, label) => {
     const win = c.cheaper === who || (c.cheaper === 'same' && q);
@@ -105,11 +106,16 @@ export function quotes(st, openLink, openAviasales) {
         c.cheaper === who && c.difference ? h('span', { class: 'pill done' }, icon(TrendingDown), `${money(c.difference, q.currency)} cheaper`) : h('span'),
         link ? h('button', { class: 'link', onclick: link }, icon(ExternalLink), label) : null));
   };
+  const aviasales = c.aviasales || c.aviasales_link;
   return h('section', { class: 'quotes', 'aria-label': 'Price from each source' },
-    h('p', { class: 'eyebrow', text: 'Two places to book' }),
+    h('p', { class: 'eyebrow', text: aviasales ? 'Two places to book' : 'Where to book' }),
     row('amadeus', c.amadeus, (q) => q.airline, c.amadeus?.link ? () => openLink(c.amadeus.link) : null, 'Airline’s site'),
-    row('aviasales', c.aviasales, (q) => `${q.airline} · ${q.stops ? `${q.stops} change${q.stops > 1 ? 's' : ''}` : 'direct'} · found recently`,
-      c.aviasales_link ? () => openAviasales(c.aviasales_link) : null, c.aviasales ? 'Check on Aviasales' : 'Search Aviasales'));
+    aviasales ? row('aviasales', c.aviasales, (q) => `${q.airline} · ${q.stops ? `${q.stops} change${q.stops > 1 ? 's' : ''}` : 'direct'} · found recently`,
+      c.aviasales_link ? () => openAviasales(c.aviasales_link) : null, c.aviasales ? 'Check on Aviasales' : 'Search Aviasales') : null,
+    c.tripcom_link ? h('div', { class: 'quote empty tripcom' },
+      h('div', { class: 'qtop' },
+        h('div', { class: 'qwho' }, h('span', { class: 'qsrc', text: 'Trip.com' }), h('span', { class: 'small', text: 'Live prices from airlines and agencies, low-cost airlines included' }))),
+      h('div', { class: 'qfoot' }, h('span'), h('button', { class: 'link', onclick: () => openAviasales(c.tripcom_link) }, icon(ExternalLink), 'Compare on Trip.com'))) : null);
 }
 
 // ---------------------------------------------------------------- the days around

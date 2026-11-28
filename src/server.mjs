@@ -13,6 +13,7 @@ import { helpPage, privacyPage, ICON_SVG } from './pages.mjs';
 import { LOCAL, tripByCalendar, getPicks } from './store.mjs';
 import { tripCalendar, TOKEN } from './calendar.mjs';
 import { schedule } from './trips.mjs';
+import { configured as recentOn } from './providers/travelpayouts.mjs';
 
 // On Railway (it sets RAILWAY_PROJECT_ID) the server listens on all interfaces and accepts its public domain by itself
 const onRailway = (env) => !!(env.RAILWAY_PROJECT_ID || env.RAILWAY_ENVIRONMENT_NAME);
@@ -93,7 +94,7 @@ export function createApp(env = process.env) {
     res.type('text').send([
       `Pinroute MCP server ${VERSION} is running.`,
       `Flights: ${p.name}${p.name === 'Demo data' ? ' (AMADEUS_API_KEY is not set)' : ''}.`,
-      `Recent prices (Aviasales via Travelpayouts): ${env.TRAVELPAYOUTS_TOKEN ? 'on' : 'off (TRAVELPAYOUTS_TOKEN is not set)'}. Partner links: ${env.TRAVELPAYOUTS_MARKER ? `on${env.TRAVELPAYOUTS_TRS ? '' : ' (marker only; TRAVELPAYOUTS_TRS is not set)'}` : 'off (TRAVELPAYOUTS_MARKER is not set)'}.`,
+      `Recent prices (Aviasales via Travelpayouts): ${recentOn(env) ? 'on' : 'off (AVIASALES_PRICES is not on)'}. Partner links: ${env.TRAVELPAYOUTS_MARKER ? `on${env.TRAVELPAYOUTS_TRS ? '' : ' (marker only; TRAVELPAYOUTS_TRS is not set)'}` : 'off (TRAVELPAYOUTS_MARKER is not set)'}.`,
       `Hotels (Booking.com links): partner links ${bookingLinksOn(env) ? 'on' : 'off (BOOKING_LINK_TEMPLATE or BOOKING_AID is not set)'}.`,
       `Sign-in: ${auth ? `on, through ${auth.issuer}` : env.MCP_SECRET ? 'off; the address is protected by MCP_SECRET' : 'off'}.`,
       `Address for Claude: ${site}${auth || !env.MCP_SECRET ? '/mcp' : '/mcp/<your MCP_SECRET>'}`,
@@ -117,6 +118,6 @@ export function start({ port = Number(process.env.PORT ?? 3000), host = defaultH
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   loadDotEnv();
   // The log shows the address without the secret: logs are read in more places than the settings
-  start().then(({ shown, auth }) => console.log(`Pinroute MCP server ${VERSION} on ${shown} (flights: ${flightProvider().name}; recent prices: ${process.env.TRAVELPAYOUTS_TOKEN ? 'on' : 'off'}; partner links: ${process.env.TRAVELPAYOUTS_MARKER ? 'on' : 'off'}; sign-in: ${auth ? 'on' : 'off'})`))
+  start().then(({ shown, auth }) => console.log(`Pinroute MCP server ${VERSION} on ${shown} (flights: ${flightProvider().name}; recent prices: ${recentOn(process.env) ? 'on' : 'off'}; partner links: ${process.env.TRAVELPAYOUTS_MARKER ? 'on' : 'off'}; sign-in: ${auth ? 'on' : 'off'})`))
     .catch((e) => { console.error(e.message); process.exit(1); });
 }

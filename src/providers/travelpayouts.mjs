@@ -5,11 +5,15 @@
 // - Links API (/links/v1/create): turns an Aviasales link into the operator's partner link, so a booking made through
 //   it counts for them. Each link is made once and remembered; if the API can't be reached, the link carries the
 //   partner ID as marker= instead, the form Travelpayouts's own links take.
+// - Trip.com flight links: the search Pinroute hands over for a route and dates, turned into a partner link by the same
+//   Links API (the Travelpayouts project must be connected to the Trip.com program; until then the link stays plain).
 // Settings: TRAVELPAYOUTS_TOKEN (Data and Links API), TRAVELPAYOUTS_MARKER (partner ID), TRAVELPAYOUTS_TRS (project ID).
+// Aviasales's recent prices are off unless AVIASALES_PRICES=on: they were often far from what travellers could book, so
+// flight prices come from the live airline search alone and the token is used only for partner links.
 import { airlineName, withAirlineName } from '../airlines.mjs';
 
 export const name = 'Aviasales';
-export const configured = (env = process.env) => !!env.TRAVELPAYOUTS_TOKEN;
+export const configured = (env = process.env) => !!env.TRAVELPAYOUTS_TOKEN && /^(1|on|true|yes)$/i.test(String(env.AVIASALES_PRICES || ''));
 export const linksOn = (env = process.env) => !!(env.TRAVELPAYOUTS_MARKER);
 const base = (env) => (env.TRAVELPAYOUTS_API_URL || 'https://api.travelpayouts.com').replace(/\/$/, '');
 const coded = (code, message) => Object.assign(new Error(message), { code });
@@ -76,6 +80,19 @@ export async function dayPrices({ origin, destination, month, minDays, maxDays }
 export function searchUrl({ from, to, depart, ret, adults = 1 }) {
   const ddmm = (d) => `${d.slice(8, 10)}${d.slice(5, 7)}`;
   return `https://www.aviasales.com/search/${from.toUpperCase()}${ddmm(depart)}${to.toUpperCase()}${ret ? ddmm(ret) : ''}${Math.max(1, Math.min(9, adults))}`;
+}
+
+// A Trip.com search for a route and dates, round trip when there is a return date
+export function tripSearchUrl({ from, to, depart, ret, adults = 1, currency = 'EUR' }) {
+  const q = new URLSearchParams({ dcity: from.toLowerCase(), acity: to.toLowerCase(), ddate: depart });
+  if (ret) q.set('rdate', ret);
+  q.set('triptype', ret ? 'rt' : 'ow'); q.set('class', 'y'); q.set('quantity', String(Math.max(1, Math.min(9, adults)))); q.set('curr', currency);
+  return `https://www.trip.com/flights/showfarefirst?${q}`;
+}
+// The Trip.com search as Pinroute's partner link when Travelpayouts can make one, else the plain search
+export async function flightLink(args, ctx = {}) {
+  const [url] = await partnerLinks([tripSearchUrl(args)], { ...ctx, fallback: 'plain' });
+  return url;
 }
 
 const made = new Map();                        // Aviasales link → partner link, the last 2000

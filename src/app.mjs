@@ -90,7 +90,7 @@ export const INSTRUCTIONS = 'Pinroute Trip Planner plans holidays and multi-stop
   + 'and the planner opens at the next step that still needs the traveller; its "I know when" and "I know where" set-up is there for when the words don\'t say enough. '
   + 'create_trip fits when they already know their stops. For a trip that travels around, suggest_routes keeps two or three route options the traveller compares on the planner\'s map. '
   + 'open_planner shows trips they saved before. '
-  + 'Its own lookups cover live airline fares and recent Aviasales prices (search_flights, scan_flight_deals), a Booking.com search for each stop\'s dates (hotel_link), '
+  + 'Its own lookups cover live airline fares with a Trip.com search to compare (search_flights, scan_flight_deals), a Booking.com search for each stop\'s dates (hotel_link), '
   + 'tours and activities at each stop (find_activities), where to book the ferries, buses and trains between stops (find_transport), and each trip\'s route with its flight, ferry and road legs. Pinroute never books or pays for anything. '
   + 'A planner already showing in the conversation refreshes itself after every change saved with these tools, so a change does not need open_planner or plan_new_trip to show it; '
   + 'save_new_trip_draft changes the new-trip draft without showing another planner. '
@@ -599,12 +599,12 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const liveRan = runs.length - skipped;
     if (failed.length && failed.length === liveRan && !quotes.some((x) => x.quote) && !skipped) return fail(failed[0].error || 'The flight search failed. Try again in a minute.');
     if (!quotes.some((x) => x.quote) && runs.every((r) => !r.ok || r.value.skipped)) {
-      // nothing live and nothing recent: say so plainly and hand over Aviasales's own search, not an error
-      const [link] = await tp.partnerLinks([tp.searchUrl({ from: origin, to: destination, depart: date, ret: return_date, adults: adults + children })], { env });
+      // nothing live and nothing recent: say so plainly and hand over Trip.com's search, not an error
+      const link = await tp.flightLink({ from: origin, to: destination, depart: date, ret: return_date, adults: adults + children }, { env });
       const why = skipped ? outOfSearches() : `The live search failed (${failed[0].error})`;
       return {
-        content: [text(`${why}, and Aviasales has no recent price for ${origin.toUpperCase()} → ${destination.toUpperCase()} on ${date}. Aviasales's own search for it: ${link}`)],
-        structuredContent: { provider: provider.name, live: false, limited: true, link, fares: [], compare: { amadeus: null, aviasales: null, aviasales_link: link, cheaper: null, difference: null },
+        content: [text(`${why}${quotes.length ? `, and Aviasales has no recent price for ${origin.toUpperCase()} → ${destination.toUpperCase()} on ${date}` : ''}. Trip.com's search for it: ${link}`)],
+        structuredContent: { provider: provider.name, live: false, limited: true, link, fares: [], compare: { amadeus: null, aviasales: null, aviasales_link: null, tripcom_link: link, cheaper: null, difference: null },
           calendar: null, cheapest: null, facets: facets([]), note: why, searches_left: Math.max(0, limits.searchesPerDay - store.usage(owner, 'search')) },
       };
     }
@@ -628,16 +628,18 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     // The two quotes for the date asked for: Amadeus's cheapest offer now, and the cheapest price Aviasales travellers found
     const am = onDay[0] ? Math.min(...onDay.map((f) => f.total)) : null;
     const av = quotes[todo.findIndex(([d]) => d === date)]?.quote || null;
+    const tripcom = await tp.flightLink({ from: origin, to: destination, depart: date, ret: return_date, adults: adults + children }, { env });
     const compare = {
       amadeus: am == null ? null : { total: am, currency: onDay[0].currency, airline: sortFares(onDay, 'price')[0].airline, link: sortFares(onDay, 'price')[0].link },
       aviasales: av,
       aviasales_link: quotes.length ? (av?.link || quotes[todo.findIndex(([d]) => d === date)]?.link || null) : null,
       cheaper: am != null && av ? (Math.abs(am - av.total) < 1 ? 'same' : am < av.total ? 'amadeus' : 'aviasales') : am != null ? 'amadeus' : av ? 'aviasales' : null,
       difference: am != null && av ? Math.round(Math.abs(am - av.total)) : null,
+      tripcom_link: tripcom,
     };
     const note = [runs.map((r) => (r.ok ? r.value.note : null)).find(Boolean),
       skipped && runs[0].ok && runs[0].value.skipped ? `${outOfSearches()}; the prices here are Aviasales's recent ones.`
-        : skipped ? `${skipped} nearby date${skipped === 1 ? ' was' : 's were'} priced from Aviasales only, to save live searches.` : null,
+        : skipped ? `${skipped} nearby date${skipped === 1 ? ' was' : 's were'} ${quotes.length ? 'priced from Aviasales only' : 'not searched'}, to save live searches.` : null,
       failed.length ? `${failed.length} of ${liveRan} searches failed: ${failed[0].error}` : null].filter(Boolean).join(' ');
     const fl = filterText(q);
     const head = `${provider.name}: ${onDay.length} of ${before} offers ${origin.toUpperCase()} → ${destination.toUpperCase()} on ${date}${return_date ? `, back ${return_date}` : ''}, ${adults} adult${adults > 1 ? 's' : ''}${children ? `, ${children} child${children > 1 ? 'ren' : ''}` : ''}${infants ? `, ${infants} infant${infants > 1 ? 's' : ''}` : ''}${fl ? ` (${fl})` : ''}.`;
@@ -647,8 +649,9 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const cmp = av
       ? `Aviasales: ${av.currency} ${Math.round(av.total)} · ${av.airline} · ${av.stops ? `${av.stops} change${av.stops > 1 ? 's' : ''}` : 'direct'} (a price travellers found in the last days, check it before booking). ${compare.cheaper === 'same' ? 'Both cost about the same.' : `${compare.cheaper === 'amadeus' ? provider.name : 'Aviasales'} is ${compare.amadeus ? `${av.currency} ${compare.difference} cheaper` : 'the only quote'}.`}`
       : quotes.length ? 'Aviasales has no recent price for this route and date that fits the filters.' : null;
+    const more = `Compare on Trip.com: ${tripcom}`;
     return {
-      content: [text([head, ...onDay.slice(0, 5).map(fareLine), cmp, cal, note].filter(Boolean).join('\n'))],
+      content: [text([head, ...onDay.slice(0, 5).map(fareLine), cmp, cal, note, more].filter(Boolean).join('\n'))],
       structuredContent: {
         provider: provider.name, live: provider.name !== 'Demo data',
         query: { origin, destination, date, return_date: return_date || null, adults, children, infants, cabin: cabin || 'economy', filters: q, flex_days, sort },
@@ -899,7 +902,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   }
 
   // When live airline searches are used up or out of reach: recent Aviasales prices for the same routes and dates, and
-  // when there are none, the fares already saved and Aviasales's own search. Never an error: the traveller can go on.
+  // when there are none, the fares already saved and Trip.com's search. Never an error: the traveller can go on.
   async function scanFallback({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, why, max_stops }) {
     if (tp.configured(env) && store.usage(owner, 'recent') < limits.recentPerDay) {
       const r = await scanRecent({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, by_month: false, max_stops });
@@ -911,10 +914,10 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     }
     const saved = dealsFor(draftOf().deals?.[d.id], { ...draftOf(), from: lo, until: hi });
     const out = depart || addDays(lo, 7), back = ret || addDays(out, Math.round((dr.minNights + dr.maxNights) / 2));
-    const [link] = await tp.partnerLinks([tp.searchUrl({ from: froms[0], to: tos[0], depart: out, ret: back, adults: dr.adults })], { env });
+    const link = await tp.flightLink({ from: froms[0], to: tos[0], depart: out, ret: back, adults: dr.adults }, { env });
     const lines = [`${why}${tp.configured(env) ? ', and Aviasales has no recent prices for these routes either' : ''}.`,
       saved.length ? `Fares already saved for ${d.name}:` : null, ...saved.slice(0, 3).map(dealLine),
-      `Aviasales's own search for ${froms[0]} → ${tos[0]}: ${link}`];
+      `Trip.com's search for ${froms[0]} → ${tos[0]}: ${link}`];
     return {
       content: [text(lines.filter(Boolean).join('\n'))],
       structuredContent: { country: d.id, limited: true, fallback: 'none', link, searched: [], left_out: [], deals: saved.slice(0, MAX_DEALS).map(namedFare), failed: [], searches_left: Math.max(0, limits.searchesPerDay - store.usage(owner, 'search')) },
@@ -1038,7 +1041,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       latest: DATE.optional().describe('Last day to be back'),
       dates: z.number().int().min(1).max(6).optional().describe('How many departure dates to try in the window, 3 if left out; more dates find cheaper days but each is a search'),
       max_stops: z.number().int().min(0).max(3).optional().describe('Most changes in each direction, 0 for direct flights only'),
-      source: z.enum(['recent', 'live']).optional().describe('"recent": prices Aviasales travellers found in the last days, low-cost airlines included (when the server has Travelpayouts); "live": airline fares now. Recent for a window, live for exact dates, if left out'),
+      source: z.enum(['recent', 'live']).optional().describe('"recent": prices Aviasales travellers found in the last days, low-cost airlines included (only when the server has Aviasales prices on); "live": airline fares now. Recent for a window, live for exact dates, if left out'),
       by_month: z.boolean().optional().describe('With recent prices: the cheapest fare for each month of the coming year, instead of the window'),
     },
     annotations: { title: 'Scan for flight deals', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -1061,8 +1064,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const allRoutes = spreadRoutes(froms, tos);
     const natural = (list) => list.slice().sort((a, b) => froms.indexOf(a[0]) - froms.indexOf(b[0]) || tos.indexOf(a[1]) - tos.indexOf(b[1]));
     let routes = allRoutes.slice(0, MAX_ROUTES);
-    if (source === 'recent' && !tp.configured(env)) return fail('Recent prices need Travelpayouts on the server (TRAVELPAYOUTS_TOKEN). source "live" searches airline fares.');
-    if (by_month && (source === 'live' || !tp.configured(env))) return fail('by_month works with recent prices, which need Travelpayouts on the server.');
+    if (source === 'recent' && !tp.configured(env)) return fail('Recent Aviasales prices are off on this server. source "live" searches airline fares.');
+    if (by_month && (source === 'live' || !tp.configured(env))) return fail('by_month works with recent Aviasales prices, which are off on this server.');
     if (recentScan) return scanRecent({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, by_month, max_stops });
     // One scan spends at most a few live searches (each route and date is one): a spread of routes, fewer dates when
     // there are many. When none are left, or the airline search is out of reach, recent prices stand in.
@@ -1150,7 +1153,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     back: z.string().max(160).optional().describe('Flight home: numbers and times'),
     stops: z.number().int().min(0).max(6).optional().describe('Most changes in either direction'),
     link: z.string().url().max(2000).optional(),
-    source: z.string().min(1).max(40).describe('Where the fare was found, e.g. the airline or Aviasales'),
+    source: z.string().min(1).max(40).describe('Where the fare was found, e.g. the airline or Trip.com'),
   });
 
   const siteIn = z.object({
@@ -1413,13 +1416,13 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   }));
 
   server.registerTool('flight_link', {
-    title: 'Flight link on Aviasales',
-    description: `Makes a link to an Aviasales search for a route and dates, where the traveller can compare live prices from airlines and agencies and book.${tp.linksOn(env) ? ' The link carries Pinroute\'s Travelpayouts partner ID, so Pinroute may earn a commission on a booking; the price is the same either way.' : ''}`,
+    title: 'Flight link on Trip.com',
+    description: `Makes a link to a Trip.com search for a route and dates, where the traveller can compare live prices from airlines and agencies and book.${tp.linksOn(env) ? ' The link carries Pinroute\'s Travelpayouts partner ID, so Pinroute may earn a commission on a booking; the price is the same either way.' : ''}`,
     inputSchema: { from: IATA, to: IATA, depart: DATE, return: DATE.optional(), adults: z.number().int().min(1).max(9).optional() },
-    annotations: { title: 'Flight link on Aviasales', readOnlyHint: true, openWorldHint: true },
+    annotations: { title: 'Flight link on Trip.com', readOnlyHint: true, openWorldHint: true },
   }, mine(async ({ from, to, depart, return: back, adults }) => {
     if (back && back < depart) return fail('The return date is before the departure date.');
-    const [url] = await tp.partnerLinks([tp.searchUrl({ from, to, depart, ret: back, adults: adults || 1 })], { env });
+    const url = await tp.flightLink({ from, to, depart, ret: back, adults: adults || 1 }, { env });
     return { content: [text(url)], structuredContent: { url, partner: tp.linksOn(env) } };
   }));
 

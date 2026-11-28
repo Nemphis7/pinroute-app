@@ -130,7 +130,7 @@ function faresDialog() {
   };
   const askClaude = () => {
     const since = new Date().toISOString();
-    ask('fares', `Find other return flights for my Pinroute trip "${t.name}": from ${k.from} to ${k.to}, around ${day(k.depart)} and back around ${day(k.return)} (a few days either way is fine), for ${plural(t.adults, 'adult')}. Search only with Pinroute's own scan_flight_deals (Amadeus airline fares and Aviasales prices), which saves the fares it finds; don't use other flight tools or sites. Then I can pick one in the planner's Change flights.`,
+    ask('fares', `Find other return flights for my Pinroute trip "${t.name}": from ${k.from} to ${k.to}, around ${day(k.depart)} and back around ${day(k.return)} (a few days either way is fine), for ${plural(t.adults, 'adult')}. Search only with Pinroute's own scan_flight_deals (live airline fares), which saves the fares it finds; don't use other flight tools or sites. Then I can pick one in the planner's Change flights.`,
       { poll: async () => loadFares(true), done: () => (D.fares || []).some((x) => x.at > since) || D.kind !== 'fares', tries: 75 });
   };
   const row = (x) => {
