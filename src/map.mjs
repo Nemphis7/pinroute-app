@@ -74,3 +74,33 @@ export function regionMap({ lat, lon }, within, { w = 640, h = 420 } = {}) {
   if (regionCache.size > 64) regionCache.delete(regionCache.keys().next().value);
   return map;
 }
+
+// A map for building a route by tapping places: land and borders around every place to pick and every stop, in a
+// frame shaped like them. Like regionMap it gives the projection (k, tx, ty), so the planner places pins and stops
+// itself and the map stays put while the route changes.
+const pickCache = new Map();
+export function pickMap(points, { long = 760, short = 460, pad = 0.12 } = {}) {
+  const known = points.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  if (!known.length) return null;
+  let lons = known.map((p) => p.lon), lats = known.map((p) => p.lat);
+  let x0 = Math.min(...lons), x1 = Math.max(...lons), y0 = Math.min(...lats), y1 = Math.max(...lats);
+  // At least about 3° across, so one city still shows its coast; then some sea around the edges
+  const grow = (a, b, min) => { const c = (a + b) / 2, half = Math.max(b - a, min) / 2 * (1 + pad * 2); return [c - half, c + half]; };
+  [x0, x1] = grow(x0, x1, 3); [y0, y1] = grow(y0, y1, 3);
+  y0 = Math.max(-78, y0); y1 = Math.min(82, y1);
+  const sig = [x0, x1, y0, y1].map((v) => v.toFixed(2)).join(',');
+  if (pickCache.has(sig)) return pickCache.get(sig);
+  const corners = { type: 'MultiPoint', coordinates: [[x0, y0], [x1, y1]] };
+  const unit = geoMercator().scale(1).translate([0, 0]);
+  const [a, b] = [unit([x0, y0]), unit([x1, y1])];
+  const r = Math.abs(b[0] - a[0]) / Math.max(Math.abs(b[1] - a[1]), 1e-9);
+  const w = r >= 1 ? long : Math.round(Math.max(short, long * r)), h = r >= 1 ? Math.round(Math.max(short, long / r)) : long;
+  const proj = geoMercator().fitExtent([[0, 0], [w, h]], corners);
+  proj.clipExtent([[-w * 0.5, -h * 0.5], [w * 1.5, h * 1.5]]);
+  const path = geoPath(proj).digits(1), c = countries();
+  const [tx, ty] = proj.translate();
+  const map = { w, h, land: path(c.land) || '', borders: path(c.borders) || '', k: proj.scale(), tx, ty };
+  pickCache.set(sig, map);
+  if (pickCache.size > 32) pickCache.delete(pickCache.keys().next().value);
+  return map;
+}

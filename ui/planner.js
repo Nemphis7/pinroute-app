@@ -6,7 +6,7 @@
 // It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, Shuffle } from 'lucide';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, MapPinPlus, Shuffle } from 'lucide';
 import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting, loadAnswers } from './core.js';
 import { answerBlock } from './answer.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
@@ -18,6 +18,7 @@ import { tripMenu, tripDialog } from './tripmenu.js';
 import { applyInsets } from './keyboard.js';
 import { scene, kindOf } from './scene.js';
 import { stageEl, updateStage } from './stage.js';
+import { builderOn, openBuilder, closeBuilder, builderList, builderMapEl, updateBuilderMap, builderSync } from './builder.js';
 import { filtered, filterBar, quotes, dateStrip, searching, fareCard, standouts, clearFilters } from './fares.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
@@ -77,6 +78,7 @@ function render() {
   root.dataset.screen = screen;
   root.dataset.narrow = String(L !== 'card' && narrow());
   root.dataset.pane = pane;
+  root.dataset.build = String(screen === 'trip' && L !== 'card' && builderOn());
   // While a leg shows fares, the map beside it makes room for them
   const fs = screen === 'trip' && sel?.kind === 'leg' ? fares[sel.key]?.state : null;
   root.dataset.fares = String(fs === 'loading' || fs === 'done');
@@ -136,7 +138,7 @@ function renderTrip(L) {
   // A leg whose date moved keeps its selection; anything else that's gone falls back to the starting point
   if (sel?.kind === 'leg' && !legByKey(sel.key)) { const same = V.legs.find((l) => route(l.key) === route(sel.key)); sel = same ? { kind: 'leg', key: same.key } : null; }
   if (!sel || (sel.kind === 'stop' && !V.stops[sel.index])) sel = startingPoint();
-  frame(`trip|${L}`, () => [...cardFrame(), h('main', { id: 'panes', class: 'panes', hidden: true }, h('nav', { id: 'list', class: 'list', 'aria-label': 'Route' }), h('section', { id: 'detail', class: 'detail', 'aria-live': 'polite' }), stageEl())]);
+  frame(`trip|${L}`, () => [...cardFrame(), h('main', { id: 'panes', class: 'panes', hidden: true }, h('nav', { id: 'list', class: 'list', 'aria-label': 'Route' }), h('section', { id: 'detail', class: 'detail', 'aria-live': 'polite' }), stageEl(), builderMapEl())]);
   art(`trip|${V.trip.id}|${V.trip.name}|${L}`, () => scene(V.trip.name, tripKind(), { sky: 'golden', ...artSize(L) }));
   $('name').textContent = V.trip.name;
   const total = days(V.trip.start, V.trip.end);
@@ -160,7 +162,10 @@ function renderTrip(L) {
   $('open-row').replaceChildren(h('div', { class: 'acts' }, h('button', { class: 'primary', onclick: () => openAt(null) }, icon(Maximize2), 'Open planner'),
     canFull() ? h('button', { onclick: () => go('open_planner', {}) }, 'All trips') : null));
   $('panes').hidden = L === 'card';
-  if (L !== 'card' && choosing()) {
+  if (L !== 'card' && builderOn()) {
+    $('list').replaceChildren(...builderList());
+    updateBuilderMap();
+  } else if (L !== 'card' && choosing()) {
     const o = shownOption(), others = V.options.filter((x) => x.id !== o.id);
     $('list').replaceChildren(...routesList(o));
     const det = $('detail'), key = `route|${o.id}`;
@@ -371,7 +376,8 @@ function listView() {
     rows.push(stopRow(x));
     for (const l of V.legs.filter((m) => m.after === x.index)) rows.push(legRow(l));
   }
-  return [unplanned() ? planCallout() : routesRow(), h('ol', { class: 'rail', onkeydown: moveWithKeys }, rows),
+  return [unplanned() ? planCallout() : routesRow(), unplanned() ? null : h('button', { class: 'build-entry', id: 'build-open', onclick: startBuilder }, icon(MapPinPlus), h('span', { class: 'main' }, h('b', { text: 'Change the route on the map' }), h('span', { class: 'small', text: 'Tap places to add, move or take out stops' }))),
+    h('ol', { class: 'rail', onkeydown: moveWithKeys }, rows),
     narrow() ? null : h('p', { class: 'hint small' }, h('kbd', { text: '↑' }), ' ', h('kbd', { text: '↓' }), ' move along the route')].filter(Boolean);
 }
 
@@ -381,8 +387,15 @@ function planCallout() {
     h('p', { class: 'meta', text: `You land in ${V.stops[0].place} and fly home from ${V.stops.at(-1).place}. Claude suggests two or three routes in between, and you pick one on the map.` }),
     waiting.plan ? skeleton('Claude is planning; the route options appear here once saved.', 2) : null,
     answerBlock('plan', { poll: refresh }),
-    h('button', { class: 'primary', disabled: !t, onclick: askPlan }, icon(Route), 'Ask Claude for route options'));
+    h('div', { class: 'acts' }, h('button', { class: 'primary', disabled: !t, onclick: askPlan }, icon(Route), 'Ask Claude for route options'),
+      h('button', { id: 'build-open', onclick: startBuilder }, icon(MapPinPlus), 'Pick stops on the map')));
 }
+// Building the route on the map (builder.js): the route list and the map make way for it until Done
+function startBuilder() {
+  pane = 'list';
+  openBuilder(V, { onSaved: (r) => { take(r); render(); }, onClose: () => { sel = startingPoint(); const l = $('list'); if (l) l.scrollTop = 0; } });
+}
+
 function askPlan() {
   const t = V.trip.ticket, first = V.stops[0].place, last = V.stops.at(-1).place;
   const before = V.stops.map((x) => `${x.place}:${x.nights}`).join();
@@ -963,7 +976,7 @@ async function refresh(quiet) {
 }
 
 function take(r) {
-  if (r.structuredContent?.trip) V = r.structuredContent;
+  if (r.structuredContent?.trip) { V = r.structuredContent; builderSync(V); }
   if (r._meta?.map) MAP = r._meta.map;
   if (r._meta?.mini) MINI = r._meta.mini;
   if (r.structuredContent?.trip) ROUTES = r._meta?.routes || null;
@@ -972,10 +985,11 @@ function take(r) {
 // A tool result picks the screen: the start screen, the new-trip planner, or a trip
 function showResult(r) {
   const sc = r.structuredContent || {};
+  if (sc.screen && sc.screen !== 'trip' && builderOn()) closeBuilder();
   if (sc.screen === 'home') { takeHome(sc); screen = 'home'; ui.scope = ''; setHere({ name: 'open_planner', args: {} }); }
   else if (sc.screen === 'new') { takeNew(sc); screen = 'new'; ui.scope = 'new|'; setHere({ name: 'plan_new_trip', args: {} }); }
   else if (sc.trip) {
-    if (V?.trip.id !== sc.trip.id) { sel = null; pane = 'list'; comparing = false; previewId = null; }
+    if (V?.trip.id !== sc.trip.id) { sel = null; pane = 'list'; comparing = false; previewId = null; if (builderOn()) closeBuilder(); }
     take(r); screen = 'trip'; ui.scope = `${sc.trip.id}|`; setHere({ name: 'open_planner', args: { trip_id: sc.trip.id } });
   }
   render();

@@ -12,7 +12,8 @@ import {
   REGIONS, INTERESTS, MONTHS, findDest, destById, rankDests, fitLabel, windowMonths, addDays, diffDays, monthOf,
   dealPP, dealRatio, dealLabel, dealsFor, budgetFit, bestMonthsText,
 } from './discover.mjs';
-import { tripMap, regionMap } from './map.mjs';
+import { tripMap, regionMap, pickMap } from './map.mjs';
+import { routePlaces } from './places.mjs';
 import { flightProvider } from './providers/index.mjs';
 import * as tp from './providers/travelpayouts.mjs';
 import * as acts from './providers/activities.mjs';
@@ -121,7 +122,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       screen: 'trip',
       trip: { id: trip.id, name: trip.name, start: trip.start, end: endDate(trip), adults: trip.adults, home: trip.home || null, choices, country: d ? d.name : null, countryId: trip.country || null,
         ticket: trip.ticket ? namedFare(trip.ticket) : null, wishes: trip.wishes || null, area: trip.area || null },
-      stops: rows.map((s, i) => ({ index: i, place: s.place, nights: s.nights, arrive: s.arrive, depart: s.depart, iata: s.iata, region: s.region, island: !!s.island })),
+      stops: rows.map((s, i) => ({ index: i, place: s.place, nights: s.nights, arrive: s.arrive, depart: s.depart, iata: s.iata, region: s.region, island: !!s.island, lat: s.lat ?? null, lon: s.lon ?? null })),
       legs: legList,
       stays: hotels.stays(trip, env),
       picks,
@@ -306,6 +307,47 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     if (!t.stops[stop]) return fail(`Trip ${trip_id} has ${t.stops.length} stops, numbered 0 to ${t.stops.length - 1}.`);
     const stops = t.stops.map((s, i) => (i === stop ? { ...s, nights } : s));
     return viewResult(store.putTrip(owner, { ...t, stops }), `${t.stops[stop].place}: ${nights} night${nights === 1 ? '' : 's'}. ${summary(tripView({ ...t, stops }))}`);
+  }));
+
+  // ---- building the route on the map: the places to tap, and the ones Claude suggests for the trip
+  server.registerTool('route_map', {
+    title: 'Places to pick on the map',
+    description: 'For the planner itself: the places to tap when building a trip\'s route on the map, and the map around them.',
+    inputSchema: { trip_id: z.string().max(40) },
+    annotations: { title: 'Places to pick on the map', readOnlyHint: true },
+    _meta: { ui: { visibility: ['app'] } },
+  }, mine(async ({ trip_id }) => {
+    const t = store.getTrip(owner, trip_id);
+    if (!t) return noTrip(trip_id);
+    const { countries, places } = routePlaces(t);
+    return { content: [text(`${places.length} places to pick in ${countries.join(', ') || 'the trip\'s area'}.`)], structuredContent: { trip_id, countries, places },
+      _meta: { map: pickMap([...places, ...t.stops]) } };
+  }));
+
+  server.registerTool('save_route_ideas', {
+    title: 'Suggest places for a trip\'s map',
+    description: 'Saves places worth visiting on a trip, shown as pins the traveller can tap to add to the route on the planner\'s map. Each place needs its coordinates; give its nearest airport with scheduled flights, island true for islands, and a short why. A place saved again under the same name is updated; at most 40 are kept per trip.',
+    inputSchema: {
+      trip_id: z.string().max(40),
+      places: z.array(z.object({
+        place: z.string().min(1).max(80),
+        lat: z.number().min(-90).max(90),
+        lon: z.number().min(-180).max(180),
+        airport: IATA.optional(),
+        island: z.boolean().optional(),
+        why: z.string().max(200).optional().describe('One line on what the place is good for'),
+      })).min(1).max(30),
+      replace: z.boolean().optional().describe('True to drop the ideas saved before'),
+    },
+    annotations: { title: 'Suggest places for a trip\'s map', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, mine(async ({ trip_id, places, replace }) => {
+    const t = store.getTrip(owner, trip_id);
+    if (!t) return noTrip(trip_id);
+    const fresh = places.map((p) => ({ place: p.place.trim(), lat: p.lat, lon: p.lon, iata: (p.airport || resolvePlace(p.place, null, p).iata || '').toUpperCase() || null, island: !!p.island, why: p.why?.trim() || null }));
+    const names = new Set(fresh.map((p) => p.place.toLowerCase()));
+    const ideas = [...fresh, ...(replace ? [] : (t.ideas || []).filter((p) => !names.has(p.place.toLowerCase())))].slice(0, 40);
+    store.putTrip(owner, { ...t, ideas });
+    return { content: [text(`Saved ${fresh.length} place${fresh.length === 1 ? '' : 's'} for "${t.name}"; ${ideas.length} in all. They show as pins on the planner's map, where the traveller taps one to add it to the route.`)], structuredContent: { trip_id, ideas } };
   }));
 
   server.registerTool('delete_trip', {
