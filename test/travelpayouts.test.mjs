@@ -138,3 +138,19 @@ test('a window from five home airports to six arrival airports runs in one call:
   assert.equal(new Set(searched.map((x) => `${x.from}>${x.to}`)).size + left_out.length, 30);
   assert.match(r.content[0].text, /of 30 routes, each airport at least once; left out: /);
 });
+
+test('with no live searches left, a live scan answers with recent Aviasales prices instead of an error', async () => {
+  const tight = await startServer(null, { ...TP(fake.url), SEARCH_LIMIT_PER_DAY: '1' });
+  const c = await connect(tight.url);
+  try {
+    await c.callTool({ name: 'plan_new_trip', arguments: { free_from: FROM, free_until: UNTIL, min_nights: 9, max_nights: 12, adults: 2, home_airports: ['FRA'], compare: ['Vietnam'] } });
+    const first = await c.callTool({ name: 'scan_flight_deals', arguments: { country: 'Vietnam', source: 'live' } });
+    assert.ok(!first.isError, JSON.stringify(first.content));
+    assert.equal(first.structuredContent.searches_left, 0);
+    const r = await c.callTool({ name: 'scan_flight_deals', arguments: { country: 'Vietnam', source: 'live', earliest: addDays(FROM, 1) } });
+    assert.ok(!r.isError, JSON.stringify(r.content));
+    assert.match(r.content[0].text, /^Today's 1 live airline searches in Pinroute are used up \(they start again at 00:00 UTC\), so these are recent Aviasales prices instead\.\nRecent prices on Aviasales/);
+    assert.equal(r.structuredContent.fallback, 'recent');
+    assert.ok(r.structuredContent.deals.length && r.structuredContent.deals.every((x) => x.source === 'Aviasales'));
+  } finally { await c.close(); tight.server.close(); }
+});

@@ -106,5 +106,5 @@ test('flex_days searches the days around and finds the cheapest date', async () 
   assert.ok(calendar.every((c) => c.aviasales === 333), 'an Aviasales quote for each date');
   assert.ok(fares.some((f) => f.date !== START), 'cheaper offers from nearby days are listed too');
   assert.match(r.content[0].text, /Cheapest date: /);
-  assert.equal(r.structuredContent.searches_left, 30 - 5 - 5);
+  assert.equal(r.structuredContent.searches_left, 30 - 5 - 4, 'the date asked for was searched just before, so it comes from the cache');
 });

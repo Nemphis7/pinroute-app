@@ -74,7 +74,7 @@ All settings are environment variables: on Railway under **Variables**, locally 
 | `PUBLIC_URL` | The server's public address, e.g. `https://pinroute.app`. On Railway, the generated domain is used until you set this. |
 | `MCP_SECRET` | Without sign-in only: makes the address `/mcp/<secret>`, so only people with the link can connect. Ignored once sign-in is on. |
 | `OPERATOR_NAME`, `SUPPORT_EMAIL` | Who runs the server and how to reach you, shown on `/help` and `/privacy`. |
-| `SEARCH_LIMIT_PER_DAY` | Flight searches per person per day (default 50). `TRIP_LIMIT`: trips per person (default 200). |
+| `SEARCH_LIMIT_PER_DAY` | Live airline searches per person per day (default 150). A search asked again within 20 minutes, by anyone, comes from the server's cache and doesn't count; past the limit, searches answer with Aviasales's recent prices and a link to Aviasales's own search instead of an error. `TRIP_LIMIT`: trips per person (default 200). |
 | `ADOPT_LOCAL_DATA` | `true` for one sign-in: the first signed-in person with no trips takes over the ones saved before sign-in. Remove it afterwards. |
 | `AUTH_AUDIENCE`, `AUTH_JWKS_URL` | Only for sign-in services that don't put the MCP address in the token's audience, or don't publish their keys in discovery. |
 | `HOSTING_REGION`, `PRIVACY_UPDATED` | Wording on the privacy page: where the server runs (default "the United States") and the date of the last change. |
@@ -87,7 +87,9 @@ npm run check:amadeus            # one real search, BKK → FRA in 30 days; prin
 npm run check:amadeus LHR CDG    # any other pair
 ```
 
-Amadeus Travel Builder covers a set of mostly full-service airlines; many regional low-cost airlines aren't in it (Krabi → Bangkok returns nothing, for example). That is why the planner's **Find flights** button also asks Aviasales for recent prices (low-cost airlines included) when the server has Travelpayouts. On the new-trip Flights step it looks up recent prices from every home airport, then live fares from the main one on three departure dates per country, each live search counted toward the daily limit. `scan_flight_deals` takes any number of departure and arrival airports in one call: past 16 routes it looks up a spread that includes every airport and lists the routes it left out.
+Amadeus Travel Builder covers a set of mostly full-service airlines; many regional low-cost airlines aren't in it (Krabi → Bangkok returns nothing, for example). That is why the planner's **Find flights** button also asks Aviasales for recent prices (low-cost airlines included) when the server has Travelpayouts. On the new-trip Flights step it looks up recent prices from every home airport, then live fares from the main one on three departure dates per country, each live search counted toward the daily limit. `scan_flight_deals` takes any number of departure and arrival airports in one call: it looks up a spread of routes that includes every airport (up to 16 recent-price look-ups, at most 8 live searches) and lists the routes it left out.
+
+**Search budget.** Amadeus Travel Builder is a free beta with controlled volumes and no paid tier to move to, so Pinroute spends live searches carefully: fare look-ups are cached for everyone on the server (live fares 20 minutes, Aviasales's recent prices 3 hours), one scan spends at most 8 live searches, and `search_flights` prices nearby days (`flex_days`) live only while more than 20 searches are left, using the Aviasales quote for them otherwise. When live searches run out or Amadeus refuses (429), scans fall back to recent Aviasales prices, then to the fares already saved and an Aviasales search link, never an error.
 
 ## Flight search options
 
