@@ -89,11 +89,13 @@ test('shows fares for a flight leg and saves the choice as a ticket', { skip }, 
   assert.equal(await frame().locator('.dbar.here').count(), 1);
   assert.equal(await frame().locator('.dbar.low').count(), 1, 'the cheapest day is marked');
   assert.match(await frame().locator('.quotes').textContent(), /Airlines \(Amadeus\).*Aviasales/);
+  assert.match(await frame().locator('.fare').first().locator('.ftags').textContent(), /Cheapest/, 'the cheapest fare is marked');
   const all = await frame().locator('.fare').count();
   await frame().getByRole('button', { name: /^Evening/ }).click();
-  const evening = await frame().locator('.fare .times b').allTextContents();
+  const evening = await frame().locator('.fare .dep').allTextContents();
   assert.ok(evening.every((t) => t.slice(0, 5) >= '18:00'), evening.join(' / '));
-  await frame().getByRole('button', { name: /^Evening/ }).click();
+  await frame().getByRole('button', { name: 'Clear 1 filter' }).click();
+  assert.equal(await frame().locator('.fare').count(), all, 'clearing the filters shows every fare again');
   await frame().getByRole('button', { name: 'Fastest' }).click();
   assert.equal(await frame().locator('.fare').count(), all);
   await frame().getByRole('button', { name: 'Cheapest' }).click();
