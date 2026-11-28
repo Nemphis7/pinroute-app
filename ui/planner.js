@@ -6,8 +6,8 @@
 // It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, MapPinPlus, Shuffle } from 'lucide';
-import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting, loadAnswers } from './core.js';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, MapPinPlus, Shuffle, Pin, PinOff } from 'lucide';
+import { app, ui, $, onRender, onShow, canFull, isFull, canPip, isPip, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting, loadAnswers } from './core.js';
 import { answerBlock } from './answer.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
 import { takeHome, homeCard, homeScreen } from './home.js';
@@ -131,7 +131,14 @@ function fillCard(c) {
   $('side').replaceChildren(...[c.side].filter(Boolean));
   $('strip').replaceChildren();
   $('open-row').hidden = false;
-  $('open-row').replaceChildren(h('div', { class: 'acts' }, ...(c.actions || [h('button', { class: 'primary', onclick: () => (canFull() ? setMode('fullscreen') : render()) }, icon(Maximize2), 'Open planner')])));
+  $('open-row').replaceChildren(h('div', { class: 'acts' }, ...(c.actions || [h('button', { class: 'primary', onclick: () => (canFull() ? setMode('fullscreen') : render()) }, icon(Maximize2), 'Open planner')]), pinButton()));
+}
+
+// Keeping the card in sight while the chat goes on: where the host offers picture-in-picture, Pin floats the card in a
+// small window that stays on screen, and Unpin puts it back in the chat. Hosts without pip show no button.
+export function pinButton() {
+  if (isPip()) return h('button', { class: 'ghost', title: 'Put the planner back in the chat', onclick: () => setMode('inline') }, icon(PinOff), 'Unpin');
+  return canPip() ? h('button', { class: 'ghost', title: 'Keep the planner on screen while you chat', onclick: () => setMode('pip') }, icon(Pin), 'Pin') : null;
 }
 
 function renderTrip(L) {
@@ -160,7 +167,7 @@ function renderTrip(L) {
   $('strip').replaceChildren(strip());
   $('open-row').hidden = L !== 'card';
   $('open-row').replaceChildren(h('div', { class: 'acts' }, h('button', { class: 'primary', onclick: () => openAt(null) }, icon(Maximize2), 'Open planner'),
-    canFull() ? h('button', { onclick: () => go('open_planner', {}) }, 'All trips') : null));
+    canFull() ? h('button', { onclick: () => go('open_planner', {}) }, 'All trips') : null, pinButton()));
   $('panes').hidden = L === 'card';
   if (L !== 'card' && builderOn()) {
     $('list').replaceChildren(...builderList());
