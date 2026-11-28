@@ -172,6 +172,31 @@ test('a stop\'s hotel: a Booking.com search for its nights, Claude\'s pick saved
   assert.equal((await server()).stays.find((x) => x.key === key).chosen, null);
 });
 
+test('a stop\'s hotel: chips for what matters filter the Booking.com search and go into what Claude is asked', { skip }, async () => {
+  await frame().locator('.row.stop', { hasText: 'Koh Lanta' }).click();
+  const stay = frame().locator('.detail .stay');
+  const prefs = stay.locator('.hprefs');
+  assert.match(await prefs.textContent(), /What matters to you/);
+  await prefs.getByRole('button', { name: 'Mid-range' }).click();
+  await prefs.getByRole('button', { name: 'Breakfast' }).click();
+  await prefs.getByRole('button', { name: 'Quiet' }).click();
+  assert.equal(await prefs.getByRole('button', { name: 'Mid-range' }).getAttribute('aria-pressed'), 'true', 'a tap shows at once');
+  const want = JSON.stringify({ price: 'mid', wants: ['breakfast', 'quiet'] });
+  for (let i = 0; i < 40 && JSON.stringify((await server()).hotels.prefs) !== want; i++) await page.waitForTimeout(100);
+  assert.equal(JSON.stringify((await server()).hotels.prefs), want, 'every tap is saved');
+  assert.equal(await prefs.getByRole('button', { name: 'Breakfast' }).getAttribute('aria-pressed'), 'true');
+  assert.match(await prefs.textContent(), /Claude also looks for quiet/);
+  await stay.getByRole('button', { name: 'Find hotels on Booking.com' }).click();
+  await page.waitForFunction(() => /nflt=/.test(window.__links.at(-1)));
+  assert.equal(new URL(await page.evaluate(() => window.__links.at(-1))).searchParams.get('nflt'), 'class=3;class=4;mealplan=1');
+  await stay.getByRole('button', { name: 'Ask Claude where to stay' }).click();
+  await page.waitForFunction(() => /What matters to me/.test(window.__messages.at(-1).content[0].text));
+  assert.match(await lastMessage(), /What matters to me: a mid-range price \(3 to 4 stars\); breakfast included; a quiet place/);
+  await prefs.getByRole('button', { name: 'Clear' }).click();
+  for (let i = 0; i < 40 && (await server()).hotels.prefs; i++) await page.waitForTimeout(100);
+  assert.equal((await server()).hotels.prefs, null);
+});
+
 test('flags a chosen flight whose date moved, and clears it', { skip }, async () => {
   await client.callTool({ name: 'choose_flight', arguments: { trip_id: tripId, leg_key: KBV_BKK, summary: 'Thai AirAsia, 11:40 KBV → 12:55 DMK', price: 138, currency: 'EUR', source: 'LetsFG' } });
   await frame().locator('.row.stop', { hasText: 'Koh Lanta' }).click();
