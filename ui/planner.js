@@ -1,12 +1,12 @@
 // The Pinroute planner, shown inside Claude. Three screens share one view:
-//   the start screen (home.js): the two ways to plan a new trip and the traveller's trips;
+//   the start screen (home.js): a new trip from the traveller's words (or set up by hand) and the traveller's trips;
 //   the new-trip planner (newtrip.js): When → Where → Flights, or Country → Best time → Flights;
 //   a trip (this file): in the chat a compact card with the nights strip, how much is settled, a small map and one
 //   action; full screen the route on the left and the selected stop or leg on the right (one pane on phones).
 // It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, MapPinPlus } from 'lucide';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, MapPinPlus, Shuffle } from 'lucide';
 import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting, loadAnswers } from './core.js';
 import { answerBlock } from './answer.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
@@ -25,6 +25,9 @@ let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
 let MAP = null;            // its map (coastline and stop positions), from the result's _meta, shaped like the trip
 let MINI = null;           // the same, small and wide, for the card in the chat
+let ROUTES = null;         // the route options' map: one coastline, points per option
+let comparing = false;     // a planned trip showing its route options again
+let previewId = null;      // the option shown on the map
 let sel = null;            // { kind: 'stop', index } or { kind: 'leg', key }
 let pane = 'list';         // one-pane layouts: 'list' or 'detail'
 const tours = {};          // trip id|stop|place → { state, list, more, error, kept }
@@ -162,6 +165,14 @@ function renderTrip(L) {
   if (L !== 'card' && builderOn()) {
     $('list').replaceChildren(...builderList());
     updateBuilderMap();
+  } else if (L !== 'card' && choosing()) {
+    const o = shownOption(), others = V.options.filter((x) => x.id !== o.id);
+    $('list').replaceChildren(...routesList(o));
+    const det = $('detail'), key = `route|${o.id}`;
+    det.replaceChildren(...routeDetail(o));
+    updateStage({ V: { ...V, stops: o.stops, legs: o.legs }, M: ROUTES ? { w: ROUTES.w, h: ROUTES.h, land: ROUTES.land, points: ROUTES.points[o.id] || [] } : null, sel: null,
+      settled: () => false, onPick: () => {}, onHover: () => {}, ghosts: ROUTES ? others.map((x) => ({ id: x.id, name: x.name, points: ROUTES.points[x.id] })) : [], onGhost: previewRoute });
+    if (det.dataset.sel !== key) { det.dataset.sel = key; det.classList.remove('enter'); void det.offsetWidth; det.classList.add('enter'); det.scrollTop = 0; }
   } else if (L !== 'card') {
     $('list').replaceChildren(...listView());
     const det = $('detail'), key = JSON.stringify(sel);
@@ -243,6 +254,8 @@ function nextTodo() {
 const doWhat = (l) => (l.mode === 'flight' ? (l.stale ? 'Choose a new flight' : 'Choose flight')
   : l.chosen ? `Book ${groundWord(l).toLowerCase()}` : l.mode === 'ferry' ? 'Find a ferry' : 'Find a bus or transfer');
 function nextCard() {
+  if (unplanned() && V.options?.length) return h('button', { class: 'next', onclick: () => openAt(null) }, h('span', { class: 'next-ic' }, icon(Shuffle)),
+    h('span', { class: 'next-t' }, h('span', { class: 'small', text: 'Next up' }), h('b', { text: `Pick one of ${V.options.length} routes` })), icon(ChevronRight));
   if (unplanned()) return h('button', { class: 'next', onclick: () => openAt(null) }, h('span', { class: 'next-ic' }, icon(Route)),
     h('span', { class: 'next-t' }, h('span', { class: 'small', text: 'Next up' }), h('b', { text: 'Plan the route between your flights' })), icon(ChevronRight));
   const l = nextTodo();
@@ -363,7 +376,7 @@ function listView() {
     rows.push(stopRow(x));
     for (const l of V.legs.filter((m) => m.after === x.index)) rows.push(legRow(l));
   }
-  return [unplanned() ? planCallout() : h('button', { class: 'build-entry', id: 'build-open', onclick: startBuilder }, icon(MapPinPlus), h('span', { class: 'main' }, h('b', { text: 'Change the route on the map' }), h('span', { class: 'small', text: 'Tap places to add, move or take out stops' }))),
+  return [unplanned() ? planCallout() : routesRow(), unplanned() ? null : h('button', { class: 'build-entry', id: 'build-open', onclick: startBuilder }, icon(MapPinPlus), h('span', { class: 'main' }, h('b', { text: 'Change the route on the map' }), h('span', { class: 'small', text: 'Tap places to add, move or take out stops' }))),
     h('ol', { class: 'rail', onkeydown: moveWithKeys }, rows),
     narrow() ? null : h('p', { class: 'hint small' }, h('kbd', { text: '↑' }), ' ', h('kbd', { text: '↓' }), ' move along the route')].filter(Boolean);
 }
@@ -371,10 +384,10 @@ function listView() {
 function planCallout() {
   const t = V.trip.ticket;
   return h('div', { class: 'callout' },
-    h('p', { class: 'meta', text: `You land in ${V.stops[0].place} and fly home from ${V.stops.at(-1).place}. Claude can suggest the stops in between.` }),
-    waiting.plan ? skeleton('Claude is planning; the route appears here once saved.', 2) : null,
+    h('p', { class: 'meta', text: `You land in ${V.stops[0].place} and fly home from ${V.stops.at(-1).place}. Claude suggests two or three routes in between, and you pick one on the map.` }),
+    waiting.plan ? skeleton('Claude is planning; the route options appear here once saved.', 2) : null,
     answerBlock('plan', { poll: refresh }),
-    h('div', { class: 'acts' }, h('button', { class: 'primary', disabled: !t, onclick: askPlan }, icon(Route), 'Ask Claude to plan the route'),
+    h('div', { class: 'acts' }, h('button', { class: 'primary', disabled: !t, onclick: askPlan }, icon(Route), 'Ask Claude for route options'),
       h('button', { id: 'build-open', onclick: startBuilder }, icon(MapPinPlus), 'Pick stops on the map')));
 }
 // Building the route on the map (builder.js): the route list and the map make way for it until Done
@@ -387,8 +400,80 @@ function askPlan() {
   const t = V.trip.ticket, first = V.stops[0].place, last = V.stops.at(-1).place;
   const before = V.stops.map((x) => `${x.place}:${x.nights}`).join();
   const area = V.trip.area ? ` Keep the route in ${V.trip.area}.` : '', wish = V.trip.wishes ? ` What I have in mind: "${V.trip.wishes}".` : '';
-  return ask('plan', `Plan the route for my Pinroute trip "${V.trip.name}" (trip_id "${V.trip.id}")${V.trip.country ? ` in ${V.trip.country}` : ''}: I land in ${first} (${t.to}) on ${longDay(V.trip.start)} and fly home from ${last} (${t.back_from || t.to}) on ${longDay(V.trip.end)}, ${nightsTxt(days(V.trip.start, V.trip.end))}, ${V.trip.adults} adult${V.trip.adults === 1 ? '' : 's'}.${area}${wish} Suggest the stops in travel order with the nights at each, at a relaxed pace, and say in a few lines why. Then save it with update_trip: keep ${first} first, end with ${last} with 0 nights, and give every stop its nearest airport code, its lat and lon, and island true for islands.`,
-    { poll: refresh, done: () => V.stops.map((x) => `${x.place}:${x.nights}`).join() !== before, tries: 60 });
+  return ask('plan', `Plan the route for my Pinroute trip "${V.trip.name}" (trip_id "${V.trip.id}")${V.trip.country ? ` in ${V.trip.country}` : ''}: I land in ${first} (${t.to}) on ${longDay(V.trip.start)} and fly home from ${last} (${t.back_from || t.to}) on ${longDay(V.trip.end)}, ${nightsTxt(days(V.trip.start, V.trip.end))}, ${V.trip.adults} adult${V.trip.adults === 1 ? '' : 's'}.${area}${wish} Suggest 2 or 3 routes that are really different (for example another order, another region, or fewer stops and longer stays), each at a relaxed pace with the stops in travel order and the nights at each, and save them with suggest_routes so I can compare them on the map: a short name and a line on why for each, every option keeps ${first} first and ends with ${last} with 0 nights, uses all ${nightsTxt(days(V.trip.start, V.trip.end))}, and gives every stop its nearest airport code, its lat and lon, and island true for islands. If the trip really suits one place only, save that one with update_trip instead.`,
+    { poll: refresh, done: () => !!V.options?.length || V.stops.map((x) => `${x.place}:${x.nights}`).join() !== before, tries: 60 });
+}
+
+// ---------------------------------------------------------------- route options: compare two or three ways around
+// Claude saves them with suggest_routes; the map shows one, the others faint beside it, and one becomes the route.
+const choosing = () => !!V.options?.length && (unplanned() || comparing);
+const shownOption = () => V.options.find((o) => o.id === previewId) || V.options.find((o) => o.current) || V.options[0];
+const chain = (o) => o.stops.filter((x, i) => x.nights > 0 || i === o.stops.length - 1).map((x) => x.place).join(' → ');
+const legCount = (o) => {
+  const n = (m) => o.legs.filter((l) => l.kind !== 'out' && l.kind !== 'home' && l.mode === m).length;
+  return [[n('flight'), 'flight', 'flights'], [n('ferry'), 'ferry', 'ferries'], [n('road'), 'drive', 'drives']].filter(([k]) => k).map(([k, one, many]) => `${k} ${k === 1 ? one : many}`).join(' · ');
+};
+function previewRoute(id) {
+  previewId = id;
+  pane = 'detail';
+  render();
+}
+function routesRow() {
+  const n = V.options?.length || 0;
+  return h('div', { class: 'routes-row' },
+    n ? h('button', { class: 'ghost', onclick: () => { comparing = true; previewId = null; pane = 'list'; render(); } }, icon(Shuffle), `Compare routes (${n})`)
+      : h('button', { class: 'ghost', disabled: !!waiting.routes, onclick: askRoutes }, icon(Shuffle), waiting.routes ? 'Claude is suggesting routes…' : 'Other route ideas'),
+    answerBlock('routes', { poll: refresh }));
+}
+function askRoutes() {
+  const first = V.stops[0].place, last = V.stops.at(-1).place, now = V.stops.map((x) => `${x.place} (${x.nights})`).join(' → ');
+  const fixed = V.trip.ticket ? ` Keep ${first} first and ${last} last with 0 nights, and all ${nightsTxt(days(V.trip.start, V.trip.end))}, since the flights are set.` : '';
+  return ask('routes', `Suggest 2 or 3 other routes for my Pinroute trip "${V.trip.name}" (trip_id "${V.trip.id}"), really different from the one I have now: ${now}.${fixed}${V.trip.wishes ? ` What I have in mind: "${V.trip.wishes}".` : ''} Save them with suggest_routes, one of them may be my current route, so I can compare them on the map: a short name and a line on why for each, and every stop with its nearest airport code, its lat and lon, and island true for islands.`,
+    { poll: refresh, done: () => !!V.options?.length, then: () => { comparing = true; render(); }, tries: 60 });
+}
+function routesList(shown) {
+  return [
+    h('div', { class: 'routes-head' }, h('h3', { text: unplanned() ? 'Pick your route' : 'Compare routes' }),
+      h('p', { class: 'small', text: `${V.options.length} ways to spend ${nightsTxt(days(V.trip.start, V.trip.end))}. Tap one to see it on the map.` })),
+    h('ol', { class: 'route-opts' }, V.options.map((o) => h('li', {},
+      h('button', { class: 'route-opt', 'aria-pressed': String(o.id === shown.id), onclick: () => previewRoute(o.id) },
+        h('span', { class: 'opt-id', text: o.id }),
+        h('span', { class: 'opt-t' }, h('b', { text: o.name }), o.current ? h('span', { class: 'tag', text: 'Your route now' }) : null,
+          h('span', { class: 'small chain', text: chain(o) }),
+          h('span', { class: 'small', text: [`${o.stops.filter((x) => x.nights > 0).length} stops`, legCount(o)].filter(Boolean).join(' · ') })))))),
+    waiting.routes || waiting.plan ? skeleton('Claude is suggesting routes; they appear here once saved.', 1) : null,
+    h('div', { class: 'acts' },
+      h('button', { class: 'ghost', disabled: !!waiting.routes, onclick: askRoutes }, icon(Shuffle), 'Other ideas'),
+      unplanned() ? null : h('button', { class: 'ghost', onclick: () => { comparing = false; pane = 'list'; render(); } }, 'Back to my route')),
+    answerBlock('routes', { poll: refresh }),
+  ].filter(Boolean);
+}
+function routeDetail(o) {
+  const body = [
+    h('div', { class: 'dhead' }, h('span', { class: 'small', text: `Route ${o.id} of ${V.options.length}` }), h('h2', { text: o.name }),
+      o.why ? h('p', { class: 'meta', text: o.why }) : null),
+    h('ol', { class: 'opt-stops' }, o.stops.map((x, i) => {
+      const l = o.legs.find((m) => m.after === i - 1 && m.kind !== 'out');
+      return h('li', {},
+        l ? h('span', { class: 'opt-leg small' }, icon(MODE[l.mode] || Car), l.mode === 'flight' ? `Fly ${l.from} → ${l.to}` : l.mode === 'ferry' ? 'Ferry' : 'Drive') : null,
+        h('span', { class: 'opt-stop' }, h('span', { class: 'no', text: String(i + 1) }), h('b', { text: x.place }),
+          h('span', { class: 'small', text: x.nights ? `${span(x.arrive, x.depart)} · ${nightsTxt(x.nights)}` : `${day(x.arrive)} · fly home` })));
+    })),
+    h('div', { class: 'acts' },
+      o.current ? h('p', { class: 'small', text: 'This is your route now.' })
+        : h('button', { class: 'primary', onclick: () => useRoute(o) }, icon(Check), 'Use this route'),
+      V.options.length > 1 ? h('button', { class: 'ghost', onclick: () => previewRoute(V.options[(V.options.indexOf(o) + 1) % V.options.length].id) }, `See route ${V.options[(V.options.indexOf(o) + 1) % V.options.length].id}`, icon(ArrowRight)) : null),
+  ];
+  if (narrow()) return [h('button', { class: 'ghost back', onclick: () => { pane = 'list'; render(); } }, icon(ChevronLeft), 'Routes'), ...body.filter(Boolean)];
+  return [h('div', { class: 'content' }, body)];
+}
+async function useRoute(o) {
+  const r = await save('choose_route', { trip_id: V.trip.id, option: o.id }, `the traveller picked route ${o.id}, "${o.name}": ${chain(o)}.`);
+  if (!r) return;
+  comparing = false; previewId = null; sel = null; pane = 'list';
+  render();
+  const first = V.legs.find((l) => !settled(l));
+  celebrate(`Route set: ${o.name}`, first ? { kind: 'stop', index: 0 } : null);
 }
 
 // Each stop's postcard: the same place always gets the same picture
@@ -894,6 +979,7 @@ function take(r) {
   if (r.structuredContent?.trip) { V = r.structuredContent; builderSync(V); }
   if (r._meta?.map) MAP = r._meta.map;
   if (r._meta?.mini) MINI = r._meta.mini;
+  if (r.structuredContent?.trip) ROUTES = r._meta?.routes || null;
 }
 
 // A tool result picks the screen: the start screen, the new-trip planner, or a trip
@@ -903,7 +989,7 @@ function showResult(r) {
   if (sc.screen === 'home') { takeHome(sc); screen = 'home'; ui.scope = ''; setHere({ name: 'open_planner', args: {} }); }
   else if (sc.screen === 'new') { takeNew(sc); screen = 'new'; ui.scope = 'new|'; setHere({ name: 'plan_new_trip', args: {} }); }
   else if (sc.trip) {
-    if (V?.trip.id !== sc.trip.id) { sel = null; pane = 'list'; if (builderOn()) closeBuilder(); }
+    if (V?.trip.id !== sc.trip.id) { sel = null; pane = 'list'; comparing = false; previewId = null; if (builderOn()) closeBuilder(); }
     take(r); screen = 'trip'; ui.scope = `${sc.trip.id}|`; setHere({ name: 'open_planner', args: { trip_id: sc.trip.id } });
   }
   render();

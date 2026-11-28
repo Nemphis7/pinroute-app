@@ -76,7 +76,9 @@ function fareLine(f) {
 export const INSTRUCTIONS = 'Pinroute Trip Planner plans holidays and multi-stop trips with the traveller and keeps them in their Pinroute account. '
   + 'It fits when someone wants to plan a trip, is deciding where to go for the days they are free or when to visit a country, '
   + 'wants to compare flight deals for a trip, or wants a day-by-day route with flights, ferries, hotels and local favourites. '
-  + 'Start with plan_new_trip when the traveller is still choosing where or when to go, or create_trip when they already know their stops; '
+  + 'A trip usually starts from the traveller\'s own words ("I want to go to Japan in April"): plan_new_trip takes those words as wishes, with every field they give, '
+  + 'and the planner opens at the next step that still needs the traveller; its "I know when" and "I know where" set-up is there for when the words don\'t say enough. '
+  + 'create_trip fits when they already know their stops. For a trip that travels around, suggest_routes keeps two or three route options the traveller compares on the planner\'s map. '
   + 'open_planner shows trips they saved before. '
   + 'Its own lookups cover live airline fares and recent Aviasales prices (search_flights, scan_flight_deals), a Booking.com search for each stop\'s dates (hotel_link), '
   + 'tours and activities at each stop (find_activities), where to book the ferries, buses and trains between stops (find_transport), and each trip\'s route with its flight, ferry and road legs. Pinroute never books or pays for anything. '
@@ -129,12 +131,38 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       transport: { partnerLinks: transport.linksOn(env) },
       activities: { on: acts.configured(env), partnerLinks: tp.linksOn(env) },
       calendar: { links: cal.calendarLinks(trip.calendar?.token, env), hosted: !!cal.publicBase(env) },
+      options: routeOptions(trip),
     };
+  }
+  // Route options Claude suggested for the trip: each with its own dates and legs, and the one the route follows now
+  const routeSig = (stops) => stops.map((x) => `${String(x.place).toLowerCase()}:${x.nights}`).join('>');
+  function routeOptions(trip) {
+    const now = routeSig(trip.stops);
+    return (trip.options || []).map((o) => {
+      const t = { ...trip, stops: o.stops };
+      const rows = schedule(t);
+      return { id: o.id, name: o.name, why: o.why || '', nights: rows.reduce((n, x) => n + x.nights, 0), current: routeSig(o.stops) === now,
+        stops: rows.map((x, i) => ({ index: i, place: x.place, nights: x.nights, arrive: x.arrive, depart: x.depart, iata: x.iata, region: x.region, island: !!x.island })),
+        legs: legs(t).map((l) => ({ ...l, chosen: null, stale: null, booked: false, note: null })) };
+    });
+  }
+  // One map for all the options, so they line up on the same coastline: points per option
+  function routesMap(trip) {
+    const opts = trip.options || [];
+    if (!opts.length) return null;
+    const all = opts.flatMap((o) => o.stops);
+    const m = tripMap(all);
+    if (!m) return null;
+    let at = 0;
+    const points = {};
+    for (const o of opts) { points[o.id] = m.points.slice(at, at + o.stops.length); at += o.stops.length; }
+    return { w: m.w, h: m.h, land: m.land, points };
   }
   // The map goes in _meta: the planner draws it, the model never needs the coastline
   const viewResult = (trip, line) => {
     const v = tripView(trip);
-    return { content: [text(line ?? summary(v))], structuredContent: v, _meta: { map: tripMap(trip.stops), mini: tripMap(trip.stops, { w: 320, h: 200, pad: 20 }) } };
+    const opts = v.options.length ? `\nRoute options: ${v.options.map((o) => `${o.id} "${o.name}"${o.current ? ' (the route now)' : ''}: ${o.stops.map((x) => `${x.place} (${x.nights}n)`).join(' → ')}`).join('; ')}.` : '';
+    return { content: [text((line ?? summary(v)) + opts)], structuredContent: v, _meta: { map: tripMap(trip.stops), mini: tripMap(trip.stops, { w: 320, h: 200, pad: 20 }), routes: routesMap(trip) } };
   };
 
   // The start screen: the trips (the one under way first, then what's ahead, then the rest) and the new-trip draft
@@ -227,6 +255,45 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const next = { ...t, ...(name && { name }), ...(start && { start }), ...(adults && { adults }), ...(home_airport && { home: home_airport.toUpperCase() }) };
     if (stops) next.stops = resolveStops(stops);
     return viewResult(store.putTrip(owner, next));
+  }));
+
+  // ---- route options: two or three ways to travel around, compared on the map before one becomes the route
+  const totalNights = (stops) => stops.reduce((n, x) => n + x.nights, 0);
+  server.registerTool('suggest_routes', {
+    title: 'Suggest route options',
+    description: 'Saves two or three different routes for a trip that travels around, for the traveller to compare: each with a short name, a line on why, and its stops in travel order with the nights at each (as in update_trip). The planner shows them side by side on the map; the trip\'s route stays as it is until one is chosen with choose_route. For a trip started from a flight, every option keeps the trip\'s nights, starts where the flight lands and ends with 0 nights where the flight home leaves. New options replace the ones saved before.',
+    inputSchema: {
+      trip_id: z.string().max(40),
+      options: z.array(z.object({
+        name: z.string().min(1).max(60).describe('A short name, e.g. "Islands first" or "The classic loop"'),
+        why: z.string().max(400).optional().describe('What makes this route different, in a line or two'),
+        stops: z.array(stopSchema).min(1).max(20),
+      })).min(2).max(3),
+    },
+    annotations: { title: 'Suggest route options', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, mine(async ({ trip_id, options }) => {
+    const t = store.getTrip(owner, trip_id);
+    if (!t) return noTrip(trip_id);
+    const want = t.ticket ? totalNights(t.stops) : null;
+    const off = want != null && options.find((o) => totalNights(o.stops) !== want);
+    if (off) return fail(`"${off.name}" has ${totalNights(off.stops)} nights; the trip's flights leave room for ${want}. Each option keeps the same nights.`);
+    const saved = store.putTrip(owner, { ...t, options: options.map((o, i) => ({ id: 'ABC'[i], name: o.name.trim(), why: (o.why || '').trim(), stops: resolveStops(o.stops) })) });
+    return viewResult(saved, `Saved ${options.length} route options for "${saved.name}"; the planner shows them on the map to compare. The route stays as it was until the traveller picks one (choose_route).`);
+  }));
+
+  server.registerTool('choose_route', {
+    title: 'Choose a route option',
+    description: 'Makes one of the route options saved with suggest_routes the trip\'s route. The other options stay saved, so the traveller can switch back. Flights chosen for legs that no longer exist stay saved but are not shown.',
+    inputSchema: { trip_id: z.string().max(40), option: z.string().min(1).max(4).describe('The option\'s letter: A, B or C') },
+    annotations: { title: 'Choose a route option', readOnlyHint: false, destructiveHint: true },
+  }, mine(async ({ trip_id, option }) => {
+    const t = store.getTrip(owner, trip_id);
+    if (!t) return noTrip(trip_id);
+    const o = (t.options || []).find((x) => x.id === option.toUpperCase());
+    if (!o) return fail(`No route option ${option} on "${t.name}". ${t.options?.length ? `Options: ${t.options.map((x) => x.id).join(', ')}.` : 'suggest_routes saves some first.'}`);
+    if (t.ticket && totalNights(o.stops) !== totalNights(t.stops)) return fail(`"${o.name}" no longer fits the trip's flights (${totalNights(o.stops)} nights, the trip has ${totalNights(t.stops)}). suggest_routes saves options for the new dates.`);
+    const saved = store.putTrip(owner, { ...t, stops: o.stops });
+    return viewResult(saved, `"${saved.name}" now follows option ${o.id}, "${o.name}": ${o.stops.map((x) => `${x.place} (${x.nights}n)`).join(' → ')}.`);
   }));
 
   server.registerTool('set_nights', {
@@ -542,7 +609,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const today = new Date().toISOString().slice(0, 10);
     const last = store.listTrips(owner).find((t) => t.home);
     const from = addDays(today, 30);
-    return { way: 'when', step: 'when', from, until: addDays(from, 20), minNights: 9, maxNights: 12, adults: last?.adults || 2, budget: 0,
+    return { way: 'prompt', step: 'prompt', datesSet: false, from, until: addDays(from, 20), minNights: 9, maxNights: 12, adults: last?.adults || 2, budget: 0,
       homes: last ? [last.home] : [], regions: [], interests: [], compare: [], country: null, deals: {}, wishes: '', focus: {} };
   }
   const draftOf = () => store.getDraft(owner) || { ...freshDraft(), updated: null };
@@ -586,7 +653,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const target = dr.country ? destById(dr.country) : null;
     const lines = [
       line,
-      `New-trip draft (${dr.way === 'where' ? 'I know where' : 'I know when'}, at ${dr.step}): free ${dr.from} to ${dr.until}, ${dr.minNights}–${dr.maxNights} nights, ${dr.adults} adult${dr.adults === 1 ? '' : 's'}${dr.budget ? `, budget ${eur(dr.budget)}` : ''}, from ${dr.homes.join(', ') || 'no airport yet'}.`,
+      `New-trip draft (${dr.way === 'where' ? 'I know where' : dr.way === 'prompt' ? 'from the traveller\'s words' : 'I know when'}, at ${dr.step}): free ${dr.from} to ${dr.until}, ${dr.minNights}–${dr.maxNights} nights, ${dr.adults} adult${dr.adults === 1 ? '' : 's'}${dr.budget ? `, budget ${eur(dr.budget)}` : ''}, from ${dr.homes.join(', ') || 'no airport yet'}.`,
       target ? `Country: ${target.name}, best ${bestMonthsText(target)}.` : `Best matches for ${months.map((m) => MONTHS[m]).join(' and ')}: ${view.top.slice(0, 6).map((t) => `${t.name} (${t.fit.toLowerCase()}${t.hours ? `, about ${t.hours} h` : ''})`).join(', ')}.`,
       dr.wishes ? `The traveller's wishes: "${dr.wishes}"` : null,
       ...Object.entries(dr.focus || {}).map(([id, f]) => `Focus for ${name(id)}: ${f.area} (fares to ${f.airports.join(', ')}).`),
@@ -609,8 +676,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   }
 
   const draftSchema = {
-    way: z.enum(['when', 'where']).optional().describe('"when": the traveller knows their free dates; "where": they know the country'),
-    step: z.enum(['when', 'where', 'flights', 'country', 'season']).optional().describe('Screen to show: when, where, flights; or country, season for the "where" way'),
+    way: z.enum(['prompt', 'when', 'where']).optional().describe('"prompt": from the traveller\'s own words (a new draft starts here); "when": they set up their free dates by hand; "where": they pick the country by hand. Left out, a draft started from words moves on by itself to the next step the words leave open'),
+    step: z.enum(['prompt', 'when', 'where', 'flights', 'country', 'season']).optional().describe('Screen to show: prompt; when, where, flights; or country, season for the "where" way'),
     free_from: DATE.optional().describe('First day the traveller could leave'),
     free_until: DATE.optional().describe('Last day they could be back'),
     min_nights: z.number().int().min(1).max(60).optional(),
@@ -632,7 +699,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   };
   registerAppTool(server, 'plan_new_trip', {
     title: 'Plan a trip (where and when to go)',
-    description: 'Use when someone wants to plan a trip, is deciding where or when to travel, or wants ideas for the days they are free. Shows Pinroute\'s new-trip planner and saves what the traveller said to their draft: when they are free, how many nights, how many travel, a budget, the airports they can fly from, regions, interests, countries to compare, their wishes in their own words, and a focus on part of a country with that area\'s airports. The planner ranks 60 countries by the weather in those months, the flight time and the budget, and shows the flight deals saved for each; with a focus, fares are looked up to that area\'s airports. With country set it shows that country\'s best months and the fares found in each. Fields left out stay as they were.',
+    description: 'Use when someone wants to plan a trip, is deciding where or when to travel, or wants ideas for the days they are free. For a new trip described in a message ("I want to go on a trip to …"), reset starts a fresh draft, wishes keeps the traveller\'s words, and the fields hold what the words say (a month or season as its first and last day); the planner then opens at the next step still open: the country\'s best months, the countries that suit those dates, or the flight deals once country and dates are known, and the words stay on the first screen with a manual "I know when" / "I know where" set-up when they don\'t say enough. Shows Pinroute\'s new-trip planner and saves what the traveller said to their draft: when they are free, how many nights, how many travel, a budget, the airports they can fly from, regions, interests, countries to compare, their wishes in their own words, and a focus on part of a country with that area\'s airports. The planner ranks 60 countries by the weather in those months, the flight time and the budget, and shows the flight deals saved for each; with a focus, fares are looked up to that area\'s airports. With country set it shows that country\'s best months and the fares found in each. Fields left out stay as they were.',
     inputSchema: draftSchema,
     annotations: { title: 'Plan a trip (where and when to go)', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     _meta: { ui: { resourceUri: PLANNER_URI } },
@@ -673,6 +740,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     let bad = null;
     const dr = store.updateDraft(owner, (cur) => {
       let d = a.reset ? { ...freshDraft(), homes: cur.homes?.length ? cur.homes : freshDraft().homes, adults: cur.adults || 2 } : { ...freshDraft(), ...cur };
+      const fromWords = d.way === 'prompt' && !a.way && !a.step;
+      if (a.free_from || a.free_until) d.datesSet = true;
       if (a.free_from) { d.from = a.free_from; if (!a.free_until && d.until <= d.from) d.until = addDays(d.from, Math.max(d.maxNights, 7)); }
       if (a.free_until) d.until = a.free_until;
       if (d.until <= d.from) bad = `The last day (${d.until}) has to come after the first (${d.from}).`;
@@ -690,9 +759,15 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
         for (const f of focus) { if (f.area && f.airports.length) d.focus[f.id] = { area: f.area, airports: f.airports }; else delete d.focus[f.id]; }
       }
       if (target) { d.country = target.id; d.way = 'where'; }
-      if (a.way) { d.way = a.way; if (!a.step && !target) d.step = a.way === 'where' ? 'country' : 'when'; }
+      if (a.way) { d.way = a.way; if (!a.step && !target) d.step = { where: 'country', prompt: 'prompt' }[a.way] || 'when'; }
       if (target && !a.step) d.step = 'season';
-      if (a.step) d.step = a.step;
+      if (a.step) { d.step = a.step; if (d.way === 'prompt' && !a.way && a.step !== 'prompt') d.way = a.step === 'country' || a.step === 'season' ? 'where' : 'when'; }
+      // A draft started from the traveller's words goes on to the first step they leave open
+      if (fromWords) {
+        if (target) { d.step = d.datesSet ? 'flights' : 'season'; if (d.datesSet) d.compare = [target.id]; }
+        else if (cmp.ids?.length) { d.way = 'when'; d.step = d.datesSet ? 'flights' : 'when'; }
+        else if (d.datesSet) { d.way = 'when'; d.step = 'where'; }
+      }
       if (bad) return cur;
       // Comparing starts with the four best matches, so the flights step always has countries to price
       if (a.step && !cmp.ids && (d.step === 'where' || d.step === 'flights') && !d.compare.length) d.compare = rankDests(d, homesOf(d)[0]).slice(0, 4).map((r) => r.d.id);

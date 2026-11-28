@@ -53,7 +53,10 @@ test('on a computer: Home, New trip and Trips along the top, and Back retraces t
   await places.getByRole('button', { name: 'New trip' }).click();
   await f.locator('.nt').waitFor();
   assert.equal(await places.locator('[aria-current="page"]').textContent(), 'New trip');
-  assert.equal(await f.locator('.bar .steps .step').count(), 3, 'the steps sit under the bar');
+  assert.equal(await f.locator('#words').count(), 1, 'a new trip starts from the traveller\'s words');
+  await f.getByRole('button', { name: 'I know when' }).click();
+  await f.locator('#w-from').waitFor();
+  assert.equal(await f.locator('.bar .steps .step').count(), 3, 'set up by hand, the steps sit under the bar');
 
   await f.locator('#trips-tab').click();
   await f.locator('#trips-menu .mi').first().waitFor();

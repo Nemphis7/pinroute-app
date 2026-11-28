@@ -1,9 +1,10 @@
-// The new-trip planner, the way Pinroute's artifact worked. Two ways in:
+// The new-trip planner. It starts from the traveller's own words ("I want to go to Japan in April"): Claude fills the
+// draft from them and the planner moves on to the first step the words leave open. Set up by hand, two ways in:
 //   I know when:  When (days off, length, airports) → Where (countries ranked for those months) → Flights (deals)
 //   I know where: Country → Best time (weather and fares by month) → Flights
 // Both end with "Plan <country> with this flight", which creates the trip from the fare. Fares come from Pinroute's
-// own airline search (a quick check) or from Claude, searching with Pinroute's own tools.
-import { ArrowLeft, ArrowRight, MessageSquare, Plane, ExternalLink, X, Building2, Landmark, Trees, Waves, Search, MapPin, RotateCcw, Check } from 'lucide';
+// own search, behind one Find flights button: recent Aviasales prices and live airline fares.
+import { ArrowLeft, ArrowRight, MessageSquare, Plane, ExternalLink, X, Building2, Landmark, Trees, Waves, Search, MapPin, RotateCcw, Check, Sparkles, CalendarDays, Globe } from 'lucide';
 import {
   REGIONS, DESTS, INTERESTS, INTEREST_NAME, LENGTHS, MONTHS, MON, destById, windowMonths, seasonFit, fitLabel, rankDests,
   addDays, diffDays, dealPP, dealRatio, dealLabel, dealsFor, dealNights, budgetFit, roughCost, bestMonthsText, nextMonths, monthsToCheck,
@@ -79,6 +80,7 @@ export function newCard() {
     status = best ? `Best deal: ${best.d.name} from ${money(dealPP(best.best), best.best.currency)} per person` : `Comparing ${d.compare.map((id) => destById(id)?.name).join(', ')}`;
   } else if (target) status = `Best months for ${target.name}: ${bestMonthsText(target)}`;
   else if (d.step === 'where') status = `Best for ${monthNames()}: ${rankDests(d, home()).slice(0, 3).map((r) => r.d.name).join(', ')}`;
+  else if (d.step === 'prompt') status = d.wishes ? `“${d.wishes}”` : 'Next: tell Claude where you want to go';
   else status = d.way === 'where' ? 'Next: choose the country' : 'Next: where is good then';
   return {
     title: target ? `New trip: ${target.name}` : 'New trip', sub, status,
@@ -90,6 +92,7 @@ export function newCard() {
 
 // ---------------------------------------------------------------- the step bar (full screen)
 export function newSteps() {
+  if (N.d.step === 'prompt') return [];
   const list = STEPS[N.d.way] || STEPS.when;
   return [h('ol', { class: 'steps', 'aria-label': N.d.way === 'where' ? 'I know where' : 'I know when' },
     list.map(([id, label], i) => h('li', {}, h('button', { class: 'step', 'aria-current': N.d.step === id ? 'step' : null, onclick: () => goStep(id) },
@@ -134,11 +137,49 @@ async function askWishes() {
     { poll: refresh, done: () => (N.d.updated || '') > (since || ''), tries: 45 });
 }
 
+// ---------------------------------------------------------------- From the traveller's words (the usual start)
+// The words go to Claude, which fills the draft with save_new_trip_draft; the server then moves the draft on to the
+// first step still open, and the planner follows. "I know when" and "I know where" stay here, small, for setting it up by hand.
+function promptStep() {
+  const text = N.wish ?? N.d.wishes ?? '';
+  const send = () => { const t = (N.wish ?? N.d.wishes ?? '').trim(); if (t) askStart(t); };
+  return [
+    head('Where do you want to go?', 'Say it the way you would tell a friend: where, when, for how long, who is coming. Claude fills in the trip and the planner takes you to the next step.'),
+    h('section', { class: 'prompt' },
+      h('label', { class: 'sr-only', for: 'words', text: 'Describe your trip' }),
+      h('textarea', { id: 'words', rows: 3, maxlength: 500, value: text, placeholder: 'I want to go on a trip to Japan in April for two weeks, cities and some hiking…',
+        oninput: (e) => { N.wish = e.target.value; const b = document.getElementById('words-go'); if (b) b.disabled = !e.target.value.trim() || !!waiting.start; },
+        onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } } }),
+      h('div', { class: 'prompt-acts' },
+        h('button', { id: 'words-go', class: 'primary', disabled: !text.trim() || !!waiting.start, onclick: send }, icon(Sparkles), waiting.start ? 'Claude is on it…' : 'Plan it with Claude'),
+        manualWays())),
+    waiting.start ? h('p', { class: 'note busy', text: 'Claude is setting up your trip from your words; the planner moves on by itself.' }) : null,
+    answerBlock('start', { poll: refresh }),
+  ];
+}
+function manualWays() {
+  const way = (id, ic, title, flow) => h('button', { class: 'way ghost', title: flow, onclick: () => save({ way: id, step: id === 'where' ? 'country' : 'when' }) }, icon(ic), h('span', { text: title }));
+  return h('span', { class: 'ways' }, h('span', { class: 'small', text: 'Or set it up yourself:' }),
+    way('when', CalendarDays, 'I know when', 'When → Where → Flights'), way('where', Globe, 'I know where', 'Country → Best time → Flights'));
+}
+function askStart(text) {
+  N.wish = null;
+  const since = N.d.updated;
+  ask('start', `I want to plan a new trip in Pinroute. In my words: "${text}". Set up my Pinroute draft from it with save_new_trip_draft (the planner is open and follows; leave way and step out, so it moves on by itself): the country if I named one, or the countries worth comparing; my free dates (free_from, free_until; a month or season counts as its first and last day) and the trip length (min_nights, max_nights) if I said them; travellers, budget and departure airports if I said them; regions and interests. For a part of a country I named, such as an island or a region, add a focus with its name and its main airports with scheduled flights (IATA codes, busiest first). Leave my wishes as they are. Then say in two or three lines what you set. If my words don't say enough to choose a country or dates, set what they do say and ask me one short question.`,
+    { poll: refresh, done: () => (N.d.updated || '') > (since || '') && N.d.step !== 'prompt', tries: 45 });
+}
+// From the start screen: a fresh draft with the words, then Claude fills it in
+export async function startFromWords(text) {
+  const r = await go('plan_new_trip', { reset: true, way: 'prompt', wishes: text });
+  if (r) askStart(text);
+}
+export const startPrompt = () => go('plan_new_trip', { way: 'prompt' });
+
 // ---------------------------------------------------------------- the screen
 export const newKey = () => `new|${N.d.step}`;
 export function newScreen() {
   const step = N.d.step;
-  const body = { when: whenStep, where: whereStep, flights: flightsStep, country: countryStep, season: seasonStep }[step] || whenStep;
+  const body = { prompt: promptStep, when: whenStep, where: whereStep, flights: flightsStep, country: countryStep, season: seasonStep }[step] || whenStep;
   const mapFirst = narrow() && (step === 'where' || step === 'country');
   const map = mapPane();
   return h('div', { class: 'nt' },
@@ -275,6 +316,11 @@ function whereStep() {
       h('button', { onclick: askTake }, icon(MessageSquare), 'Ask Claude about these'),
       h('span', { class: 'small', text: waiting.take ? 'Claude is answering; it shows here.' : 'Festivals, crowds and weather caveats for your dates.' })),
     answerBlock('take'),
+    d.compare.length ? h('div', { class: 'picked' },
+      h('span', { class: 'small', text: `Comparing ${d.compare.length} of 8:` }),
+      h('span', { class: 'chips' }, d.compare.map((id) => h('span', { class: 'token' }, h('b', { text: destById(id)?.name || id }),
+        h('button', { class: 'icon ghost', 'aria-label': `Remove ${destById(id)?.name || id}`, onclick: () => toggleCompare(id) }, icon(X))))),
+      h('button', { class: 'ghost clear-all', onclick: () => save({ compare: [] }, 'the traveller cleared the countries to compare.') }, icon(X), 'Clear all')) : null,
     h('ul', { class: 'dests' }, shown.map((r, i) => destRow(r, i, ms))),
     ranked.length > 12 ? h('button', { class: 'ghost', onclick: () => { N.all = !N.all; render(); } }, N.all ? 'Show the top 12' : `Show all ${ranked.length}`) : null,
     stepNav(['When', () => goStep('when')], [`Next: compare flights (${d.compare.length})`, () => goStep('flights'), !d.compare.length],

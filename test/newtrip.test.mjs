@@ -48,7 +48,7 @@ test('starts a draft and saves what the traveller said', async () => {
   assert.ok(!r.isError, JSON.stringify(r.content));
   const v = r.structuredContent;
   assert.equal(v.screen, 'new');
-  assert.deepEqual([v.draft.from, v.draft.until, v.draft.minNights, v.draft.maxNights, v.draft.step, v.draft.way], [FROM, UNTIL, 9, 12, 'when', 'when']);
+  assert.deepEqual([v.draft.from, v.draft.until, v.draft.minNights, v.draft.maxNights, v.draft.step, v.draft.way], [FROM, UNTIL, 9, 12, 'where', 'when'], 'free dates in the words: on to where is good then');
   assert.deepEqual(v.homes.map((a) => [a.code, a.city]), [['FRA', 'Frankfurt am Main'], ['MUC', 'Munich']]);
   assert.equal(v.top.length, 8);
   assert.match(r.content[0].text, /free .* 9–12 nights, 2 adults, budget €5,000, from FRA, MUC\.\nBest matches for /);
@@ -170,6 +170,26 @@ test('the I-know-where way: a country, its best months, then flights for one mon
   assert.match(r.content[0].text, /Country: Japan, best Mar–May, Oct–Nov\./);
   const reset = await call('plan_new_trip', { reset: true });
   const d = reset.structuredContent.draft;
-  assert.deepEqual([d.homes, d.adults, d.compare, d.country, d.step], [['FRA', 'MUC'], 2, [], null, 'when'], 'a new draft keeps only the airports and travellers');
+  assert.deepEqual([d.homes, d.adults, d.compare, d.country, d.step], [['FRA', 'MUC'], 2, [], null, 'prompt'], 'a new draft keeps only the airports and travellers, and starts from the words');
   assert.deepEqual(reset.structuredContent.deals, {});
+});
+
+test('from the traveller\'s words: the draft moves on to the first step the words leave open', async () => {
+  const words = 'I want to go on a trip to Japan in April for two weeks';
+  const fresh = (await call('plan_new_trip', { reset: true, way: 'prompt', wishes: words })).structuredContent.draft;
+  assert.deepEqual([fresh.way, fresh.step, fresh.wishes], ['prompt', 'prompt', words], 'words alone stay on the first screen');
+  const country = (await call('save_new_trip_draft', { country: 'Japan' })).structuredContent.draft;
+  assert.deepEqual([country.way, country.step], ['where', 'season'], 'a country without dates: its best months');
+  await call('plan_new_trip', { reset: true, way: 'prompt', wishes: words });
+  const both = await call('save_new_trip_draft', { country: 'Japan', free_from: addDays(FROM, 30), free_until: addDays(FROM, 50), min_nights: 13, max_nights: 15 });
+  assert.deepEqual([both.structuredContent.draft.way, both.structuredContent.draft.step, both.structuredContent.draft.compare], ['where', 'flights', ['392']], 'country and dates: straight to the flight deals');
+  assert.match(both.content[0].text, /New-trip draft \(I know where, at flights\)/);
+  await call('plan_new_trip', { reset: true, wishes: 'Somewhere warm in March' });
+  const dates = (await call('save_new_trip_draft', { free_from: addDays(FROM, 5), free_until: addDays(FROM, 25) })).structuredContent.draft;
+  assert.deepEqual([dates.way, dates.step], ['when', 'where'], 'dates without a country: where is good then');
+  await call('plan_new_trip', { reset: true });
+  const several = (await call('save_new_trip_draft', { compare: ['Vietnam', 'Thailand'] })).structuredContent.draft;
+  assert.deepEqual([several.way, several.step], ['when', 'when'], 'countries without dates: when you are free');
+  const byHand = (await call('plan_new_trip', { reset: true, step: 'country' })).structuredContent.draft;
+  assert.deepEqual([byHand.way, byHand.step], ['where', 'country'], 'a step set by hand picks its way');
 });
