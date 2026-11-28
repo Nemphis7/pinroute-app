@@ -62,14 +62,27 @@ export function findAirports(query, limit = 8) {
   return list.slice(0, limit);
 }
 
+// Pinroute's Thailand place a typed stop names, if any. The whole name, or its words as words: "Khao Sok" and
+// "Koh Lanta Yai" find theirs, "Favignana" is not "Nan" and "Paisley" is not "Pai".
+const words = (s) => ` ${norm(s)} `;
+function curatedFor(text) {
+  const q = norm(text);
+  if (!q) return null;
+  const wq = words(q);
+  return PLACES.find((x) => norm(x.id) === q.replace(/ /g, '-') || norm(x.name) === q || norm(x.short) === q)
+    || PLACES.find((x) => words(x.name).includes(wq) || wq.includes(words(x.short)))
+    || null;
+}
+
 // A stop typed by the traveller ("Ao Nang", "Koh Lanta", "Hoi An") → name, coordinates and its airport. Pinroute's
 // Thailand list knows its places; anywhere else Claude gives the nearest airport and, best, the place's own position.
+// Where Claude gives a position or an airport outside Thailand, a same-named Thai place is not the one meant.
 export function resolvePlace(text, airportHint, { lat, lon, island } = {}) {
-  const q = norm(text);
-  const p = PLACES.find((x) => norm(x.id) === q.replace(/ /g, '-') || norm(x.name) === q || norm(x.short) === q)
-    || PLACES.find((x) => norm(x.name).includes(q) || q.includes(norm(x.short)));
   const hint = airportHint ? airport(airportHint) : null;
   const at = Number.isFinite(lat) && Number.isFinite(lon);
+  let p = curatedFor(text);
+  if (p && at && km(p, { lat, lon }) > 150) p = null;
+  if (p && hint && countryOf(hint.code) !== 'TH') p = null;
   if (at && !p) {
     const a = hint || nearestAirport({ lat, lon });
     return { place: String(text).trim(), placeId: null, region: a?.country || null, lat, lon, iata: a?.code || null, island: !!island };
@@ -79,6 +92,16 @@ export function resolvePlace(text, airportHint, { lat, lon, island } = {}) {
   const a = hint || findAirports(text, 1)[0];
   if (a) return { place: String(text).trim(), placeId: null, region: a.country, lat: a.lat, lon: a.lon, iata: a.code, island: !!island };
   return { place: String(text).trim(), placeId: null, region: null, lat: null, lon: null, iata: null, island: false };
+}
+
+// A saved stop that an older, looser match tied to a Thai place its name only contains ("Favignana" → Nan): it goes
+// back to where its own airport is, or to no position at all, rather than drawing the route across the world.
+export function repairStop(s) {
+  if (!s?.placeId) return s;
+  const p = curatedFor(s.place);
+  if (p && p.id === s.placeId) return s;
+  const a = s.iata && countryOf(s.iata) !== 'TH' ? airport(s.iata) : null;
+  return { ...s, placeId: null, region: a?.country || null, lat: a ? a.lat : null, lon: a ? a.lon : null, iata: a?.code || null };
 }
 
 // Airports with scheduled flights within `within` km of a point, busiest first. International ones fly abroad.

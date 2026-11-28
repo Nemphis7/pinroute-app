@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { repairStop } from './geo.mjs';
 
 export const LOCAL = 'local';
 
@@ -61,7 +62,13 @@ function importJson(dir) {
 export const newId = (p) => `${p}_${randomBytes(6).toString('base64url')}`;
 export const placeKey = (place) => String(place || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-const row2trip = (r) => (r ? { ...JSON.parse(r.data), id: r.id, updated: r.updated } : null);
+// Stops saved before a place match was tightened are put right as they are read (see repairStop)
+function repairTrip(t) {
+  if (Array.isArray(t.stops)) t.stops = t.stops.map(repairStop);
+  if (Array.isArray(t.options)) t.options = t.options.map((o) => (Array.isArray(o?.stops) ? { ...o, stops: o.stops.map(repairStop) } : o));
+  return t;
+}
+const row2trip = (r) => (r ? repairTrip({ ...JSON.parse(r.data), id: r.id, updated: r.updated }) : null);
 
 // ---- trips
 export function getTrip(owner, id) {
