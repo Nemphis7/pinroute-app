@@ -422,7 +422,39 @@ function countryDeals({ d, list, fit }) {
       h('p', { class: 'small', text: N.d.focus?.[d.id] ? `${d.region} · fares to ${N.d.focus[d.id].airports.join(', ')}` : `${d.region} · arrive at ${d.gw} or another airport` })),
       h('span', { class: 'fit' }, h('i', { class: `sw f${level(fit)}` }), fl)),
     st?.error ? h('p', { class: 'note warn', text: st.error }) : null,
+    windowStrip(d),
     body);
+}
+
+// Every travel window of the right length in the dates free, from Aviasales's day-by-day calendar: the cheapest return
+// for each departure day. Tapping one checks the live airline fare for exactly that window (one search).
+function windowStrip(d) {
+  const ws = N.view.windows?.[d.id] || [];
+  if (ws.length < 2) return null;
+  const low = Math.min(...ws.map((w) => w.perAdult)), high = Math.max(...ws.map((w) => w.perAdult));
+  const st = N.scan[`w|${d.id}`];
+  return h('section', { class: 'wins', 'aria-label': `${d.name}: cheapest window from each departure day` },
+    h('p', { class: 'small', text: `Cheapest window from each day you could leave, per person (recent Aviasales prices). Tap one to check the live airline fare.` }),
+    h('div', { class: 'wstrip' }, ws.map((w) => h('button', {
+      class: `win${w.perAdult === low ? ' low' : ''}`, disabled: st === 'loading' || !N.homes.length,
+      title: `${day(w.depart)} → ${day(w.return)}, ${nightsTxt(w.nights)}, ${w.from} → ${w.to}, ${w.airline}: ${money(w.perAdult, w.currency)} per person`,
+      style: `--h:${high === low ? 100 : Math.round(35 + (65 * (high - w.perAdult)) / (high - low))}%`,
+      onclick: () => checkWindow(d, w) },
+    h('span', { class: 'wbar' }, h('i')),
+    h('b', { text: money(w.perAdult, w.currency) }),
+    h('span', { class: 'wd', text: dm(w.depart) }),
+    h('span', { class: 'wn', text: `${w.nights}n` })))),
+    st?.error ? h('p', { class: 'note warn', text: st.error }) : null);
+}
+async function checkWindow(d, w) {
+  N.scan[`w|${d.id}`] = 'loading';
+  render();
+  try {
+    await call('scan_flight_deals', { country: d.id, origins: [w.from], destinations: [w.to], depart: w.depart, return: w.return, source: 'live' });
+    N.scan[`w|${d.id}`] = null;
+  } catch (e) { N.scan[`w|${d.id}`] = { error: e.message || String(e) }; }
+  await refresh(true);
+  render();
 }
 
 // ---------------------------------------------------------------- the same dates from other airports, to other airports

@@ -29,7 +29,15 @@ export async function fakeTravelpayouts({ token = 'tp-test' } = {}) {
   app.get('/aviasales/v3/grouped_prices', (req, res) => {
     calls.push({ path: req.path, query: req.query });
     if (!authed(req, res)) return;
-    const { origin: o, destination: d, min_trip_duration: min } = req.query;
+    const { origin: o, destination: d, min_trip_duration: min, max_trip_duration: max, group_by: by, departure_at: dep } = req.query;
+    if (by === 'departure_at') {                     // a day-by-day calendar for one month: the cheapest window from each day
+      const data = {};
+      for (let n = 1; n <= 28; n += 3) {
+        const out = `${dep}-${pad(n)}`, nights = Number(min) + (n % (Number(max) - Number(min) + 1));
+        data[out] = entry(o, d, out, add(out, nights), 300 + ((n * 53) % 170));
+      }
+      return res.json({ success: true, data });
+    }
     const first = new Date();
     const data = {};
     for (let i = 1; i <= 12; i++) {

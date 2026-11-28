@@ -1209,6 +1209,18 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
 .build-entry .main { display: grid; }
 @media (prefers-reduced-motion: reduce) { .bm .bleg.new .route, .bm .bstop.new .pz, .bm .bleg.new .leg-badge .pz, .bl-stop { animation: none; } }
 
+/* New trip: the cheapest window from each departure day, as a strip of bars (taller is cheaper) */
+.wins { display: grid; gap: var(--s-2); }
+.wstrip { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.win { flex: 0 0 auto; display: grid; justify-items: center; gap: 2px; min-width: 52px; padding: 6px 4px; border: 1px solid var(--line); border-radius: var(--r-0); background: var(--paper); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.win .wbar { display: flex; align-items: flex-end; height: 34px; width: 14px; }
+.win .wbar i { display: block; width: 100%; height: var(--h); border-radius: 2px; background: var(--q2); }
+.win b { font-size: 12px; color: var(--ink); }
+.win .wd { font-size: 11px; }
+.win .wn { font-size: 10px; color: var(--ink-3); }
+.win.low { border-color: var(--accent); background: var(--accent-soft); }
+.win.low .wbar i { background: var(--accent); }
+.win:hover:not(:disabled) { border-color: var(--accent); }
 /* ---- flights the traveller already booked (ownflight.js) */
 .own-line { color: var(--ink-3); }
 .link.own-link { font-size: 13px; }
