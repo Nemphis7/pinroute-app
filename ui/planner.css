@@ -1087,3 +1087,101 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
 .ride-ticket { grid-template-columns: minmax(0, 1fr); }
 .ride-ticket .tside { border-left: 0; border-top: 1px dashed var(--line-2); grid-auto-flow: column; justify-content: space-between; align-items: baseline; padding-top: var(--s-2); padding-bottom: var(--s-2); }
 .ride-ticket .tsum { display: flex; align-items: center; gap: var(--s-2); }
+
+/* ---- building the route on the map (builder.js): the list on the left, the map filling the rest. Places to tap are
+   small hollow pins with a plus; stops are the numbered pins; legs draw in as the route changes, each with its plane,
+   boat or car in the middle. */
+.bm { display: none; }
+#app[data-build="true"] .bm { display: block; }
+#app[data-build="true"] .panes > .stage:not(.bm), #app[data-build="true"] .detail { display: none !important; }
+#app[data-layout="app"][data-narrow="false"][data-build="true"] .panes { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); }
+#app[data-layout="app"][data-narrow="false"] .bm { margin: var(--s-3) 0 var(--s-4); }
+#app[data-narrow="true"][data-build="true"] .bm { height: min(56vh, 460px); margin: var(--s-3) 0 var(--s-2); order: -1; }
+#app[data-narrow="true"][data-build="true"] .list { display: block !important; }
+#app[data-layout="stacked"][data-build="true"] .bm { height: 420px; }
+.bm-wrap { touch-action: none; cursor: grab; }
+.bm-wrap:active { cursor: grabbing; }
+.bm .borders { fill: none; stroke: color-mix(in srgb, var(--accent) 30%, var(--line-2)); stroke-width: 0.8; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.bm .land { vector-effect: non-scaling-stroke; stroke-width: 1; }
+.bm .pz { transform: scale(var(--k, 1)); }
+.bm .route, .bm .route-halo { vector-effect: non-scaling-stroke; }
+.bm .route { stroke-width: 2.5; stroke: color-mix(in srgb, var(--accent) 75%, var(--ink-3)); }
+.bm .route-halo { stroke-width: 7; }
+.bm .route.flight { stroke-dasharray: none; animation: none; }
+.bm .m-ferry .route { stroke: #1993b5; }
+.bm .bleg.near .route { stroke: var(--sun); stroke-width: 3.5; }
+.bm .bleg.new .route { stroke-dasharray: 100; animation: draw 900ms var(--ease) both; }
+.bm .bleg.new .route.ground { animation: draw 700ms var(--ease) both; }
+.bm .bleg.new .leg-badge .pz { animation: drop 500ms 450ms var(--spring) both; }
+.bm .leg-badge circle { fill: var(--paper); stroke: color-mix(in srgb, var(--accent) 60%, var(--line-2)); stroke-width: 1.5; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.2)); }
+.bm .leg-badge svg { color: var(--accent); }
+.bm .m-ferry .leg-badge svg { color: #1993b5; }
+.bm .m-road .leg-badge svg { color: var(--ink-2); }
+.bm .cand { cursor: pointer; outline: none; }
+.bm .cand .hit { fill: transparent; }
+.bm .cand .dot { fill: var(--paper); stroke: var(--sun); stroke-width: 2; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.25)); transition: r var(--fast) var(--spring), fill var(--fast) var(--ease); }
+.bm .cand.from-claude .dot { stroke: #8a5cf5; }
+.bm .cand .plus { stroke: var(--sun); stroke-width: 1.6; stroke-linecap: round; }
+.bm .cand.from-claude .plus { stroke: #8a5cf5; }
+.bm .cand:hover .dot, .bm .cand:focus-visible .dot { r: 9; fill: var(--sun); }
+.bm .cand.from-claude:hover .dot, .bm .cand.from-claude:focus-visible .dot { fill: #8a5cf5; }
+.bm .cand:hover .plus, .bm .cand:focus-visible .plus { stroke: #fff; }
+.bm .cand .label { font-size: 11.5px; font-weight: var(--medium); fill: var(--ink-2); font-family: var(--font); paint-order: stroke; stroke: var(--paper); stroke-width: 3.5px; stroke-linejoin: round; pointer-events: none; }
+.bm .cand:hover .label, .bm .cand:focus-visible .label { fill: var(--ink); font-weight: var(--semibold); }
+.bm .nolabel:not(:hover):not(:focus-visible) .label { display: none; }
+.bm .bstop { cursor: pointer; outline: none; }
+.bm .bstop .dot { fill: var(--accent); stroke: var(--paper); stroke-width: 2.5; }
+.bm .bstop .num { font-size: 11px; font-weight: var(--semibold); fill: var(--on-accent); font-family: var(--font); pointer-events: none; }
+.bm .bstop .label { display: block; font-size: 13px; }
+.bm .bstop .label.sub { font-size: 11px; font-weight: var(--medium); fill: var(--ink-2); }
+.bm .bstop.sel .dot { fill: var(--sun); r: 14; }
+.bm .bstop.sel .num { fill: #fff; }
+.bm .bstop .pulse { opacity: 0; animation: none; }
+.bm .bstop.sel .pulse { fill: var(--sun); animation: pulse 2s var(--ease) infinite; }
+.bm .bstop.new .pz { animation: drop 600ms var(--spring) both; }
+.bm .bstop:focus-visible .dot { stroke: var(--ink); }
+.bm-tip { position: absolute; left: var(--s-3); bottom: var(--s-3); max-width: calc(100% - 2 * var(--s-3)); padding: 6px 12px; border-radius: 999px; font-size: 12.5px; line-height: 18px; color: var(--ink);
+  background: rgb(255 255 255 / 0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: var(--sh-2); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-theme="dark"] .bm-tip { background: rgb(30 30 28 / 0.85); }
+.bm-load { position: absolute; inset: 0; display: grid; place-content: center; gap: var(--s-2); justify-items: center; color: var(--ink-2); font-size: 13px; }
+.bm svg.spin, .bl-save svg.spin { animation: spin 1s linear infinite; }
+/* the list */
+.bl-head h2 { margin: 0; font-size: 20px; line-height: 26px; font-weight: var(--semibold); }
+.bl-head { display: grid; gap: var(--s-1); padding: var(--s-1) var(--s-2) var(--s-2); }
+.bl-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3); padding: var(--s-2) var(--s-3); margin: 0 var(--s-2) var(--s-3) 0; border-radius: var(--r-1); background: var(--accent-soft); }
+.bl-sum .warn { color: var(--warn); font-weight: var(--medium); }
+.bl-save { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s-1); color: var(--ink-3); }
+.bl-save svg.i { width: 14px; height: 14px; }
+.bl-search { position: relative; margin: 0 var(--s-2) var(--s-3) 0; }
+.field-ic { display: flex; align-items: center; gap: var(--s-2); border: 1px solid var(--line-2); border-radius: var(--r-1); padding: 0 var(--s-3); background: var(--paper); color: var(--ink-3); }
+.field-ic:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.field-ic input { flex: 1; border: 0; outline: none; background: transparent; padding: 9px 0; min-width: 0; font: inherit; color: var(--ink); box-shadow: none; }
+.bl-found { list-style: none; margin: var(--s-1) 0 0; padding: var(--s-1); border: 1px solid var(--line); border-radius: var(--r-1); background: var(--paper); box-shadow: var(--sh-2); }
+.bl-found .row svg.i { color: var(--sun); flex: none; }
+.bl-rail { list-style: none; margin: 0; padding: 0 var(--s-2) 0 0; display: grid; gap: 0; }
+.bl-stop { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-1) var(--s-2); padding: 4px 6px 4px 0; border-radius: var(--r-2); animation: rise 300ms var(--ease) both; }
+.bl-stop.sel { background: var(--sun-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sun) 35%, transparent); }
+.bl-name, .bl-name[aria-pressed="true"], .bl-name:hover { background: none; box-shadow: none; border-color: transparent; color: var(--ink); }
+.bl-name { display: flex; align-items: center; gap: var(--s-3); border: 0; background: none; padding: 4px var(--s-2); text-align: left; min-width: 0; color: var(--ink); }
+.bl-name .main { display: grid; min-width: 0; }
+.bl-name .place { font-weight: var(--semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-name .sub { font-size: 12px; line-height: 16px; color: var(--ink-2); }
+.bl-stop .badge-n { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.bl-stop.sel .badge-n { background: var(--sun); border-color: var(--sun); color: #fff; }
+.stepper.sm { padding: 2px; }
+.stepper.sm .val { min-width: 22px; font-weight: var(--semibold); }
+.stepper.sm button { width: 28px; min-height: 28px; padding: 4px; }
+.bl-tools { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--s-1); padding: 0 0 var(--s-1) 44px; }
+.bl-tools button { min-height: 30px; padding: 4px 10px; font-size: 13px; }
+.bl-tools .danger { color: var(--sun); }
+.bl-leg { display: flex; align-items: center; gap: var(--s-2); padding: 2px 0 2px 17px; font-size: 12px; color: var(--ink-3); position: relative; }
+.bl-leg svg.i { width: 14px; height: 14px; padding: 4px; box-sizing: content-box; border-radius: 50%; background: var(--paper); border: 1px solid var(--line-2); color: var(--accent); }
+.bl-leg.m-ferry svg.i { color: #1993b5; }
+.bl-leg.m-road svg.i { color: var(--ink-2); }
+.bl-acts { padding: var(--s-4) var(--s-2) var(--s-2) 0; flex-wrap: wrap; }
+.build-entry { width: calc(100% - var(--s-2)); display: flex; align-items: center; gap: var(--s-3); text-align: left; margin: 0 0 var(--s-3); padding: var(--s-3); border-radius: var(--r-1);
+  border: 1px dashed color-mix(in srgb, var(--sun) 55%, var(--line-2)); background: var(--sun-soft); color: var(--ink); }
+.build-entry:hover { border-style: solid; }
+.build-entry > svg.i { color: var(--sun); width: 20px; height: 20px; flex: none; }
+.build-entry .main { display: grid; }
+@media (prefers-reduced-motion: reduce) { .bm .bleg.new .route, .bm .bstop.new .pz, .bm .bleg.new .leg-badge .pz, .bl-stop { animation: none; } }

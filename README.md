@@ -13,7 +13,7 @@ Claude (the traveller's own plan)
  └─ shows the planner (ui/, one HTML; Back, Home, New trip, Trips)       ├─ checks the token (src/auth.mjs)
       ├─ start screen: I know when / I know where, the trips              ├─ trips, draft, fares, picks per person (SQLite on the volume)
       ├─ new trip: When → Where → Flights, Country → Best time → Flights  ├─ 60 countries by season and price level (src/discover.mjs)
-      ├─ a trip: route, flights, ferries, local picks                     ├─ airports and Thailand places (src/data)
+      ├─ a trip: route (or build it on the map), flights, ferries, local picks                     ├─ airports and Thailand places (src/data)
       └─ "Ask Claude": Claude searches with the traveller's tools ──────► └─ fares: Amadeus Travel Builder, or demo
 ```
 
@@ -26,6 +26,8 @@ Claude (the traveller's own plan)
 | `start_trip_from_flight` | A trip from a saved fare: from landing to the flight home, the fare on both flights | writes |
 | `set_trip_fare` | Moves a trip to another saved fare: dates follow the flights, nights go to or come from the longest stays, a new arrival or departure airport joins the route | changes |
 | `create_trip` / `update_trip` / `delete_trip` / `list_trips` | Multi-stop trips with nights per stop; dates and legs are worked out; stops anywhere by coordinates | writes / changes / deletes / reads |
+| `save_route_ideas` | Places worth a stop on a trip, with coordinates, airport and a why, shown as pins to tap on the planner's map | writes |
+| `route_map` | For the planner only: the places to tap when building a route on the map (Pinroute's Thailand places, the cities with flights elsewhere, Claude's ideas) and the map around them | reads |
 | `set_nights` / `mark_leg` | Nights at one stop; a leg booked, with a note | writes |
 | `choose_flight` / `clear_flight` | Saves or removes the flight picked for a leg, such as a fare from `search_flights` or the new-trip draft | writes / deletes |
 | `search_flights` | Airline fares for one day or a return, cheapest first; daily limit per person | reads |

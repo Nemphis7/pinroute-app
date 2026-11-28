@@ -8,7 +8,7 @@ before(async () => { srv = await startServer(null, { SEARCH_LIMIT_PER_DAY: '6' }
 after(async () => { await client.close(); srv.server.close(); });
 
 const TOOLS = ['calendar_link', 'choose_flight', 'choose_stay', 'choose_transport', 'clear_flight', 'clear_stay', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'find_transport', 'flight_link', 'get_local_picks', 'hotel_link', 'list_trips', 'mark_leg', 'open_planner',
-  'plan_new_trip', 'planner_answers', 'save_flight_deals', 'save_local_picks', 'save_new_trip_draft', 'save_transport_options', 'scan_flight_deals', 'search_flights', 'set_nights', 'set_trip_fare', 'show_answer', 'start_trip_from_flight', 'update_trip'];
+  'plan_new_trip', 'planner_answers', 'route_map', 'save_flight_deals', 'save_local_picks', 'save_new_trip_draft', 'save_route_ideas', 'save_transport_options', 'scan_flight_deals', 'search_flights', 'set_nights', 'set_trip_fare', 'show_answer', 'start_trip_from_flight', 'update_trip'];
 
 test('lists every tool, each with a title and the right read or write annotation', async () => {
   const { tools } = await client.listTools();
@@ -216,4 +216,39 @@ test('a booked flight left on old dates is named as booked, with what to do abou
   const v = { legs: [{ fromName: 'Ao Nang', toName: 'Bangkok', stale: { date: '2027-03-02', booked: true } }, { fromName: 'A', toName: 'B', stale: null }], stays: [] };
   assert.equal(movedNote(v), ' The dates moved, so these need a new pick: the flight Ao Nang → Bangkok (saved for 2027-03-02, marked booked). Bookings made for the old dates have to be changed or cancelled with the airline or hotel; Pinroute does not do that.');
   assert.equal(movedNote({ legs: [], stays: [] }), '');
+});
+
+test('the map to build a route on: Pinroute\'s places to tap, Claude\'s ideas first, the projection to place them', async () => {
+  const id = (await client.callTool({ name: 'create_trip', arguments: { ...THAILAND_TRIP, name: 'Map build' } })).structuredContent.trip.id;
+  const { tools } = await client.listTools();
+  assert.deepEqual(tools.find((t) => t.name === 'route_map')._meta.ui.visibility, ['app']);
+  let r = await client.callTool({ name: 'route_map', arguments: { trip_id: id } });
+  assert.deepEqual(r.structuredContent.countries, ['Thailand']);
+  const names = r.structuredContent.places.map((p) => p.name);
+  assert.ok(names.includes('Koh Samui') && names.includes('Chiang Mai'), 'Pinroute\'s Thailand places');
+  const m = r._meta.map;
+  assert.ok(m.land.length > 1000 && m.k > 0 && Number.isFinite(m.tx) && Number.isFinite(m.ty));
+  const rad = (d) => (d * Math.PI) / 180;
+  for (const p of r.structuredContent.places) {
+    const x = m.k * rad(p.lon) + m.tx, y = m.ty - m.k * Math.log(Math.tan(Math.PI / 4 + rad(p.lat) / 2));
+    assert.ok(x >= 0 && x <= m.w && y >= 0 && y <= m.h, `${p.name} is on the map`);
+  }
+  r = await client.callTool({ name: 'save_route_ideas', arguments: { trip_id: id, places: [{ place: 'Khao Yai', lat: 14.44, lon: 101.37, why: 'Jungle, waterfalls and wild elephants' }] } });
+  assert.equal(r.structuredContent.ideas[0].iata, 'BKK', 'the nearest airport when none is given');
+  await client.callTool({ name: 'save_route_ideas', arguments: { trip_id: id, places: [{ place: 'Khao Yai', lat: 14.44, lon: 101.37, why: 'Updated' }, { place: 'Koh Kradan', lat: 7.31, lon: 99.25, island: true, airport: 'TST' }] } });
+  r = await client.callTool({ name: 'route_map', arguments: { trip_id: id } });
+  const ideas = r.structuredContent.places.filter((p) => p.from === 'claude');
+  assert.deepEqual(ideas.map((p) => [p.name, p.why, p.island]), [['Khao Yai', 'Updated', false], ['Koh Kradan', null, true]]);
+  // A stop placed on the map keeps its coordinates and airport
+  r = await client.callTool({ name: 'update_trip', arguments: { trip_id: id, stops: [{ place: 'Bangkok', nights: 2 }, { place: 'Phu Tok', nights: 2, lat: 18.17, lon: 103.97, airport: 'UTH' }, { place: 'Bangkok', nights: 0 }] } });
+  assert.deepEqual([r.structuredContent.stops[1].lat, r.structuredContent.stops[1].lon, r.structuredContent.stops[1].iata], [18.17, 103.97, 'UTH']);
+});
+
+test('the places to tap elsewhere are the cities with flights, named as travellers say them', async () => {
+  const id = (await client.callTool({ name: 'create_trip', arguments: { name: 'Japan', start: START, adults: 2, stops: [{ place: 'Tokyo', nights: 4, airport: 'HND', lat: 35.68, lon: 139.69 }, { place: 'Osaka', nights: 0, airport: 'KIX', lat: 34.69, lon: 135.5 }] } })).structuredContent.trip.id;
+  const r = await client.callTool({ name: 'route_map', arguments: { trip_id: id } });
+  assert.deepEqual(r.structuredContent.countries, ['Japan']);
+  const names = r.structuredContent.places.map((p) => p.name);
+  for (const n of ['Sapporo', 'Fukuoka', 'Hiroshima', 'Sendai']) assert.ok(names.includes(n), n);
+  assert.ok(!names.includes('Natori'));
 });

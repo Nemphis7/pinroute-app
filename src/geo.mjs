@@ -23,7 +23,7 @@ const CITY = {
   FLR: 'Florence', GOA: 'Genoa', TRN: 'Turin', VRN: 'Verona', ADB: 'Izmir', CHQ: 'Chania', CFU: 'Corfu', FUE: 'Fuerteventura',
   ACE: 'Lanzarote', MAH: 'Menorca', DJE: 'Djerba', OUD: 'Oujda', DMM: 'Dammam', MRU: 'Mauritius', SID: 'Sal', BVC: 'Boa Vista',
   RUN: 'Réunion', SEZ: 'Mahé', ANU: 'Antigua', VRA: 'Varadero', MVD: 'Montevideo', IAD: 'Washington', EWR: 'New York',
-  GIG: 'Rio de Janeiro', SPN: 'Saipan', KUT: 'Kutaisi', NYO: 'Stockholm', EMA: 'East Midlands', MLA: 'Malta',
+  GIG: 'Rio de Janeiro', SDJ: 'Sendai', FSZ: 'Shizuoka', IBR: 'Ibaraki', SPN: 'Saipan', KUT: 'Kutaisi', NYO: 'Stockholm', EMA: 'East Midlands', MLA: 'Malta',
 };
 const plainCity = (s) => String(s).replace(/\s*\(.*\)\s*$/, '').split(/\s*\/\s*/)[0].split(',')[0].trim() || String(s);
 for (const r of AIR.a) {
@@ -124,3 +124,22 @@ export function km(a, b) {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
   return Math.round(2 * R * Math.asin(Math.sqrt(h)));
 }
+
+// The country an airport is in, as its two-letter code
+export const countryOf = (code) => BY.get(String(code || '').toUpperCase())?.[3] || null;
+export const countryName = (cc) => COUNTRY[cc] || null;
+
+// Places to visit in a country that a traveller can reach: one per city with scheduled flights (its busiest airport),
+// busiest first. Used as the pins to tap when building a route on the map, where Pinroute has no curated list.
+export function countryCities(cc, limit = 24) {
+  const byCity = new Map();
+  for (const r of AIR.a) {
+    if (r[3] !== cc || !r[7]) continue;
+    if (!byCity.has(r[1]) || (r[8] || 0) > (byCity.get(r[1])[8] || 0)) byCity.set(r[1], r);
+  }
+  return [...byCity.values()].sort((a, b) => (b[8] || 0) - (a[8] || 0)).slice(0, limit)
+    .map((r) => ({ name: r[1], lat: r[4], lon: r[5], iata: r[0], region: COUNTRY[r[3]] || r[3], served: r[8] || 0 }));
+}
+
+// Pinroute's curated places for a country, when it has them (Thailand)
+export const curatedPlaces = (cc) => (cc === 'TH' ? PLACES.map((p) => ({ id: p.id, name: p.name.split(' & ')[0], lat: p.lat, lon: p.lon, iata: p.iata, region: p.region, island: !!p.island })) : []);
