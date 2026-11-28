@@ -18,7 +18,7 @@ import { tripMenu, tripDialog } from './tripmenu.js';
 import { applyInsets } from './keyboard.js';
 import { scene, kindOf } from './scene.js';
 import { stageEl, updateStage } from './stage.js';
-import { filtered, filterBar, quotes, dateStrip } from './fares.js';
+import { filtered, filterBar, quotes, dateStrip, searching, fareCard, standouts, clearFilters } from './fares.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
@@ -68,6 +68,9 @@ function render() {
   root.dataset.screen = screen;
   root.dataset.narrow = String(L !== 'card' && narrow());
   root.dataset.pane = pane;
+  // While a leg shows fares, the map beside it makes room for them
+  const fs = screen === 'trip' && sel?.kind === 'leg' ? fares[sel.key]?.state : null;
+  root.dataset.fares = String(fs === 'loading' || fs === 'done');
   bar(L);
   if (screen === 'trip') renderTrip(L);
   else if (L === 'card') fillCard(screen === 'home' ? homeCard() : newCard());
@@ -660,7 +663,7 @@ function flightBlock(l) {
   return [
     l.stale ? h('div', { class: 'note warn' }, `A flight was chosen for ${day(l.stale.date)}, before the dates moved: ${l.stale.summary}, ${money(l.stale.price, l.stale.currency)}. Choose one for ${day(l.date)}. `,
       h('button', { class: 'link', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove it')) : null,
-    h('div', { class: 'acts' }, findButton(l, 'primary')),
+    h('div', { class: 'acts' }, findButton(l, fares[l.key]?.state === 'done' ? '' : 'primary')),
     ...results(l),
   ].filter(Boolean);
 }
@@ -670,7 +673,7 @@ const findButton = (l, cls) => h('button', { class: cls || null, disabled: fares
 function results(l) {
   const st = fares[l.key] || {};
   return [
-    st.state === 'loading' ? skeleton('Searching airline fares for the day and the days around it, and Aviasales…', 3) : null,
+    st.state === 'loading' ? searching(l.from, l.to, l.date) : null,
     st.state === 'error' ? h('p', { class: 'note warn', text: st.error }) : null,
     st.state === 'done' ? faresBlock(l, st) : null,
     st.state === 'done' && V.flights.partnerLinks ? commissionNote() : null,
@@ -705,35 +708,23 @@ function transferBlock(l) {
 }
 
 function faresBlock(l, st) {
-  const top = [quotes(st, (url) => app.openLink({ url }), (url) => app.openLink({ url })), dateStrip(st, l.date)].filter(Boolean);
+  const open = (url) => app.openLink({ url });
+  const top = [quotes(st, open, open), dateStrip(st, l.date)].filter(Boolean);
   if (!st.fares.length) {
-    return h('div', { class: 'block' }, ...top,
+    return h('div', { class: 'block fresults' }, ...top,
       h('p', { class: 'note', text: `No offers from ${st.live ? 'the airlines Amadeus covers' : 'this source'} on this day. Check the days around it above, or Aviasales.` }));
   }
-  const list = filtered(st);
-  return h('div', { class: 'block' },
+  const list = filtered(st), tags = standouts(st.fares);
+  const line = (f) => {
+    const b = f.bounds[0], nos = b.flights.map((x) => x.number).filter((n) => !/^XX/.test(n)).join(', ');
+    return `${f.airline}${nos ? ` ${nos}` : ''}, ${clock(b.departs)} ${b.from} → ${clock(b.arrives)} ${b.to}`;
+  };
+  return h('div', { class: 'block fresults' },
     ...top,
     filterBar(st, render, V.flights.provider),
     st.note ? h('p', { class: 'small', text: st.note }) : null,
-    h('div', { class: 'fares' }, list.slice(0, 8).map((f) => fareCard(l, f))),
-    !list.length ? h('p', { class: 'small', text: 'No fares match these filters.' }) : null);
-}
-
-function fareCard(l, f) {
-  const b = f.bounds[0];
-  const plus = days(String(b.departs).slice(0, 10), String(b.arrives).slice(0, 10));
-  const stops = b.stops ? `${b.stops} stop${b.stops > 1 ? 's' : ''}: ${b.changes.map((c) => `${c.at} ${hm(c.minutes)}`).join(', ')}` : 'Direct';
-  const nos = b.flights.map((x) => x.number).filter((n) => !/^XX/.test(n)).join(', ');
-  const line = `${f.airline}${nos ? ` ${nos}` : ''}, ${clock(b.departs)} ${b.from} → ${clock(b.arrives)} ${b.to}`;
-  return h('div', { class: 'fare' },
-    h('div', {},
-      h('div', { class: 'times' }, h('b', { text: `${clock(b.departs)} ${b.from} → ${clock(b.arrives)} ${b.to}` }), plus > 0 ? h('span', { class: 'plus', text: ` +${plus}` }) : null),
-      h('div', { class: 'small', text: `${f.airline}${nos ? ` · ${nos}` : ''} · ${hm(b.minutes)} · ${stops}` }),
-      h('div', { class: 'small', text: b.bags || 'Checked bags not stated' })),
-    h('div', { class: 'price' }, money(f.total, f.currency), V.trip.adults > 1 && f.perAdult ? h('div', { class: 'small', text: `${money(f.perAdult, f.currency)} each` }) : null),
-    h('div', { class: 'acts' },
-      h('button', { disabled: ui.busy, onclick: () => choose(l, f, line) }, 'Choose'),
-      f.link ? h('button', { class: 'link', onclick: () => app.openLink({ url: f.link }) }, f.demo ? 'Check on Google Flights' : 'Book on the airline’s site') : null));
+    h('div', { class: 'fares' }, list.slice(0, 8).map((f, i) => fareCard(f, { adults: V.trip.adults, tags: tags.get(f) || [], i, busy: ui.busy, onChoose: () => choose(l, f, line(f)), onLink: open }))),
+    !list.length ? h('div', { class: 'empty' }, h('p', { text: 'No flights match these filters.' }), clearFilters(st, render)) : null);
 }
 
 // ---------------------------------------------------------------- actions
@@ -790,6 +781,9 @@ async function findFlights(l) {
     fares[l.key] = { ...fares[l.key], state: 'error', error: e.message || String(e) };
   }
   render();
+  // The results start below the leg's postcard: bring them up when they would open out of sight
+  const res = document.querySelector('.fresults');
+  if (res && res.getBoundingClientRect().top > window.innerHeight * 0.6) res.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
 }
 
 
