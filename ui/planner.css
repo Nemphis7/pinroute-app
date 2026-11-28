@@ -1308,9 +1308,9 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
 .sites { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-radius: var(--r-1); border: 1px solid var(--line); background: var(--paper); }
 .sites-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-2); flex-wrap: wrap; }
 .sites-head .eyebrow { margin: 0; }
-.site-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: var(--s-2); }
+.site-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: var(--s-2); }
 .site-chip { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3) var(--s-2) var(--s-2); min-height: 52px; border-radius: var(--r-2); border: 1px solid var(--line-2); background: var(--paper); color: var(--ink); text-align: left; cursor: pointer; transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease), transform var(--fast) var(--ease); }
-.site-chip:hover:not(:disabled) { border-color: var(--accent); }
+@media (hover: hover) { .site-chip:hover:not(:disabled) { border-color: var(--accent); } }
 .site-chip:active:not(:disabled) { transform: scale(0.98); }
 .site-chip.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .site-chip.miss { border-color: var(--warn); background: var(--warn-soft); box-shadow: inset 0 0 0 1px var(--warn); }
@@ -1331,20 +1331,25 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
 .connect .acts { margin: 0; }
 .site-cmp { display: grid; gap: var(--s-1); padding: var(--s-3); border-radius: var(--r-2); background: var(--paper-2); }
 .site-cmp > .small { margin: 0 0 var(--s-1); }
-.sc-row { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(60px, 0.8fr) auto; align-items: center; gap: var(--s-3); padding: var(--s-2); border-radius: var(--r-2); border: 1px solid transparent; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.sc-row { display: grid; grid-template-columns: auto minmax(0, 1.4fr) minmax(60px, 1fr) minmax(64px, auto); align-items: center; gap: var(--s-3); padding: var(--s-2); border-radius: var(--r-2); border: 1px solid transparent; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .sc-row:hover { background: var(--paper); }
-.sc-row.picked { background: var(--paper); border-color: var(--line-2); }
+.sc-row.sc-picked { background: var(--paper); border-color: var(--line-2); }
 .sc-row .site-mark { width: 28px; height: 28px; font-size: 12px; }
 .sc-who { display: grid; min-width: 0; line-height: 18px; }
-.sc-who b { font-size: 14px; font-weight: var(--medium); }
+.sc-who b { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; font-size: 14px; font-weight: var(--medium); }
 .sc-who .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sc-bar { height: 8px; border-radius: 999px; background: var(--paper-3); overflow: hidden; }
 .sc-bar i { display: block; height: 100%; width: var(--w); border-radius: inherit; background: var(--line-2); transform-origin: left; animation: grow 700ms var(--ease) both 120ms; }
-.sc-row.win .sc-bar i { background: var(--grad); }
-.sc-price { display: grid; justify-items: end; gap: 2px; }
-.sc-price b { font-size: 16px; font-weight: var(--semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.sc-row.win .sc-price b { color: var(--accent); }
+.sc-row.sc-win .sc-bar i { background: var(--grad); }
+.sc-price { text-align: right; font-size: 16px; font-weight: var(--semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sc-row.sc-win .sc-price { color: var(--accent); }
 @media (max-width: 560px) {
   .sc-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .sc-bar { grid-column: 2 / 4; grid-row: 2; }
+}
+@media (max-width: 480px) {
+  .site-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .site-chip { padding: var(--s-2); gap: 6px; }
+  .site-chip .site-tick { display: none; }
+  .site-chip .site-mark { width: 28px; height: 28px; font-size: 12px; }
 }

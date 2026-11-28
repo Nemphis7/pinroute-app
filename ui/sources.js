@@ -43,7 +43,7 @@ export function sitePicker(d, { toggle, busy }) {
           onclick: () => toggle(x.id),
         },
         mark(x.id, x.name),
-        h('span', { class: 'site-txt' }, h('b', { text: x.name }), h('span', { text: sel && st === 'not_connected' ? 'Not connected' : x.own ? x.sub : 'Claude connector' })),
+        h('span', { class: 'site-txt' }, h('b', { text: x.name }), h('span', { text: sel && st === 'not_connected' ? 'Not connected' : x.own ? x.sub : 'Your connector' })),
         h('span', { class: 'site-tick' }, icon(sel ? Check : Plus)));
       })),
     searching ? h('p', { class: 'meta busy', text: `Claude is searching ${connectorsPicked(d).map((id) => siteById(id).name).join(', ')}…` }) : null,
@@ -81,12 +81,12 @@ export function siteCompare(d, list, { picked, pick }) {
     rows.map(([k, x], i) => {
       const site = siteById(k);
       const save = i === 0 && rows[1] ? dealPP(rows[1][1]) - lo : 0;
-      return h('button', { class: `sc-row${i === 0 ? ' win' : ''}${picked === x.id ? ' picked' : ''}`, 'aria-pressed': String(picked === x.id), onclick: () => pick(x) },
+      return h('button', { class: `sc-row${i === 0 ? ' sc-win' : ''}${picked === x.id ? ' sc-picked' : ''}`, 'aria-pressed': String(picked === x.id), onclick: () => pick(x) },
         mark(site?.id, site?.name || k),
-        h('span', { class: 'sc-who' }, h('b', { text: site?.name || k }), h('span', { class: 'small', text: `${day(x.depart)} → ${day(x.return)} · ${x.from} → ${x.to} · ${x.airline}` })),
+        h('span', { class: 'sc-who' }, h('b', {}, h('span', { class: 'sc-name', text: site?.name || k }), i === 0 && save > 0 ? h('span', { class: 'pill done' }, icon(TrendingDown), `${money(save, x.currency)} less`) : null),
+          h('span', { class: 'small', text: `${day(x.depart)} → ${day(x.return)} · ${x.from} → ${x.to} · ${x.airline}` })),
         h('span', { class: 'sc-bar' }, h('i', { style: `--w:${hi === lo ? 100 : Math.max(12, Math.round(100 - (60 * (dealPP(x) - lo)) / (hi - lo)))}%` })),
-        h('span', { class: 'sc-price' }, h('b', { text: money(dealPP(x), x.currency) }),
-          i === 0 && save > 0 ? h('span', { class: 'pill done' }, icon(TrendingDown), `${money(save, x.currency)} less`) : null));
+        h('b', { class: 'sc-price', text: money(dealPP(x), x.currency) }));
     }));
 }
 
