@@ -60,8 +60,20 @@ test('says what is wrong with a comparison before searching', async () => {
   const depart = addDays(FROM, 3);
   assert.match((await call('scan_flight_deals', { country: 'Vietnam', origins: ['FRA'], depart })).content[0].text, /both depart and return/);
   assert.match((await call('scan_flight_deals', { country: 'Vietnam', origins: ['FRA', 'QQQ'] })).content[0].text, /No airport with the code QQQ/);
-  const many = ['FRA', 'MUC', 'STR', 'DUS', 'CGN'];
-  assert.match((await call('scan_flight_deals', { country: 'Vietnam', origins: many, destinations: ['SGN', 'HAN', 'DAD', 'CXR'], depart, return: addDays(depart, 12) })).content[0].text, /20 routes is more than one comparison takes/);
+});
+
+test('many airports in one call: a spread of 16 routes that covers every airport, and says what it left out', async () => {
+  const depart = addDays(FROM, 4), ret = addDays(depart, 14);
+  const froms = ['CGN', 'DUS', 'FRA', 'BRU', 'EIN'], tos = ['FCO', 'MXP', 'NAP', 'VCE', 'BLQ', 'CTA'];
+  const r = await call('scan_flight_deals', { country: 'Italy', origins: froms, destinations: tos, depart, return: ret });
+  assert.ok(!r.isError, JSON.stringify(r.content));
+  const { searched, left_out } = r.structuredContent;
+  assert.equal(searched.length, 16);
+  assert.equal(left_out.length, 14);
+  assert.deepEqual([...new Set(searched.map((x) => x.from))].sort(), [...froms].sort(), 'every departure airport');
+  assert.deepEqual([...new Set(searched.map((x) => x.to))].sort(), [...tos].sort(), 'every arrival airport');
+  assert.equal(new Set(searched.map((x) => `${x.from}>${x.to}`)).size, 16, 'no route twice');
+  assert.match(r.content[0].text, /Looked up 16 of 30 routes, each airport at least once; left out: /);
 });
 
 test('names an airport by the city travellers fly to, not the suburb it stands in', async () => {

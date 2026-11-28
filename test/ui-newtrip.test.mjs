@@ -86,30 +86,26 @@ test('Where: countries ranked for those months, the best four ticked, the map sh
   assert.match(await lastMessage(), /for 13–16 nights, 2 travellers flying from .*, and we like beaches\. Pinroute ranks these countries by the weather then: /);
 });
 
-test('Flights: a quick check prices every country, the best deal leads', { skip }, async () => {
+test('Flights: one Find flights button prices every country, the best deal leads', { skip }, async () => {
   await frame().locator('.stepnav button.primary').click();
   await frame().locator('.country').first().waitFor();
   assert.equal(await frame().locator('.country').count(), 5);
-  await frame().getByRole('button', { name: 'Quick check: demo fares' }).click();
+  assert.deepEqual((await frame().locator('.toolbar .acts button').allTextContents()).map((t) => t.trim()), ['Find flights'], 'no Ask Claude or quick-check buttons');
+  await frame().locator('.toolbar').getByRole('button', { name: 'Find flights' }).click();
   await frame().locator('.banner').waitFor({ timeout: 30000 });
   await frame().locator('.country .deal.main').nth(4).waitFor({ timeout: 30000 });
   assert.match(await frame().locator('.banner h3').textContent(), /^.+ from €[\d,]+ per person$/);
   assert.match(await frame().locator('.country .deal.main').first().textContent(), /per person · €[\d,]+ for 2/);
 });
 
-test('asks Claude to search with Pinroute only and shows what was saved', { skip }, async () => {
-  const before = await page.evaluate(() => window.__messages.length);
-  await frame().getByRole('button', { name: 'Ask Claude to find deals' }).click();
-  await page.waitForFunction((n) => window.__messages.length > n, before);
-  const asked = await lastMessage();
-  assert.match(asked, /^Find return flights for my new trip in Pinroute: from .*\(FRA\).* staying 13–16 nights, for 2 adults\. Search only with Pinroute's own scan_flight_deals/);
-  assert.match(asked, /don't use other flight tools/);
-  await frame().getByText('Claude is searching with Pinroute').waitFor();
+test('fares Claude saves show up on the Flights step', { skip }, async () => {
   const d = await draft();
   const first = d.draft.compare[0];
   await client.callTool({ name: 'save_flight_deals', arguments: { country: first, deals: [{ from: 'FRA', to: 'BKK', depart: addDays(FROM, 1), return: addDays(FROM, 15), price: 300, currency: 'EUR', adults: 2, airline: 'Test Air', out: 'TA 1, 10:00 FRA → 06:00 BKK', source: 'LetsFG', link: 'https://letsfg.co/b/test' }] } });
-  await frame().locator('.note', { hasText: 'Claude is searching' }).getByRole('button', { name: 'Refresh' }).click();
-  await frame().locator('.banner', { hasText: '€150 per person' }).waitFor();
+  await frame().locator('.stepnav button').first().click();               // back to Where and on again: the step loads the draft afresh
+  await frame().locator('.country').first().waitFor({ state: 'detached' });
+  await frame().locator('.stepnav button.primary').click();
+  await frame().locator('.banner', { hasText: '€150 per person' }).waitFor({ timeout: 15000 });
   assert.match(await frame().locator('.banner').textContent(), /Exceptional deal.*via LetsFG/);
 });
 
@@ -142,7 +138,7 @@ test('I know where: a country, its best months with fares, then the flights of o
   await frame().locator('.mgrid').waitFor();
   assert.equal(await frame().locator('.mcell').count(), 12);
   assert.match(await frame().locator('.nt-head h2').textContent(), /When is best for Japan\?/);
-  await frame().getByRole('button', { name: 'Quick check: demo fares' }).click();
+  await frame().getByRole('button', { name: 'Find flights' }).click();
   await frame().locator('.banner', { hasText: 'Cheapest good month' }).waitFor({ timeout: 30000 });
   const month = await frame().locator('.banner h3').textContent();
   await frame().locator('.banner button.primary').click();

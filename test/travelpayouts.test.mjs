@@ -124,3 +124,17 @@ test('the status page says whether recent prices and partner links are on, witho
   assert.match(page, /Recent prices \(Aviasales via Travelpayouts\): on\. Partner links: on\./);
   assert.doesNotMatch(page, /tp-test|123456|987/);
 });
+
+test('a window from five home airports to six arrival airports runs in one call: a spread that fits, every airport in it', async () => {
+  const froms = ['CGN', 'DUS', 'FRA', 'BRU', 'EIN'], tos = ['FCO', 'MXP', 'NAP', 'VCE', 'BLQ', 'CTA'];
+  const r = await call('scan_flight_deals', { country: 'Italy', origins: froms, destinations: tos, earliest: FROM, latest: addDays(FROM, 45) });
+  assert.ok(!r.isError, JSON.stringify(r.content));
+  const { searched, left_out } = r.structuredContent;
+  const months = new Set(searched.map((x) => x.depart)).size;
+  assert.ok(months >= 2, 'two months in the window');
+  assert.ok(searched.length <= 16, `${searched.length} look-ups`);
+  assert.deepEqual([...new Set(searched.map((x) => x.from))].sort(), [...froms].sort());
+  assert.deepEqual([...new Set(searched.map((x) => x.to))].sort(), [...tos].sort());
+  assert.equal(new Set(searched.map((x) => `${x.from}>${x.to}`)).size + left_out.length, 30);
+  assert.match(r.content[0].text, /of 30 routes, each airport at least once; left out: /);
+});
