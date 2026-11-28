@@ -963,3 +963,12 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
 .answer-reply textarea { flex: 1; min-width: 0; resize: vertical; min-height: 38px; font: inherit; padding: var(--s-2) var(--s-3); border-radius: var(--r-1); border: 1px solid var(--line-2); background: var(--paper); color: inherit; }
 @keyframes answer-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .answer { animation: none; } }
+
+/* ferries, buses and trains on a ground leg */
+.pick.ride.on { border-color: var(--accent, currentColor); }
+.acts.sites { flex-wrap: wrap; }
+
+.cap-by { color: var(--ink-2); }
+.ride-ticket { grid-template-columns: minmax(0, 1fr); }
+.ride-ticket .tside { border-left: 0; border-top: 1px dashed var(--line-2); grid-auto-flow: column; justify-content: space-between; align-items: baseline; padding-top: var(--s-2); padding-bottom: var(--s-2); }
+.ride-ticket .tsum { display: flex; align-items: center; gap: var(--s-2); }

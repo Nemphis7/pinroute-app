@@ -6,7 +6,7 @@
 // It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play } from 'lucide';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock } from 'lucide';
 import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting, loadAnswers } from './core.js';
 import { answerBlock } from './answer.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
@@ -28,10 +28,16 @@ let sel = null;            // { kind: 'stop', index } or { kind: 'leg', key }
 let pane = 'list';         // one-pane layouts: 'list' or 'detail'
 const tours = {};          // trip id|stop|place → { state, list, more, error, kept }
 const fares = {};          // leg key → { state, fares, note, live, error, filter, sort, facets, calendar, compare }
+const rides = {};          // ground leg key → { state, sites, error }: where to book it, from find_transport
 
 const KIND = { food: 'Food', drink: 'Drinks', beach: 'Beach', view: 'View', activity: 'Activity', stay: 'Stay', shop: 'Shopping', other: 'Other' };
 const KIND_ICON = { food: Utensils, drink: Wine, beach: Umbrella, view: Mountain, activity: Compass, stay: BedDouble, shop: ShoppingBag, other: Sparkles };
 const MODE = { flight: Plane, ferry: Ship, road: Car };
+// A ferry or road leg by the ride saved for it: a bus, a train, a speedboat...
+const RIDE = { ferry: Ship, speedboat: Ship, bus: Bus, minivan: Bus, train: TrainFront, taxi: CarTaxiFront, combined: Bus, drive: Car };
+const RIDE_WORD = { ferry: 'Ferry', speedboat: 'Speedboat', bus: 'Bus', minivan: 'Minivan', train: 'Train', taxi: 'Private transfer', combined: 'Bus and ferry', drive: 'Drive' };
+const legIcon = (l) => (l.mode !== 'flight' && RIDE[l.chosen?.ride]) || MODE[l.mode] || Plane;
+const groundWord = (l) => RIDE_WORD[l.chosen?.ride] || (l.mode === 'ferry' ? 'Ferry' : 'Road');
 const legByKey = (k) => V.legs.find((l) => l.key === k);
 const route = (k) => String(k).split('|').slice(0, 3).join('|');          // a leg without its date
 const isSel = (kind, id) => sel && sel.kind === kind && (kind === 'stop' ? sel.index === id : sel.key === id);
@@ -226,14 +232,15 @@ function nextTodo() {
   const t = today();
   return V.legs.filter((l) => l.date >= t || t < V.trip.start).find((l) => !settled(l)) || null;
 }
-const doWhat = (l) => (l.mode === 'flight' ? (l.stale ? 'Choose a new flight' : 'Choose flight') : l.mode === 'ferry' ? 'Book ferry' : 'Book transfer');
+const doWhat = (l) => (l.mode === 'flight' ? (l.stale ? 'Choose a new flight' : 'Choose flight')
+  : l.chosen ? `Book ${groundWord(l).toLowerCase()}` : l.mode === 'ferry' ? 'Find a ferry' : 'Find a bus or transfer');
 function nextCard() {
   if (unplanned()) return h('button', { class: 'next', onclick: () => openAt(null) }, h('span', { class: 'next-ic' }, icon(Route)),
     h('span', { class: 'next-t' }, h('span', { class: 'small', text: 'Next up' }), h('b', { text: 'Plan the route between your flights' })), icon(ChevronRight));
   const l = nextTodo();
   if (!l) return h('div', { class: 'next done' }, h('span', { class: 'next-ic' }, icon(PartyPopper)), h('span', { class: 'next-t' }, h('span', { class: 'small', text: 'All set' }), h('b', { text: 'Every flight and transfer is settled' })));
   return h('button', { class: 'next', onclick: () => openAt({ kind: 'leg', key: l.key }) },
-    h('span', { class: 'next-ic' }, icon(MODE[l.mode] || Plane)),
+    h('span', { class: 'next-ic' }, icon(legIcon(l))),
     h('span', { class: 'next-t' }, h('span', { class: 'small', text: `Next up · ${day(l.date)}` }), h('b', { text: `${doWhat(l)}: ${l.mode === 'flight' ? `${l.from} → ${l.to}` : `${l.fromName} → ${l.toName}`}` })),
     icon(ChevronRight));
 }
@@ -385,18 +392,18 @@ function stopRow(x) {
 
 function legState(l) {
   if (l.booked) return { text: 'Booked', tone: 'done' };
-  if (l.mode !== 'flight') return { text: 'To book', tone: 'todo' };
+  if (l.mode !== 'flight') return l.chosen ? { text: 'Chosen', tone: 'done' } : { text: 'To book', tone: 'todo' };
   if (l.chosen) return { text: 'Chosen', tone: 'done' };
   if (l.stale) return { text: 'Date moved', tone: 'warn' };
   return { text: 'To choose', tone: 'todo' };
 }
-const legLine = (l) => (l.mode === 'flight' ? `${l.from} → ${l.to} · ${day(l.date)}` : `${l.mode === 'ferry' ? 'Ferry' : 'Road'} · ${day(l.date)}`);
+const legLine = (l) => (l.mode === 'flight' ? `${l.from} → ${l.to} · ${day(l.date)}` : `${groundWord(l)} · ${day(l.date)}`);
 
 function legRow(l) {
   const on = isSel('leg', l.key), st = legState(l), up = nextTodo()?.key === l.key;
   return h('li', { class: `rl rl-leg ${st.tone}${l.mode === 'flight' ? ' fly' : ''}${up ? ' up' : ''}` }, h('button', { class: `row leg${on ? ' sel' : ''}`, 'aria-current': on ? 'true' : null, 'data-leg': l.key, id: `row-leg-${l.key}`, onclick: () => pick({ kind: 'leg', key: l.key }),
     onmouseenter: () => link(null, true, l.key), onmouseleave: () => link(null, false, l.key) },
-    h('span', { class: 'leg-ic' }, icon(MODE[l.mode] || Plane)),
+    h('span', { class: 'leg-ic' }, icon(legIcon(l))),
     h('span', { class: 'main' }, h('span', { text: legLine(l) })),
     up ? h('span', { class: 'up-badge', 'aria-hidden': 'true', text: 'Next' }) : null,
     h('span', { class: `state ${st.tone}` }, st.tone === 'done' ? icon(Check) : null, st.text)));
@@ -553,7 +560,7 @@ function guide() {
         ns ? h('button', { onclick: () => pick({ kind: 'stop', index: ns.index }) }, `Next stop: ${ns.place}`) : null));
   }
   return h('div', { class: 'guide' },
-    h('span', { class: 'guide-ic' }, icon(cur ? CircleCheck : MODE[nx.mode] || Plane)),
+    h('span', { class: 'guide-ic' }, icon(cur ? CircleCheck : legIcon(nx))),
     h('div', { class: 'guide-t' }, h('span', { class: 'small', text: `${cur ? 'Settled. ' : ''}Next up · ${day(nx.date)} · ${done} of ${all} legs ready` }), h('b', { text: legTitle(nx) })),
     h('div', { class: 'acts' },
       h('button', { class: 'primary', onclick: () => pick({ kind: 'leg', key: nx.key }) }, 'Go to it', icon(ArrowRight)),
@@ -629,13 +636,13 @@ function skeleton(line, rows = 3) {
 }
 
 function legDetail(l) {
-  const what = l.mode === 'flight' ? `Flight · ${longDay(l.date)} · ${l.from} → ${l.to}` : `${l.mode === 'ferry' ? 'Ferry' : 'By road'} · ${longDay(l.date)}${l.km ? ` · about ${l.km} km` : ''}`;
+  const what = l.mode === 'flight' ? `Flight · ${longDay(l.date)} · ${l.from} → ${l.to}` : `${l.chosen?.ride ? groundWord(l) : l.mode === 'ferry' ? 'Ferry' : 'By road'} · ${longDay(l.date)}${l.km ? ` · about ${l.km} km` : ''}`;
   const a = l.after >= 0 ? V.stops[l.after] : null, b = V.stops[l.after + 1] || null;
   const st = legState(l);
   return [h('div', { class: `dhead leg-hero m-${l.mode}` },
     h('div', { class: 'lh-ends' },
       h('span', { class: 'lh-end' }, h('span', { class: 'lh-art' }, a ? stopArt(a, 160, 160) : scene(l.fromName, 'city', { w: 160, h: 160 })), h('b', { text: l.mode === 'flight' ? l.from : '' }), h('span', { class: 'small', text: l.fromName })),
-      h('span', { class: 'lh-path' }, h('i'), h('span', { class: 'lh-ic' }, icon(MODE[l.mode] || Plane)), h('i')),
+      h('span', { class: 'lh-path' }, h('i'), h('span', { class: 'lh-ic' }, icon(legIcon(l))), h('i')),
       h('span', { class: 'lh-end' }, h('span', { class: 'lh-art' }, b ? stopArt(b, 160, 160) : scene(l.toName, 'city', { w: 160, h: 160 })), h('b', { text: l.mode === 'flight' ? l.to : '' }), h('span', { class: 'small', text: l.toName }))),
     h('div', { class: 'lh-text' },
       h('span', { class: `pill ${st.tone}` }, st.tone === 'done' ? icon(Check) : null, st.text),
@@ -693,15 +700,78 @@ function ticket(c) {
       : h('div', { class: 'tside' }, h('span', { class: 'price', text: money(c.price, c.currency) }), h('span', { class: 'small', text: c.part === 'out' ? `for ${V.trip.adults}, return` : `for ${V.trip.adults}` })));
 }
 
+// ---- ferries, buses and trains: where to book the leg (12Go, Omio, Rome2Rio), the ways Claude worked out, the one picked
 function transferBlock(l) {
+  const r = rides[l.key];
+  if (!r && V.transport) findRides(l);
+  const c = l.chosen, list = l.rides || [], key = `route|${l.key}`;
+  const shop = r?.sites?.find((x) => x.sells) || null;
   return [
+    c ? rideTicket(l, c) : null,
     l.booked && l.note ? h('p', { class: 'meta', text: l.note }) : null,
-    h('div', { class: 'acts' },
-      h('button', { class: l.booked ? '' : 'primary', onclick: () => askRoute(l) }, icon(MessageSquare), 'Ask Claude how to get there'),
-      bookedButton(l)),
-    waiting[`route|${l.key}`] ? skeleton('Claude is working out how to get there; the answer shows here.', 2) : null,
-    answerBlock(`route|${l.key}`, { poll: refresh }),
+    c ? h('div', { class: 'acts' },
+      c.link ? h('button', { class: l.booked ? '' : 'primary', onclick: () => app.openLink({ url: c.link }) }, icon(ExternalLink), `Book on ${c.source || 'the booking site'}`) : null,
+      bookedButton(l),
+      h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearFlight(l, 'ride') }, 'Remove')) : null,
+    list.length ? h('section', { class: 'block rides' },
+      h('div', { class: 'block-head' }, h('h3', { text: `Ways to get there (${list.length})` }), h('span', { class: 'small', text: `Usual times and prices; check them on ${list[0].book?.site || 'the booking site'} for ${day(l.date)}` })),
+      h('ul', { class: 'picks' }, list.map((o, i) => rideCard(l, o, i)))) : null,
+    waiting[key] ? skeleton(`Claude is working out the ferries, buses and trains from ${l.fromName} to ${l.toName}`, 2) : null,
+    answerBlock(key, { poll: refresh }),
+    r?.state === 'error' ? h('p', { class: 'note warn', text: r.error }) : null,
+    r?.sites?.length ? h('div', { class: 'acts sites' },
+      r.sites.map((x, i) => h('button', { class: i || c || list.length ? 'ghost' : '', title: x.what, onclick: () => app.openLink({ url: x.url }) }, icon(x.sells ? Ticket : Route), x.sells ? `Search ${x.site} for ${day(l.date)}` : `Routes on ${x.site}`))) : null,
+    c || waiting[key] ? null : h('div', { class: 'acts' },
+      h('button', { class: list.length ? 'ghost' : 'primary', onclick: () => askRides(l) }, icon(Sparkles), list.length ? 'Ask Claude again' : l.mode === 'ferry' ? 'Find ferries and buses' : 'Find buses, trains and transfers'),
+      c ? null : bookedButton(l)),
+    shop && V.transport?.partnerLinks ? h('p', { class: 'small foot', text: `${shop.site} links carry Pinroute's partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.` }) : null,
   ].filter(Boolean);
+}
+
+const mins = (m) => (m == null ? null : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`);
+function rideCard(l, o, i) {
+  const price = o.price != null ? `${money(o.price, o.currency)}${o.per_person === false ? '' : ' each'}` : null;
+  const picked = l.chosen && l.chosen.summary && o.operator && l.chosen.summary.includes(o.operator) && (!o.depart || l.chosen.summary.includes(o.depart));
+  return h('li', { class: `pick ride${picked ? ' on' : ''}`, style: `animation-delay:${i * 50}ms` },
+    h('div', { class: 'pick-head' }, h('span', { class: 'kind-ic' }, icon(RIDE[o.mode] || Car)),
+      h('span', { class: 'pick-t' }, h('span', { class: 'pname', text: o.operator ? `${RIDE_WORD[o.mode] || 'Transfer'} · ${o.operator}` : RIDE_WORD[o.mode] || 'Transfer' }),
+        h('span', { class: 'kind', text: [o.depart ? `${o.depart}${o.arrive ? ` → ${o.arrive}` : ''}` : null, mins(o.minutes), price].filter(Boolean).join(' · ') || ' ' }))),
+    o.from_point || o.to_point || o.note ? h('p', { class: 'why', text: [o.from_point || o.to_point ? `${o.from_point || l.fromName} → ${o.to_point || l.toName}` : null, o.note].filter(Boolean).join(' · ') }) : null,
+    h('div', { class: 'acts tour-acts' },
+      picked ? h('span', { class: 'small kept' }, icon(Check), ' Chosen') : h('button', { disabled: ui.busy, onclick: () => chooseRide(l, o, i) }, 'Choose'),
+      o.book?.url ? h('button', { class: 'ghost', onclick: () => app.openLink({ url: o.book.url }) }, icon(ExternalLink), `Check on ${o.book.site}`) : null));
+}
+
+// The chosen ride as a stub: its times when the summary has them ("Ferry, Opal Marine, 08:00–10:30, A → B"), what and where
+function rideTicket(l, c) {
+  const m = /(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})/.exec(c.summary || '');
+  const parts = String(c.summary || '').split(', ').filter((p) => !/\d{1,2}:\d{2}/.test(p));
+  return h('div', { class: 'ticket ride-ticket' },
+    h('div', { class: 'tmain' },
+      h('p', { class: 'tsum' }, h('span', { class: 'kind-ic' }, icon(legIcon(l))), m ? `${m[1]} → ${m[2]}` : parts[0] || c.summary),
+      h('p', { class: 'small', text: [...(m ? parts : parts.slice(1)), c.source ? `book on ${c.source}` : null].filter(Boolean).join(' · ') || ' ' })),
+    c.price != null ? h('div', { class: 'tside' }, h('span', { class: 'price', text: money(c.price, c.currency) }), h('span', { class: 'small', text: `usual, for ${V.trip.adults}` })) : null);
+}
+
+// Where to book, from Pinroute's own search: straight away, without Claude
+async function findRides(l) {
+  rides[l.key] = { state: 'loading' };
+  try {
+    const r = await app.callServerTool({ name: 'find_transport', arguments: { trip_id: V.trip.id, leg_key: l.key } });
+    if (r.isError) throw new Error(textOf(r) || 'The search failed.');
+    rides[l.key] = { state: 'done', sites: r.structuredContent?.sites || [] };
+  } catch (e) {
+    rides[l.key] = { state: 'error', error: e.message || String(e) };
+  }
+  render();
+}
+
+// The ways to make the leg: Claude works them out and saves them with Pinroute, and the planner shows them as they land
+function askRides(l) {
+  const before = JSON.stringify(l.rides || null), n = V.trip.adults;
+  return ask(`route|${l.key}`,
+    `Find the ferries, buses, minivans or trains from ${l.fromName} to ${l.toName} on ${longDay(l.date)} for ${n} adult${n === 1 ? '' : 's'}. Pinroute's find_transport (trip_id "${V.trip.id}", leg_key "${l.key}") gives the booking searches for that day. From what you know, save the realistic ways to make this trip with save_transport_options (trip_id "${V.trip.id}", leg_key "${l.key}"): each with its kind, operator, usual departure and arrival times, journey length, usual price with currency and whether it is per person, where it leaves from and arrives, and a short note such as hotel pick-up or season. In the chat, one short line is enough; the planner I'm looking at shows them.`,
+    { answer: false, poll: refresh, done: () => JSON.stringify(legByKey(l.key)?.rides || null) !== before });
 }
 
 function faresBlock(l, st) {
@@ -771,7 +841,10 @@ const setBooked = async (l, booked) => {
   return r;
 };
 // The server removes the flight saved for this hop whatever its date, so a choice left on an old date goes too
-const clearFlight = (l) => save('clear_flight', { trip_id: V.trip.id, leg_key: l.key }, `the traveller removed the flight saved for ${l.fromName} → ${l.toName}.`);
+const clearFlight = (l, what = 'flight') => save('clear_flight', { trip_id: V.trip.id, leg_key: l.key }, `the traveller removed the ${what} saved for ${l.fromName} → ${l.toName}.`);
+const chooseRide = (l, o, i) => save('choose_transport', { trip_id: V.trip.id, leg_key: l.key, option: i },
+  `the traveller chose the ${(RIDE_WORD[o.mode] || 'transfer').toLowerCase()}${o.operator ? ` with ${o.operator}` : ''}${o.depart ? ` at ${o.depart}` : ''} for ${l.fromName} → ${l.toName} on ${l.date}.`)
+  .then((r) => { if (r) celebrate(`${RIDE_WORD[o.mode] || 'Transfer'} chosen: ${l.fromName} → ${l.toName}`, { kind: 'leg', key: l.key }); return r; });
 const choose = (l, f, line) => save('choose_flight', { trip_id: V.trip.id, leg_key: l.key, summary: line, price: f.total, currency: f.currency, source: f.demo ? 'Demo data' : V.flights.provider, ...(f.link ? { link: f.link } : {}) },
   `the traveller chose ${line} for ${l.fromName} → ${l.toName} on ${l.date}, ${money(f.total, f.currency)} for ${V.trip.adults}.`)
   .then((r) => { if (r) celebrate(`Flight chosen: ${l.from} → ${l.to}, ${money(f.total, f.currency)}`, { kind: 'leg', key: l.key }); return r; });
@@ -799,11 +872,6 @@ function askPicks(x) {
   return ask(`picks|${x.place}`,
     `Find local favourites in ${where} for my trip: what recent Reddit threads, TikTok and Instagram posts, and food and travel blogs recommend. Search the web for those posts and blogs. Choose up to 10, each with its source link, then save them with save_local_picks (place: "${x.place}").`,
     { poll: refresh, done: () => (V.picks[x.place] || []).length > before });
-}
-
-function askRoute(l) {
-  return ask(`route|${l.key}`,
-    `How do I get from ${l.fromName} to ${l.toName} on ${longDay(l.date)}? From what you know, give me the ferry, train, bus or road options with their usual times, journey length, rough price and where to book, and say that times and prices are to be checked with the operator. When I've booked, mark that leg booked in Pinroute with mark_leg (trip_id "${V.trip.id}", leg_key "${l.key}").`);
 }
 
 // Redraws only when something changed, so a refresh in the background leaves the screen as it is
@@ -875,4 +943,4 @@ app.connect()
   .catch((e) => showError(`Could not connect to Claude: ${e.message || e}`));
 
 // For tests: let a harness look at the state
-window.__pinroute = { get screen() { return screen; }, get view() { return V; }, get map() { return MAP; }, get selection() { return sel; }, fares };
+window.__pinroute = { get screen() { return screen; }, get view() { return V; }, get map() { return MAP; }, get selection() { return sel; }, fares, rides };

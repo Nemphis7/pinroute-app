@@ -187,27 +187,33 @@ test('flags a chosen flight whose date moved, and clears it', { skip }, async ()
   await frame().locator('.stepper .val', { hasText: '3 nights' }).waitFor();
 });
 
-test('a ferry: asks Claude how to get there, then marks it booked', { skip }, async () => {
+test('a ferry: searches 12Go for its day, Claude saves the ways to go, the traveller picks one and books it', { skip }, async () => {
   const ferry = (await server()).legs.find((l) => l.fromName === 'Koh Phi Phi' && l.toName === 'Koh Lanta');
   await leg(ferry.key).click();
   assert.match(await frame().locator('.detail .meta').first().textContent(), /^Ferry · .* · about \d+ km/);
-  await frame().getByRole('button', { name: 'Ask Claude how to get there' }).click();
-  await page.waitForFunction(() => /How do I get from Koh Phi Phi to Koh Lanta/.test(window.__messages.at(-1).content[0].text));
-  assert.ok((await lastMessage()).includes(`mark_leg (trip_id "${tripId}", leg_key "${ferry.key}")`));
-  assert.match(await lastMessage(), /From what you know.*use only Pinroute's own tools/s, 'getting around is answered without other travel tools');
-  // Claude's answer shows in the planner, under the ferry, with its links and a box for a follow-up
-  const key = `${tripId}|route|${ferry.key}`;
-  assert.ok((await lastMessage()).includes(`show_answer (key "${key}")`));
-  await client.callTool({ name: 'show_answer', arguments: { key, answer: 'Two ferries a day:\n- **09:00** Phi Phi Cruiser, 1h30, 500 THB\n- 13:30 Andaman Wave, 1h45, 600 THB\n\nBook a day ahead in high season.', links: [{ title: '12Go timetable', url: 'https://12go.asia/en' }] } });
-  const answer = frame().locator('.detail .answer');
-  await answer.waitFor({ timeout: 20000 });
-  assert.equal(await answer.locator('li').count(), 2);
-  assert.equal(await answer.locator('li b').first().textContent(), '09:00');
-  await answer.getByRole('button', { name: '12Go timetable' }).waitFor();
-  await answer.getByRole('textbox', { name: 'Ask Claude a follow-up' }).fill('Is there a later one?');
-  await answer.getByRole('button', { name: 'Ask' }).click();
-  await page.waitForFunction(() => /^Is there a later one\?/.test(window.__messages.at(-1).content[0].text));
-  assert.ok((await lastMessage()).includes(`show_answer (key "${key}")`));
+  // Pinroute's own search gives the booking sites for the leg's day straight away
+  await frame().getByRole('button', { name: `Search 12Go for ${shortDay(ferry.date)}` }).click();
+  await page.waitForFunction(() => window.__links.some((u) => u.startsWith('https://12go.asia/en/travel/koh-phi-phi/koh-lanta?date=')));
+  await frame().getByRole('button', { name: 'Routes on Rome2Rio' }).waitFor();
+  await frame().getByRole('button', { name: 'Find ferries and buses' }).click();
+  await page.waitForFunction(() => /Find the ferries, buses, minivans or trains from Koh Phi Phi to Koh Lanta/.test(window.__messages.at(-1).content[0].text));
+  const msg = await lastMessage();
+  assert.ok(msg.includes(`save_transport_options (trip_id "${tripId}", leg_key "${ferry.key}")`) && msg.includes('find_transport'));
+  assert.match(msg, /From what you know.*use only Pinroute's own tools/s, 'getting around is answered without other travel tools');
+  await frame().getByText(/Claude is working out the ferries/).waitFor();
+  // Claude saves two ways; the open planner shows them as they land
+  await client.callTool({ name: 'save_transport_options', arguments: { trip_id: tripId, leg_key: ferry.key, options: [
+    { mode: 'ferry', operator: 'Phi Phi Cruiser', depart: '09:00', arrive: '10:30', minutes: 90, price: 500, currency: 'THB', per_person: true, from_point: 'Tonsai pier', to_point: 'Saladan pier' },
+    { mode: 'speedboat', operator: 'Andaman Wave', depart: '13:30', arrive: '14:15', minutes: 45, price: 900, currency: 'THB', per_person: true, note: 'Nov to Apr' }] } });
+  const cards = frame().locator('.detail .pick.ride');
+  await cards.first().waitFor({ timeout: 25000 });
+  assert.equal(await cards.count(), 2);
+  assert.match(await cards.first().textContent(), /Ferry · Phi Phi Cruiser.*09:00 → 10:30 · 1 h 30 min · THB\s?500 each/s);
+  await cards.first().getByRole('button', { name: 'Choose' }).click();
+  await frame().locator('.ride-ticket').waitFor();
+  assert.match(await frame().locator('.ride-ticket').textContent(), /09:00 → 10:30.*Ferry · Phi Phi Cruiser · Tonsai pier → Saladan pier · book on 12Go/s);
+  assert.match(await leg(ferry.key).textContent(), /Chosen/);
+  await frame().getByRole('button', { name: 'Book on 12Go' }).waitFor();
   await frame().getByRole('button', { name: 'Mark booked', exact: true }).click();
   await frame().getByRole('button', { name: 'Booked', exact: true }).waitFor();
   assert.match(await leg(ferry.key).textContent(), /Booked/);
