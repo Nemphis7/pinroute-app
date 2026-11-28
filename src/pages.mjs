@@ -43,6 +43,7 @@ const TOOLS = [
   ['search_flights', 'Searches airline fares (Amadeus Travel Builder); daily limit per person', 'Reads'],
   ['flight_link', 'Makes a link to compare and book a flight on Trip.com (with Pinroute\'s partner ID when set up)', 'Reads'],
   ['hotel_link', 'Makes a Booking.com search for each stop\'s place and dates, to compare and book hotels (with Pinroute\'s partner ID when set up)', 'Reads'],
+  ['set_hotel_prefs', 'Saves what matters in a hotel for a trip (price level, cleanliness, location, breakfast, pool and more), which filters each stop\'s Booking.com search', 'Writes'],
   ['choose_stay / clear_stay', 'Saves or removes the hotel picked for a stop, from any hotel search', 'Writes / deletes'],
   ['find_airports', 'Finds airports by city, name or code, or all airports within a distance of a point; works without signing in', 'Reads'],
   ['find_activities', 'Finds tours, activities and tickets at a place or trip stop (Amadeus Travel Builder), with links to book on GetYourGuide or Klook; daily limit per person', 'Reads'],

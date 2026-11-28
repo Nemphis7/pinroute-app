@@ -1369,3 +1369,23 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
 .fare-card .acts { margin-top: auto; padding-top: var(--s-2); display: flex; flex-wrap: wrap; gap: var(--s-1); }
 .fare-card .acts button { flex: 1 1 auto; justify-content: center; }
 .more-fares > .fare-cards { margin-top: var(--s-2); }
+
+/* ---- what matters in a hotel: one price level as a segmented control, then wishes as chips that tick on.
+   Big enough to tap on a phone (40 px), wrapping, and the price row always three equal parts. */
+.hprefs { display: grid; gap: var(--s-2); padding: var(--s-3); border-radius: var(--r-1); background: var(--paper-2); border: 1px solid var(--line); }
+.hp-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-2); }
+.hp-title { font-size: 13px; font-weight: var(--semibold); color: var(--ink); }
+.hp-price { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 999px; background: var(--paper-3); }
+.hp-price button { min-height: 36px; padding: 0 var(--s-2); border: 0; border-radius: 999px; background: transparent; color: var(--ink-2); font-size: 13px; justify-content: center; gap: 6px; white-space: nowrap; transition: background var(--fast) var(--ease), color var(--fast) var(--ease), box-shadow var(--fast) var(--ease); }
+.hp-price button[aria-pressed="true"] { background: var(--paper); color: var(--ink); font-weight: var(--medium); box-shadow: var(--sh-1); border: 0; }
+.hp-sign { color: var(--ink-3); font-size: 12px; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+.hp-price button[aria-pressed="true"] .hp-sign { color: var(--accent); }
+.hp-wants { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.hp-chip { min-height: 36px; padding: 0 12px 0 10px; border-radius: 999px; background: var(--paper); border: 1px solid var(--line-2); color: var(--ink-2); font-size: 13px; gap: 6px; transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease), transform var(--fast) var(--spring); }
+.hp-chip svg.i { width: 16px; height: 16px; color: var(--ink-3); }
+.hp-chip:active { transform: scale(0.96); }
+.hp-chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: var(--medium); }
+.hp-chip[aria-pressed="true"] svg.i { color: var(--accent); }
+.hp-hint { margin: 0; color: var(--ink-3); }
+#app[data-narrow="true"] .hp-price button { min-height: 40px; }
+#app[data-narrow="true"] .hp-chip { min-height: 40px; }

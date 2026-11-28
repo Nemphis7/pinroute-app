@@ -2,7 +2,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer, connect, THAILAND_TRIP, START, addDays } from './helpers.mjs';
-import { searchUrl, partnerUrl, placeQuery, linksOn } from '../src/hotels.mjs';
+import { searchUrl, partnerUrl, placeQuery, linksOn, bookingFilters, prefsAsk, cleanPrefs } from '../src/hotels.mjs';
 
 let srv, client, trip;
 const call = async (name, args) => client.callTool({ name, arguments: args });
@@ -85,6 +85,45 @@ test('choose_stay saves a hotel, goes stale when the dates move, and clear_stay 
   assert.equal(cleared.structuredContent.stays[2].chosen, null);
   assert.equal(cleared.structuredContent.stays[2].stale, null);
   assert.match((await call('clear_stay', { trip_id: trip.trip.id, stay_key: kl.key })).content[0].text, /No hotel is saved/);
+});
+
+test('hotel preferences map to Booking.com filters where it has them, and to words for Claude', () => {
+  assert.deepEqual(bookingFilters(null), {});
+  assert.deepEqual(bookingFilters({ price: 'budget', wants: [] }), { nflt: 'pri=1;pri=2', order: 'price' });
+  assert.deepEqual(bookingFilters({ price: 'mid', wants: ['breakfast', 'pool', 'quiet'] }), { nflt: 'class=3;class=4;mealplan=1;hotelfacility=433' });
+  assert.deepEqual(bookingFilters({ wants: ['location', 'quiet'] }), {}, 'location and quiet have no filter');
+  assert.deepEqual(cleanPrefs({ price: 'cheap', wants: ['pool', 'nonsense', 'clean'] }), { price: null, wants: ['clean', 'pool'] }, 'unknown values drop, wants keep one order');
+  assert.equal(cleanPrefs({ wants: [] }), null);
+  assert.equal(prefsAsk({ price: 'luxury', wants: ['quiet'] }), 'a luxury place, 4 or 5 stars; a quiet place away from nightlife and road noise');
+  const u = new URL(searchUrl({ place: 'Hoi An, Vietnam', checkin: '2027-03-01', checkout: '2027-03-04', prefs: { price: 'luxury', wants: ['clean', 'cancel'] } }));
+  assert.equal(u.searchParams.get('nflt'), 'class=4;class=5;review_score=80;fc=2');
+  assert.equal(u.searchParams.get('order'), null);
+});
+
+test('set_hotel_prefs saves the trip\'s wishes, filters every stop\'s link, and hotel_link passes them on', async () => {
+  const id = trip.trip.id;
+  const r = await call('set_hotel_prefs', { trip_id: id, price: 'mid', wants: ['breakfast', 'quiet'] });
+  assert.ok(!r.isError);
+  assert.match(r.content[0].text, /a mid-range price, 3 to 4 stars; breakfast included; a quiet place/);
+  assert.deepEqual(r.structuredContent.hotels.prefs, { price: 'mid', wants: ['breakfast', 'quiet'] });
+  assert.equal(r.structuredContent.hotels.filters, 'class=3;class=4;mealplan=1');
+  for (const st of r.structuredContent.stays) assert.equal(new URL(st.link).searchParams.get('nflt'), 'class=3;class=4;mealplan=1');
+  const link = await call('hotel_link', { trip_id: id, stop: 1 });
+  assert.match(link.content[0].text, /The traveller wants: a mid-range price.*quiet place/);
+  assert.deepEqual(link.structuredContent.prefs, { price: 'mid', wants: ['breakfast', 'quiet'] });
+  // Only the field given changes
+  const priceOnly = (await call('set_hotel_prefs', { trip_id: id, price: 'budget' })).structuredContent;
+  assert.deepEqual(priceOnly.hotels.prefs, { price: 'budget', wants: ['breakfast', 'quiet'] });
+  assert.equal(new URL(priceOnly.stays[0].link).searchParams.get('order'), 'price');
+  // A search by place takes them too
+  const free = await call('hotel_link', { place: 'Hoi An, Vietnam', checkin: '2027-03-01', checkout: '2027-03-04', price: 'luxury', wants: ['pool'] });
+  assert.equal(new URL(free.structuredContent.url).searchParams.get('nflt'), 'class=4;class=5;hotelfacility=433');
+  assert.match((await call('set_hotel_prefs', { trip_id: id, price: 'cheap' })).content[0].text, /price/i);
+  // Cleared: plain links again
+  const cleared = (await call('set_hotel_prefs', { trip_id: id, price: null, wants: [] })).structuredContent;
+  assert.equal(cleared.hotels.prefs, null);
+  assert.equal(new URL(cleared.stays[0].link).searchParams.get('nflt'), null);
+  assert.doesNotMatch((await call('hotel_link', { trip_id: id, stop: 1 })).content[0].text, /traveller wants/);
 });
 
 test('with a partner template, links and the tool description say so; the status page shows it without the IDs', async () => {

@@ -6,7 +6,7 @@
 // It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, MapPinPlus, Shuffle, Pin, PinOff } from 'lucide';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, MapPinPlus, Shuffle, Pin, PinOff, Coffee, Waves, Baby, Moon, ShieldCheck, SprayCan } from 'lucide';
 import { app, ui, $, onRender, onShow, canFull, isFull, canPip, isPip, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting, loadAnswers } from './core.js';
 import { answerBlock } from './answer.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
@@ -715,6 +715,7 @@ function hotelBlock(x) {
         h('p', { class: 'small', text: [c.note, c.source ? `via ${c.source}` : null].filter(Boolean).join(' · ') || ' ' })),
       h('div', { class: 'tside' }, c.price != null ? h('span', { class: 'price', text: money(c.price, c.currency) }) : null,
         h('span', { class: 'small', text: nightsTxt(st.nights) }))) : null,
+    hotelPrefsEl(),
     waiting[key] ? skeleton(`Claude is suggesting where to stay in ${x.place}`, 2) : null,
     answerBlock(key, { poll: refresh }),
     h('div', { class: 'acts' },
@@ -725,6 +726,57 @@ function hotelBlock(x) {
       c ? h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearStay(st, c) }, 'Remove') : null),
     V.hotels?.partnerLinks ? h('p', { class: 'small foot', text: 'Booking.com links carry Pinroute\'s partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.' }) : null);
 }
+// What matters in a hotel, for the whole trip: one price level and any number of wishes. A tap shows at once and is
+// saved a moment later (several quick taps make one save); the server then filters every stop's Booking.com search.
+const PRICE_CHIPS = [['budget', 'Budget', '€'], ['mid', 'Mid-range', '€€'], ['luxury', 'Luxury', '€€€']];
+const WANT_CHIPS = [['clean', 'Very clean', SprayCan], ['location', 'Great location', MapPin], ['breakfast', 'Breakfast', Coffee], ['pool', 'Pool', Waves],
+  ['family', 'Family-friendly', Baby], ['quiet', 'Quiet', Moon], ['cancel', 'Free cancellation', ShieldCheck]];
+const NO_FILTER = new Set(['location', 'quiet']);
+let prefsTimer = 0, prefsSeq = 0;
+const hotelPrefs = () => ({ price: V.hotels?.prefs?.price || null, wants: [...(V.hotels?.prefs?.wants || [])] });
+function setHotelPrefs(next) {
+  V.hotels = { ...V.hotels, prefs: next.price || next.wants.length ? next : null };
+  render();
+  clearTimeout(prefsTimer);
+  const trip_id = V.trip.id, seq = ++prefsSeq;
+  prefsTimer = setTimeout(async () => {
+    try {
+      const r = await call('set_hotel_prefs', { trip_id, price: next.price, wants: next.wants });
+      if (seq === prefsSeq) take(r);              // a newer tap since keeps what it shows; its own save follows
+      showError('');
+    } catch (e) { showError(e.message || String(e)); }
+    render();
+  }, 450);
+}
+function hotelPrefsEl() {
+  const p = hotelPrefs();
+  const n = (p.price ? 1 : 0) + p.wants.length;
+  const askOnly = p.wants.filter((k) => NO_FILTER.has(k)).map((k) => WANT_CHIPS.find((c) => c[0] === k)[1].toLowerCase());
+  const hint = !n ? 'Tap what matters. Booking.com opens filtered to match, and Claude looks for it too.'
+    : `Booking.com opens filtered to match${askOnly.length ? `; Claude also looks for ${askOnly.join(' and ')}` : ''}. Same for every stop.`;
+  return h('div', { class: 'hprefs' },
+    h('div', { class: 'hp-head' }, h('span', { class: 'hp-title', text: 'What matters to you' }),
+      n ? h('button', { class: 'link', onclick: () => setHotelPrefs({ price: null, wants: [] }) }, 'Clear') : null),
+    h('div', { class: 'hp-price', role: 'group', 'aria-label': 'Price level' },
+      PRICE_CHIPS.map(([k, label, sign]) => h('button', { 'aria-pressed': String(p.price === k), onclick: () => setHotelPrefs({ ...p, price: p.price === k ? null : k }) },
+        h('span', { class: 'hp-sign', text: sign }), label))),
+    h('div', { class: 'hp-wants', role: 'group', 'aria-label': 'What matters in a hotel' },
+      WANT_CHIPS.map(([k, label, ic]) => {
+        const on = p.wants.includes(k);
+        return h('button', { class: 'hp-chip', 'aria-pressed': String(on), onclick: () => setHotelPrefs({ ...p, wants: on ? p.wants.filter((w) => w !== k) : [...p.wants, k] }) },
+          icon(on ? Check : ic), label);
+      })),
+    h('p', { class: 'small hp-hint', text: hint }));
+}
+// The wishes in words for Claude: "a mid-range price; breakfast included; a pool"
+const PRICE_WORDS = { budget: 'a low price and good value for money', mid: 'a mid-range price (3 to 4 stars)', luxury: 'a luxury place (4 or 5 stars)' };
+const WANT_WORDS = { clean: 'spotless rooms with high cleanliness scores in reviews', location: 'a central location close to things on foot', breakfast: 'breakfast included', pool: 'a swimming pool',
+  family: 'family rooms, good for children', quiet: 'a quiet place away from nightlife and road noise', cancel: 'free cancellation' };
+function prefsWords() {
+  const p = hotelPrefs();
+  return [p.price && PRICE_WORDS[p.price], ...p.wants.map((k) => WANT_WORDS[k])].filter(Boolean);
+}
+
 const clearStay = (st, c) => save('clear_stay', { trip_id: V.trip.id, stay_key: c === st.stale ? `stay|${st.place}|${st.stale.checkin}|${st.stale.checkout}` : st.key }, `the traveller removed ${c.name} from ${st.place}.`);
 const setStayBooked = (st, booked) => save('choose_stay', { trip_id: V.trip.id, stay_key: st.key, ...Object.fromEntries(Object.entries(st.chosen).filter(([k, v]) => v != null && ['name', 'price', 'currency', 'link', 'source', 'note'].includes(k))), booked },
   `the traveller marked ${st.chosen.name} in ${st.place} as ${booked ? 'booked' : 'not booked yet'}.`);
@@ -732,8 +784,10 @@ function askStay(x, st) {
   const n = V.trip.adults;
   const before = JSON.stringify(st.chosen);
   const where = x.region ? `${x.place} (${x.region})` : x.place;
+  const wish = prefsWords();
+  const wants = wish.length ? ` What matters to me: ${wish.join('; ')}. Pick the area and the kind of place that fits all of that, and tell me what to check on Booking.com for it: Pinroute's link is already filtered for what Booking.com can filter, and reviews count most for cleanliness and quiet.` : '';
   return ask(`stay|${st.key}`,
-    `Where should I stay in ${where} from ${longDay(st.checkin)} to ${longDay(st.checkout)} (${nightsTxt(st.nights)}), ${n} adult${n === 1 ? '' : 's'}? Tell me which area suits this trip and what kind of place to look for, from what you know, and give me Pinroute's Booking.com search for these dates with hotel_link (trip_id "${V.trip.id}"). When I tell you the place I picked, save it to Pinroute with choose_stay (trip_id "${V.trip.id}", stay_key "${st.key}").`,
+    `Where should I stay in ${where} from ${longDay(st.checkin)} to ${longDay(st.checkout)} (${nightsTxt(st.nights)}), ${n} adult${n === 1 ? '' : 's'}?${wants} Tell me which area suits this trip and what kind of place to look for, from what you know, and give me Pinroute's Booking.com search for these dates with hotel_link (trip_id "${V.trip.id}"). When I tell you the place I picked, save it to Pinroute with choose_stay (trip_id "${V.trip.id}", stay_key "${st.key}").`,
     { poll: refresh, done: () => JSON.stringify(stayOf(x)?.chosen) !== before });
 }
 

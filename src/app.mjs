@@ -137,7 +137,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       stays: hotels.stays(trip, env),
       picks,
       flights: { provider: provider.name, live: provider.name !== 'Demo data', partnerLinks: tp.linksOn(env) },
-      hotels: { partnerLinks: hotels.linksOn(env) },
+      hotels: { partnerLinks: hotels.linksOn(env), prefs: hotels.cleanPrefs(trip.hotelPrefs), filters: hotels.bookingFilters(trip.hotelPrefs).nflt || null },
       transport: { partnerLinks: transport.linksOn(env) },
       activities: { on: acts.configured(env), partnerLinks: tp.linksOn(env) },
       calendar: { links: cal.calendarLinks(trip.calendar?.token, env), hosted: !!cal.publicBase(env) },
