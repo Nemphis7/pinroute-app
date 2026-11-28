@@ -92,7 +92,7 @@ test('compares the same dates from every departure airport to the airports chose
   await block.locator('td.win').waitFor({ timeout: 30000 });
   assert.ok(await block.locator('td button.mx-c').count() >= on * 2 - 1, 'a price on (almost) every route switched on');
   assert.match(await block.locator('td.win').textContent(), /^€\d/);
-  assert.match(await block.textContent(), /\d+ of 50 searches left today/);
+  assert.match(await block.textContent(), /\d+ of 150 searches left today/);
 
   const other = block.locator('td:not(.win) button.mx-c').first();
   await other.click();

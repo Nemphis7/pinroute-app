@@ -95,12 +95,21 @@ test('scans airline fares for a country on dates spread over the window, and kee
   dealId = again.structuredContent.deals[0].id;
 });
 
-test('stops scanning at the daily search limit', async () => {
-  await call('scan_flight_deals', { country: 'Mexico', dates: 4 });              // 3 + 1 + 4 = 8 of 12
-  const r = await call('scan_flight_deals', { country: 'Mexico', dates: 4 });     // 12 of 12
-  assert.ok(!r.isError);
-  const over = await call('scan_flight_deals', { country: 'Mexico' });
-  assert.match(over.content[0].text, /today's 12 flight searches/);
+test('at the daily search limit a scan still answers: the fares saved and an Aviasales link, not an error', async () => {
+  let left = 12;
+  for (let i = 0; left > 0 && i < 12; i++) {                                     // other windows, so nothing comes from the cache
+    const r = await call('scan_flight_deals', { country: 'Mexico', earliest: addDays(FROM, i), latest: addDays(FROM, i + 20), dates: 4, source: 'live' });
+    assert.ok(!r.isError, JSON.stringify(r.content));
+    left = r.structuredContent.searches_left;
+  }
+  assert.equal(left, 0);
+  const over = await call('scan_flight_deals', { country: 'Mexico', earliest: addDays(FROM, 2), latest: addDays(FROM, 25), source: 'live' });
+  assert.ok(!over.isError, JSON.stringify(over.content));
+  assert.match(over.content[0].text, /^Today's 12 live airline searches in Pinroute are used up \(they start again at 00:00 UTC\)\./);
+  assert.match(over.content[0].text, /Fares already saved for Mexico:/);
+  assert.equal(over.structuredContent.limited, true);
+  assert.match(over.structuredContent.link, /^https:\/\/www\.aviasales\.com\/search\/FRA/);
+  assert.ok(over.structuredContent.deals.length > 0);
 });
 
 test('saves fares Claude found with the traveller\'s own flight tools', async () => {

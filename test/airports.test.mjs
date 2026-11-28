@@ -34,7 +34,7 @@ test('the draft knows where each compared country can be reached', async () => {
   const a = r.structuredContent.arrivals;
   assert.deepEqual(a['704'].slice(0, 3).map((x) => x.code), ['SGN', 'HAN', 'DAD']);
   assert.equal(a['764'][0].code, 'BKK', 'the main airport first');
-  assert.equal(r.structuredContent.flights.searchesLeft, 50);
+  assert.equal(r.structuredContent.flights.searchesLeft, 150);
 });
 
 test('compares departure and arrival airports for one pair of dates, one search a route', async () => {
@@ -44,7 +44,7 @@ test('compares departure and arrival airports for one pair of dates, one search 
   const { searched, deals, searches_left } = r.structuredContent;
   assert.deepEqual(searched.map((x) => `${x.from}>${x.to}`), ['FRA>SGN', 'FRA>HAN', 'MUC>SGN', 'MUC>HAN', 'STR>SGN', 'STR>HAN']);
   assert.ok(searched.every((x) => x.depart === depart && x.return === ret && x.fares > 0 && x.best > 0));
-  assert.equal(searches_left, 44);
+  assert.equal(searches_left, 144);
   assert.ok(deals.every((x) => x.depart === depart && x.return === ret));
   for (let i = 1; i < deals.length; i++) assert.ok(deals[i - 1].price <= deals[i].price, 'cheapest first');
   assert.match(r.content[0].text, /saved for Vietnam, FRA, MUC, STR → SGN, HAN, /);
@@ -62,18 +62,18 @@ test('says what is wrong with a comparison before searching', async () => {
   assert.match((await call('scan_flight_deals', { country: 'Vietnam', origins: ['FRA', 'QQQ'] })).content[0].text, /No airport with the code QQQ/);
 });
 
-test('many airports in one call: a spread of 16 routes that covers every airport, and says what it left out', async () => {
+test('many airports in one call: a spread of routes that covers every airport, and says what it left out', async () => {
   const depart = addDays(FROM, 4), ret = addDays(depart, 14);
   const froms = ['CGN', 'DUS', 'FRA', 'BRU', 'EIN'], tos = ['FCO', 'MXP', 'NAP', 'VCE', 'BLQ', 'CTA'];
   const r = await call('scan_flight_deals', { country: 'Italy', origins: froms, destinations: tos, depart, return: ret });
   assert.ok(!r.isError, JSON.stringify(r.content));
   const { searched, left_out } = r.structuredContent;
-  assert.equal(searched.length, 16);
-  assert.equal(left_out.length, 14);
+  assert.equal(searched.length, 8, 'one scan spends at most 8 live searches');
+  assert.equal(left_out.length, 22);
   assert.deepEqual([...new Set(searched.map((x) => x.from))].sort(), [...froms].sort(), 'every departure airport');
   assert.deepEqual([...new Set(searched.map((x) => x.to))].sort(), [...tos].sort(), 'every arrival airport');
-  assert.equal(new Set(searched.map((x) => `${x.from}>${x.to}`)).size, 16, 'no route twice');
-  assert.match(r.content[0].text, /Looked up 16 of 30 routes, each airport at least once; left out: /);
+  assert.equal(new Set(searched.map((x) => `${x.from}>${x.to}`)).size, 8, 'no route twice');
+  assert.match(r.content[0].text, /Looked up 8 of 30 routes, each airport at least once; left out: /);
 });
 
 test('names an airport by the city travellers fly to, not the suburb it stands in', async () => {
