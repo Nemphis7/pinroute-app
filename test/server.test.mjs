@@ -7,7 +7,7 @@ let srv, client, trip;
 before(async () => { srv = await startServer(null, { SEARCH_LIMIT_PER_DAY: '6' }); client = await connect(srv.url); });
 after(async () => { await client.close(); srv.server.close(); });
 
-const TOOLS = ['calendar_link', 'choose_flight', 'choose_route', 'choose_stay', 'choose_transport', 'clear_flight', 'clear_stay', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'find_transport', 'flight_link', 'get_local_picks', 'hotel_link', 'list_trips', 'mark_leg', 'open_planner',
+const TOOLS = ['add_booked_flight', 'calendar_link', 'choose_flight', 'choose_route', 'choose_stay', 'choose_transport', 'clear_flight', 'clear_stay', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'find_transport', 'flight_link', 'get_local_picks', 'hotel_link', 'list_trips', 'mark_leg', 'open_planner',
   'plan_new_trip', 'planner_answers', 'route_map', 'save_flight_deals', 'save_local_picks', 'save_new_trip_draft', 'save_route_ideas', 'save_transport_options', 'scan_flight_deals', 'search_flights', 'set_nights', 'set_trip_fare', 'show_answer', 'start_trip_from_flight', 'suggest_routes', 'update_trip'];
 
 test('lists every tool, each with a title and the right read or write annotation', async () => {
@@ -22,7 +22,7 @@ test('lists every tool, each with a title and the right read or write annotation
     if (/^(set_nights|mark_leg)$/.test(t.name)) assert.deepEqual([t.annotations.readOnlyHint, t.annotations.destructiveHint], [false, false], `${t.name} writes but takes nothing away`);
     if (/^(get|list|find|open|search)_/.test(t.name)) assert.equal(read, true, `${t.name} is read-only`);
   }
-  for (const name of ['open_planner', 'plan_new_trip', 'start_trip_from_flight']) assert.equal(tools.find((t) => t.name === name)._meta.ui.resourceUri, 'ui://pinroute/planner', `${name} shows the planner`);
+  for (const name of ['open_planner', 'plan_new_trip', 'start_trip_from_flight', 'add_booked_flight']) assert.equal(tools.find((t) => t.name === name)._meta.ui.resourceUri, 'ui://pinroute/planner', `${name} shows the planner`);
 });
 
 test('tool descriptions describe what a tool does, without steering Claude', async () => {

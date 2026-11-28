@@ -20,7 +20,7 @@ export function tripMenu(trip) {
     M.open ? h('div', { class: 'menu right', role: 'menu', 'aria-label': 'Trip' },
       item(Pencil, 'Rename and details…', () => openEdit(trip)),
       item(CalendarPlus, 'Add to calendar…', () => openCalendar(trip)),
-      trip.ticket && trip.countryId ? item(Plane, 'Change flights…', () => openFares(trip)) : null,
+      trip.ticket && !trip.ticket.own && trip.countryId ? item(Plane, 'Change flights…', () => openFares(trip)) : null,
       item(Trash2, 'Delete trip…', () => openDelete(trip))) : null);
 }
 // A tap anywhere else closes the menu, on click so the button tapped still gets it (see nav.js)

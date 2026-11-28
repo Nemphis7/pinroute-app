@@ -276,7 +276,11 @@ function stopPlay() {
 const RIDE_WORD = { ferry: 'ferry', speedboat: 'speedboat', bus: 'bus', minivan: 'minivan', combined: 'bus and ferry', train: 'train', taxi: 'private transfer', drive: 'car' };
 // How the traveller got here: "By ferry · 09:00–10:30" when a ride is chosen for the leg in
 function arrival(leg) {
-  if (!leg || leg.mode === 'flight' || !leg.chosen) return null;
+  if (!leg || !leg.chosen) return null;
+  if (leg.mode === 'flight') {
+    const f = /(\d{1,2}:\d{2})\s*[A-Z]{3}\s*→\s*(\d{1,2}:\d{2})/.exec(leg.chosen.summary || '');
+    return f || leg.booked ? `By air${f ? ` · lands ${f[2]}` : ''}${leg.booked ? ' · booked' : ''}` : null;
+  }
   const t = /(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})/.exec(leg.chosen.summary || '');
   return `By ${RIDE_WORD[leg.chosen.ride] || 'road'}${t ? ` · ${t[1]}–${t[2]}` : ''}${leg.booked ? ' · booked' : ''}`;
 }
