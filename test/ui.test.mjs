@@ -88,7 +88,7 @@ test('shows fares for a flight leg and saves the choice as a ticket', { skip }, 
   assert.equal(await frame().locator('.dbar').count(), 5, 'the day and two either side');
   assert.equal(await frame().locator('.dbar.here').count(), 1);
   assert.equal(await frame().locator('.dbar.low').count(), 1, 'the cheapest day is marked');
-  assert.match(await frame().locator('.quotes').textContent(), /Airlines \(Amadeus\).*Aviasales/);
+  assert.match(await frame().locator('.quotes').textContent(), /Airlines \(Amadeus\).*Trip\.com.*Compare on Trip\.com/);
   assert.match(await frame().locator('.fare').first().locator('.ftags').textContent(), /Cheapest/, 'the cheapest fare is marked');
   const all = await frame().locator('.fare').count();
   await frame().getByRole('button', { name: /^Evening/ }).click();
@@ -124,7 +124,7 @@ test('a flight leg has one Find flights button, which searches with Pinroute onl
   await leg(OUT).click();
   const acts = await frame().locator('.detail .acts').first().locator('button').allTextContents();
   assert.deepEqual(acts.map((t) => t.trim()), ['Find flights']);
-  assert.equal(await frame().getByRole('button', { name: /Ask Claude to find flights|Compare on Aviasales/ }).count(), 0);
+  assert.equal(await frame().getByRole('button', { name: /Ask Claude to find flights|Compare on Trip\.com|Compare on Aviasales/ }).count(), 0);
   const before = await page.evaluate(() => window.__messages.length);
   await frame().getByRole('button', { name: 'Find flights' }).click();
   await frame().locator('.fare').first().waitFor();

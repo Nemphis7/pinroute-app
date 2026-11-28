@@ -57,7 +57,7 @@ test('the Amadeus request carries children, infants and the nonstop hint', () =>
 let fake, srv, client;
 before(async () => {
   fake = await fakeTravelpayouts();
-  srv = await startServer(null, { TRAVELPAYOUTS_API_URL: fake.url, TRAVELPAYOUTS_TOKEN: 'tp-test', TRAVELPAYOUTS_MARKER: '123456', TRAVELPAYOUTS_TRS: '987', SEARCH_LIMIT_PER_DAY: '30' });
+  srv = await startServer(null, { TRAVELPAYOUTS_API_URL: fake.url, TRAVELPAYOUTS_TOKEN: 'tp-test', AVIASALES_PRICES: 'on', TRAVELPAYOUTS_MARKER: '123456', TRAVELPAYOUTS_TRS: '987', SEARCH_LIMIT_PER_DAY: '30' });
   client = await connect(srv.url);
 });
 after(async () => { await client.close(); srv.server.close(); fake.close(); });

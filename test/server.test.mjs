@@ -113,14 +113,14 @@ test('searches flights (demo) cheapest first, with real door-to-door times', asy
   assert.match(past.content[0].text, /already passed/);
 });
 
-test('the same search again comes from the cache; past the daily limit a search answers with an Aviasales link', async () => {
+test('the same search again comes from the cache; past the daily limit a search answers with a Trip.com link', async () => {
   const once = await client.callTool({ name: 'search_flights', arguments: { origin: 'HKT', destination: 'BKK', date: START } });
   const twice = await client.callTool({ name: 'search_flights', arguments: { origin: 'HKT', destination: 'BKK', date: START } });
   assert.equal(twice.structuredContent.searches_left, once.structuredContent.searches_left, 'asked again: free');
   let last;
   for (let i = 1; i <= 6; i++) last = await client.callTool({ name: 'search_flights', arguments: { origin: 'HKT', destination: 'BKK', date: addDays(START, i) } });
   assert.ok(!last.isError, 'the limit is 6 here: no error, a way on');
-  assert.match(last.content[0].text, /^Today's 6 live airline searches in Pinroute are used up .*Aviasales's own search for it: https:\/\/www\.aviasales\.com\/search\/HKT/);
+  assert.match(last.content[0].text, /^Today's 6 live airline searches in Pinroute are used up (\(.*\))?\. Trip\.com's search for it: https:\/\/www\.trip\.com\/flights\/showfarefirst\?dcity=hkt&acity=bkk/);
   assert.equal(last.structuredContent.limited, true);
 });
 

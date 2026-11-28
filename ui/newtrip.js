@@ -546,13 +546,13 @@ function dealItem(d, x, main) {
     h('div', { class: 'acts' },
       h('button', { disabled: ui.busy, onclick: () => startFrom(d, x) }, `Plan ${d.name} with this flight`, icon(ArrowRight)),
       x.link ? h('button', { class: 'ghost', onclick: () => app.openLink({ url: x.link }) }, icon(ExternalLink), x.recent ? 'Check on Aviasales' : 'Booking page') : null,
-      x.recent ? null : h('button', { class: 'ghost', onclick: () => openFlightLink({ from: x.from, to: x.to, depart: x.depart, return: x.return, adults: x.adults }) }, icon(ExternalLink), 'Compare on Aviasales')));
+      x.recent ? null : h('button', { class: 'ghost', onclick: () => openFlightLink({ from: x.from, to: x.to, depart: x.depart, return: x.return, adults: x.adults }) }, icon(ExternalLink), 'Compare on Trip.com')));
 }
 // One Find flights button, as on a trip's flight legs: Pinroute's own search, recent Aviasales prices from every home
 // airport first (when the server has them), then airline fares from the main one.
 const findTitle = () => [N.flights.recent ? 'Recent Aviasales prices from each of your airports' : null, N.flights.live ? 'live airline fares' : 'demo fares'].filter(Boolean).join(', then ');
-export const commissionNote = () => h('p', { class: 'small foot', text: 'Aviasales links carry Pinroute\'s partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.' });
-// A link to compare and book any flight on Aviasales, made on the server (with the partner ID when it has one)
+export const commissionNote = () => h('p', { class: 'small foot', text: 'Trip.com links carry Pinroute\'s partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.' });
+// A link to compare and book any flight on Trip.com, made on the server (with the partner ID when it has one)
 export async function openFlightLink(args) {
   try { const r = await call('flight_link', args); await app.openLink({ url: r.structuredContent.url }); }
   catch (e) { showError(e.message || String(e)); }

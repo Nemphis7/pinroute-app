@@ -103,7 +103,7 @@ test('finds the best dates in the window live: spread over it, then around the c
   dealId = again.structuredContent.deals[0].id;
 });
 
-test('at the daily search limit a scan still answers: the fares saved and an Aviasales link, not an error', async () => {
+test('at the daily search limit a scan still answers: the fares saved and a Trip.com link, not an error', async () => {
   let left = 12;
   for (let i = 0; left > 0 && i < 12; i++) {                                     // other windows, so nothing comes from the cache
     const r = await call('scan_flight_deals', { country: 'Mexico', earliest: addDays(FROM, i), latest: addDays(FROM, i + 20), dates: 4, source: 'live' });
@@ -116,7 +116,7 @@ test('at the daily search limit a scan still answers: the fares saved and an Avi
   assert.match(over.content[0].text, /^Today's 12 live airline searches in Pinroute are used up \(they start again at 00:00 UTC\)\./);
   assert.match(over.content[0].text, /Fares already saved for Mexico:/);
   assert.equal(over.structuredContent.limited, true);
-  assert.match(over.structuredContent.link, /^https:\/\/www\.aviasales\.com\/search\/FRA/);
+  assert.match(over.structuredContent.link, /^https:\/\/www\.trip\.com\/flights\/showfarefirst\?dcity=fra&/);
   assert.ok(over.structuredContent.deals.length > 0);
 });
 
