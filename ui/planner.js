@@ -727,7 +727,7 @@ function transferBlock(l) {
     c || waiting[key] ? null : h('div', { class: 'acts' },
       h('button', { class: list.length ? 'ghost' : 'primary', onclick: () => askRides(l) }, icon(Sparkles), list.length ? 'Ask Claude again' : l.mode === 'ferry' ? 'Find ferries and buses' : 'Find buses, trains and transfers'),
       c ? null : bookedButton(l)),
-    shop && V.transport?.partnerLinks ? h('p', { class: 'small foot', text: `${shop.site} links carry Pinroute's partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.` }) : null,
+    shop?.partner ? h('p', { class: 'small foot', text: `${shop.site} links carry Pinroute's partner ID: Pinroute may earn a commission on a booking. The price you pay is the same.` }) : null,
   ].filter(Boolean);
 }
 

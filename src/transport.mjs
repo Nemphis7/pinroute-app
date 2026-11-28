@@ -3,7 +3,8 @@
 // not a data API), so each ground leg gets:
 // - searches on the sites that sell those tickets for that part of the world, for the leg's own day: 12Go in Asia,
 //   Omio in Europe, and Rome2Rio everywhere, which shows each operator and how to get between two places.
-//   12Go and Omio links become Travelpayouts partner links when the project is connected to those programs.
+//   They are plain links until a program accepts Pinroute: TRANSPORT_PARTNER_LINKS names the programs that did
+//   (e.g. "12go" or "12go,omio"), and only those become Travelpayouts partner links.
 // - the options Claude works out from what it knows (operator, usual times, journey length, usual price), saved with
 //   save_transport_options and shown in the planner next to the search, each with the booking search for its day.
 // - the one the traveller picks (choose_transport), saved like a chosen flight, so the calendar gets its times.
@@ -54,13 +55,25 @@ export function searchSites({ from, to, date, adults, country }) {
   return out;
 }
 
-// Partner links for the sites that sell tickets; a link Travelpayouts can't convert stays a plain link
+// The booking sites whose Travelpayouts program accepted Pinroute, from TRANSPORT_PARTNER_LINKS ("12go,omio");
+// it needs TRAVELPAYOUTS_MARKER too. Every other site keeps a plain link and no Links API call is made for it.
+export function trackedSites(env = process.env) {
+  if (!tp.linksOn(env)) return new Set();
+  return new Set(String(env.TRANSPORT_PARTNER_LINKS || '').toLowerCase().split(/[\s,;]+/).filter(Boolean));
+}
+export const linksOn = (env = process.env) => trackedSites(env).size > 0;
+
+// Partner links for the tracked sites; a link Travelpayouts can't convert stays a plain link. Each site says
+// whether its link is a partner link, so the planner names only those.
 export async function withPartnerLinks(sites, ctx = {}) {
   const env = ctx.env || process.env;
-  const sell = sites.filter((x) => x.sells);
-  const made = await tp.partnerLinks(sell.map((x) => x.url), { ...ctx, env, fallback: 'plain' });
-  let i = 0;
-  return sites.map((x) => (x.sells ? { ...x, url: made[i++] } : x));
+  const on = trackedSites(env);
+  const todo = sites.filter((x) => x.sells && on.has(x.site.toLowerCase()));
+  const made = todo.length ? await tp.partnerLinks(todo.map((x) => x.url), { ...ctx, env, fallback: 'plain' }) : [];
+  return sites.map((x) => {
+    const i = todo.indexOf(x);
+    return { ...x, url: i < 0 ? x.url : made[i], partner: i >= 0 && made[i] !== x.url };
+  });
 }
 
 // The ground legs of a trip, each with the country it is in and the options saved for it
@@ -90,8 +103,9 @@ export function optionText(o, i) {
 }
 
 export function registerTransportTools(server, { env, owner, store, mine, noTrip, viewResult }) {
-  const partner = () => tp.linksOn(env);
-  const commission = tp.linksOn(env) ? ' 12Go and Omio links carry Pinroute\'s Travelpayouts partner ID, so Pinroute may earn a commission on a booking; the price is the same either way.' : '';
+  const partner = () => linksOn(env);
+  const named = [...trackedSites(env)].map((k) => ({ '12go': '12Go', omio: 'Omio' })[k] || k);
+  const commission = named.length ? ` ${named.join(' and ')} links carry Pinroute's Travelpayouts partner ID, so Pinroute may earn a commission on a booking; the price is the same either way.` : '';
   const legOf = (t, leg_key) => {
     const l = groundLeg(t, leg_key);
     if (!l) return { error: fail(`Trip ${t.id} has no leg ${leg_key}. Its legs are: ${legs(t).map((x) => x.key).join(', ')}.`) };
@@ -160,7 +174,7 @@ export function registerTransportTools(server, { env, owner, store, mine, noTrip
     if (error) return error;
     if (options.some((o) => o.price != null && !o.currency)) return fail('Give the currency with each price.');
     const [book] = await withPartnerLinks(searchSites({ from: l.fromName, to: l.toName, date: l.date, adults: t.adults, country: l.country }).slice(0, 1), { env });
-    const clean = options.map((o) => ({ ...o, currency: o.currency ? o.currency.toUpperCase() : null, book: { site: book.site, url: book.url } }));
+    const clean = options.map((o) => ({ ...o, currency: o.currency ? o.currency.toUpperCase() : null, book: { site: book.site, url: book.url, partner: book.partner } }));
     // Options for this hop on another date give way to these
     const rides = Object.fromEntries(Object.entries(t.rides || {}).filter(([k]) => legRoute(k) !== legRoute(leg_key)));
     rides[leg_key] = { options: clean, at: new Date().toISOString() };
