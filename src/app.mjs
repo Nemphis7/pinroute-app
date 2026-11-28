@@ -19,6 +19,7 @@ import * as acts from './providers/activities.mjs';
 import { airlineName, withAirlineName, namedFare } from './airlines.mjs';
 import * as cal from './calendar.mjs';
 import * as hotels from './hotels.mjs';
+import * as transport from './transport.mjs';
 import { applyFilters, sortFares, dedupe, facets } from './flightfilter.mjs';
 
 export const VERSION = '0.8.0';
@@ -64,7 +65,7 @@ export const INSTRUCTIONS = 'Pinroute Trip Planner plans holidays and multi-stop
   + 'Start with plan_new_trip when the traveller is still choosing where or when to go, or create_trip when they already know their stops; '
   + 'open_planner shows trips they saved before. '
   + 'Its own lookups cover live airline fares and recent Aviasales prices (search_flights, scan_flight_deals), a Booking.com search for each stop\'s dates (hotel_link), '
-  + 'tours and activities at each stop (find_activities), and each trip\'s route with its flight, ferry and road legs. Pinroute never books or pays for anything. '
+  + 'tours and activities at each stop (find_activities), where to book the ferries, buses and trains between stops (find_transport), and each trip\'s route with its flight, ferry and road legs. Pinroute never books or pays for anything. '
   + 'A planner already showing in the conversation refreshes itself after every change saved with these tools, so a change does not need open_planner or plan_new_trip to show it; '
   + 'save_new_trip_draft changes the new-trip draft without showing another planner. '
   + 'A message sent from the planner names a key when the traveller wants the answer in the planner: show_answer puts it there.';
@@ -97,7 +98,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const legList = legs(trip).map((l) => {
       const chosen = choices[l.key] || null;
       const old = chosen ? null : Object.entries(choices).find(([k]) => k !== l.key && legRoute(k) === legRoute(l.key));
-      return { ...l, chosen, stale: old ? { ...old[1], date: old[0].split('|')[3] } : null, booked: !!marks[l.key]?.booked, note: marks[l.key]?.note || null };
+      const rides = l.mode === 'flight' ? null : transport.ridesFor(trip, l.key);
+      return { ...l, chosen, stale: old ? { ...old[1], date: old[0].split('|')[3] } : null, booked: !!marks[l.key]?.booked, note: marks[l.key]?.note || null, ...(rides && { rides }) };
     });
     const d = trip.country ? destById(trip.country) : null;
     return {
@@ -110,6 +112,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       picks,
       flights: { provider: provider.name, live: provider.name !== 'Demo data', partnerLinks: tp.linksOn(env) },
       hotels: { partnerLinks: hotels.linksOn(env) },
+      transport: { partnerLinks: tp.linksOn(env) },
       activities: { on: acts.configured(env), partnerLinks: tp.linksOn(env) },
       calendar: { links: cal.calendarLinks(trip.calendar?.token, env), hosted: !!cal.publicBase(env) },
     };
@@ -274,7 +277,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   server.registerTool('clear_flight', {
     title: 'Remove a chosen flight',
-    description: 'Removes the flight saved for one leg of a trip, so the leg shows as not chosen again. It does not cancel any booking.',
+    description: 'Removes the flight, or the ferry, bus or train, saved for one leg of a trip, so the leg shows as not chosen again. It does not cancel any booking.',
     inputSchema: { trip_id: z.string().max(40), leg_key: z.string().max(80) },
     annotations: { title: 'Remove a chosen flight', readOnlyHint: false, destructiveHint: true },
   }, mine(async ({ trip_id, leg_key }) => {
@@ -929,6 +932,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   // ---- hotels per stop: a Booking.com search for each stop's dates, and the stay the traveller picked
   hotels.registerHotelTools(server, { env, owner, store, mine, noTrip, viewResult });
+  transport.registerTransportTools(server, { env, owner, store, mine, noTrip, viewResult });
   // ---- tours and activities: found with Amadeus Travel Builder, booked through GetYourGuide or Klook partner links
   if (acts.configured(env)) {
     const money = (n, c) => (n == null ? null : `${c === 'EUR' ? '€' : `${c} `}${Math.round(n).toLocaleString('en-GB')}`);
