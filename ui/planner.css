@@ -1221,3 +1221,20 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
 .win.low { border-color: var(--accent); background: var(--accent-soft); }
 .win.low .wbar i { background: var(--accent); }
 .win:hover:not(:disabled) { border-color: var(--accent); }
+/* ---- flights the traveller already booked (ownflight.js) */
+.own-line { color: var(--ink-3); }
+.link.own-link { font-size: 13px; }
+.own { gap: var(--s-3); }
+.own-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.own-head h3 { margin: 0 0 var(--s-1); font-size: 15px; }
+.own-manual { display: grid; gap: var(--s-3); }
+.own-flight { border: 0; padding: 0; margin: 0 0 var(--s-3); min-width: 0; }
+.own-flight legend { padding: 0; margin-bottom: var(--s-2); font-size: 13px; }
+.own-flight legend .small { color: var(--ink-3); }
+.own-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--s-2) var(--s-3); }
+.own-ref { max-width: 240px; margin-bottom: var(--s-2); }
+.own input[type="time"], .own select { font: inherit; font-size: 14px; color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--r-2); min-height: 36px; padding: 6px 10px; width: 100%; font-variant-numeric: tabular-nums; }
+.own .code-in { text-transform: uppercase; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.own-grid input, .own-grid select { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.own-ticket { grid-template-columns: minmax(0, 1fr); }
+.own-ticket .tside { border-left: 0; border-top: 2px dashed var(--line-2); grid-auto-flow: column; justify-content: space-between; align-items: baseline; padding-top: var(--s-2); padding-bottom: var(--s-2); }

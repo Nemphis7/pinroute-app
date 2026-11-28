@@ -245,6 +245,27 @@ test('back to chat returns to the card', { skip }, async () => {
   assert.deepEqual(await page.evaluate(() => window.__modes), ['fullscreen', 'inline']);
 });
 
+test('Claude offers no pip: no Pin button on the card', { skip }, async () => {
+  assert.equal(await frame().getByRole('button', { name: 'Pin', exact: true }).count(), 0);
+});
+
+test('a host with picture-in-picture: Pin keeps the card on screen, Unpin puts it back in the chat', { skip }, async () => {
+  const p = await openHost({ inline: [760, 400], full: [1100, 900], modes: ['inline', 'fullscreen', 'pip'] });
+  const f = p.frameLocator('#planner');
+  await f.getByRole('button', { name: 'Pin', exact: true }).click();
+  await f.getByRole('button', { name: 'Unpin' }).waitFor();
+  assert.equal(await f.locator('#app').getAttribute('data-layout'), 'card', 'the pinned window shows the card');
+  await f.getByRole('button', { name: 'Unpin' }).click();
+  await f.getByRole('button', { name: 'Pin', exact: true }).waitFor();
+  // Full screen offers Pin too, beside Back to chat
+  await f.getByRole('button', { name: 'Open planner' }).click();
+  await f.locator('#app[data-layout="app"]').waitFor();
+  await f.locator('.bar-row').getByRole('button', { name: 'Pin', exact: true }).click();
+  await f.locator('#app[data-layout="card"]').waitFor();
+  assert.deepEqual(await p.evaluate(() => window.__modes), ['pip', 'inline', 'fullscreen', 'pip']);
+  await p.close();
+});
+
 test('a host without full screen shows the planner in place, one pane at a time', { skip }, async () => {
   const p = await openHost({ inline: [420, 1400], modes: ['inline'] });
   const f = p.frameLocator('#planner');

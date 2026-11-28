@@ -2,8 +2,8 @@
 // that are always one tap away (Home, New trip, Trips) and the way back to the chat. On a computer they sit in a bar
 // along the top; on a phone the bar on top keeps Back, the title and the way out, and the three places move to tabs
 // at the bottom, in thumb reach. Trips opens a list of the traveller's trips, the one under way first.
-import { House, Plus, Luggage, ChevronLeft, ChevronDown, Minimize2 } from 'lucide';
-import { nav, go, goBack, setMode, call, render } from './core.js';
+import { House, Plus, Luggage, ChevronLeft, ChevronDown, Minimize2, Pin } from 'lucide';
+import { nav, go, goBack, setMode, canPip, call, render } from './core.js';
 import { h, icon, span, today } from './dom.js';
 
 const M = { open: false, trips: null, error: '' };
@@ -70,9 +70,13 @@ export function navBar({ layout, phone, where, title, tripName, tripId, steps, o
   const out = layout === 'app'
     ? h('button', { class: phone ? 'ghost icon' : 'ghost', 'aria-label': 'Back to chat', title: 'Back to chat', onclick: () => setMode('inline') }, icon(Minimize2), phone ? null : 'Back to chat')
     : null;
+  // Where the host offers picture-in-picture: shrink the planner to a small window that stays on screen over the chat
+  const pin = layout === 'app' && canPip()
+    ? h('button', { class: phone ? 'ghost icon' : 'ghost', 'aria-label': 'Pin', title: 'Keep a small planner on screen while you chat', onclick: () => setMode('pip') }, icon(Pin), phone ? null : 'Pin')
+    : null;
   const row = phone
-    ? h('div', { class: 'bar-row' }, back, h('span', { class: 'bar-title', text: title }), out)
-    : h('div', { class: 'bar-row' }, back, h('span', { class: 'sep', 'aria-hidden': 'true' }), h('nav', { class: 'places', 'aria-label': 'Pinroute' }, places(where, tripName, tripId, false)), h('span', { class: 'grow' }), out);
+    ? h('div', { class: 'bar-row' }, back, h('span', { class: 'bar-title', text: title }), pin, out)
+    : h('div', { class: 'bar-row' }, back, h('span', { class: 'sep', 'aria-hidden': 'true' }), h('nav', { class: 'places', 'aria-label': 'Pinroute' }, places(where, tripName, tripId, false)), h('span', { class: 'grow' }), pin, out);
   return [row, steps ? h('div', { class: 'bar-row sub' }, steps) : null].filter(Boolean);
 }
 

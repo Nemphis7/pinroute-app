@@ -6,8 +6,8 @@
 // It talks to the Pinroute server through the host (callServerTool), asks Claude, on the traveller's own plan, for the
 // work that needs a model (sendMessage), and tells Claude what changed (updateModelContext).
 import { applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, MapPinPlus, Shuffle } from 'lucide';
-import { app, ui, $, onRender, onShow, canFull, isFull, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting, loadAnswers } from './core.js';
+import { Plane, Ship, Car, MapPin, Check, Plus, Minus, ExternalLink, ChevronLeft, ChevronRight, Maximize2, MessageSquare, Route, Utensils, Wine, Umbrella, Mountain, Compass, BedDouble, ShoppingBag, Sparkles, PartyPopper, Ticket, Star, ArrowRight, CircleCheck, Play, Bus, TrainFront, CarTaxiFront, Clock, MapPinPlus, Shuffle, Pin, PinOff } from 'lucide';
+import { app, ui, $, onRender, onShow, canFull, isFull, canPip, isPip, layout, narrow, textOf, showError, call, go, setMode, setHere, tell, ask, waiting, loadAnswers } from './core.js';
 import { answerBlock } from './answer.js';
 import { h, s, icon, day, longDay, span, days, nightsTxt, money, hm, clock, today } from './dom.js';
 import { takeHome, homeCard, homeScreen } from './home.js';
@@ -20,6 +20,7 @@ import { scene, kindOf } from './scene.js';
 import { stageEl, updateStage } from './stage.js';
 import { builderOn, openBuilder, closeBuilder, builderList, builderMapEl, updateBuilderMap, builderSync } from './builder.js';
 import { filtered, filterBar, quotes, dateStrip, searching, fareCard, standouts, clearFilters } from './fares.js';
+import { ownLink, ownPanel } from './ownflight.js';
 
 let screen = null;         // 'home', 'new' or 'trip'
 let V = null;              // the trip as the server sent it
@@ -131,7 +132,14 @@ function fillCard(c) {
   $('side').replaceChildren(...[c.side].filter(Boolean));
   $('strip').replaceChildren();
   $('open-row').hidden = false;
-  $('open-row').replaceChildren(h('div', { class: 'acts' }, ...(c.actions || [h('button', { class: 'primary', onclick: () => (canFull() ? setMode('fullscreen') : render()) }, icon(Maximize2), 'Open planner')])));
+  $('open-row').replaceChildren(h('div', { class: 'acts' }, ...(c.actions || [h('button', { class: 'primary', onclick: () => (canFull() ? setMode('fullscreen') : render()) }, icon(Maximize2), 'Open planner')]), pinButton()));
+}
+
+// Keeping the card in sight while the chat goes on: where the host offers picture-in-picture, Pin floats the card in a
+// small window that stays on screen, and Unpin puts it back in the chat. Hosts without pip show no button.
+export function pinButton() {
+  if (isPip()) return h('button', { class: 'ghost', title: 'Put the planner back in the chat', onclick: () => setMode('inline') }, icon(PinOff), 'Unpin');
+  return canPip() ? h('button', { class: 'ghost', title: 'Keep the planner on screen while you chat', onclick: () => setMode('pip') }, icon(Pin), 'Pin') : null;
 }
 
 function renderTrip(L) {
@@ -160,7 +168,7 @@ function renderTrip(L) {
   $('strip').replaceChildren(strip());
   $('open-row').hidden = L !== 'card';
   $('open-row').replaceChildren(h('div', { class: 'acts' }, h('button', { class: 'primary', onclick: () => openAt(null) }, icon(Maximize2), 'Open planner'),
-    canFull() ? h('button', { onclick: () => go('open_planner', {}) }, 'All trips') : null));
+    canFull() ? h('button', { onclick: () => go('open_planner', {}) }, 'All trips') : null, pinButton()));
   $('panes').hidden = L === 'card';
   if (L !== 'card' && builderOn()) {
     $('list').replaceChildren(...builderList());
@@ -400,7 +408,8 @@ function askPlan() {
   const t = V.trip.ticket, first = V.stops[0].place, last = V.stops.at(-1).place;
   const before = V.stops.map((x) => `${x.place}:${x.nights}`).join();
   const area = V.trip.area ? ` Keep the route in ${V.trip.area}.` : '', wish = V.trip.wishes ? ` What I have in mind: "${V.trip.wishes}".` : '';
-  return ask('plan', `Plan the route for my Pinroute trip "${V.trip.name}" (trip_id "${V.trip.id}")${V.trip.country ? ` in ${V.trip.country}` : ''}: I land in ${first} (${t.to}) on ${longDay(V.trip.start)} and fly home from ${last} (${t.back_from || t.to}) on ${longDay(V.trip.end)}, ${nightsTxt(days(V.trip.start, V.trip.end))}, ${V.trip.adults} adult${V.trip.adults === 1 ? '' : 's'}.${area}${wish} Suggest 2 or 3 routes that are really different (for example another order, another region, or fewer stops and longer stays), each at a relaxed pace with the stops in travel order and the nights at each, and save them with suggest_routes so I can compare them on the map: a short name and a line on why for each, every option keeps ${first} first and ends with ${last} with 0 nights, uses all ${nightsTxt(days(V.trip.start, V.trip.end))}, and gives every stop its nearest airport code, its lat and lon, and island true for islands. If the trip really suits one place only, save that one with update_trip instead.`,
+  const booked = t.own ? ` My flights are booked: ${[t.out, t.back ? `home ${t.back}` : null].filter(Boolean).join('; ')} (local times). Plan the first and last day around them: how long the first day really is after landing, and leaving the last stop in time for the flight home.` : '';
+  return ask('plan', `Plan the route for my Pinroute trip "${V.trip.name}" (trip_id "${V.trip.id}")${V.trip.country ? ` in ${V.trip.country}` : ''}: I land in ${first} (${t.to}) on ${longDay(V.trip.start)} and fly home from ${last} (${t.back_from || t.to}) on ${longDay(V.trip.end)}, ${nightsTxt(days(V.trip.start, V.trip.end))}, ${V.trip.adults} adult${V.trip.adults === 1 ? '' : 's'}.${booked}${area}${wish} Suggest 2 or 3 routes that are really different (for example another order, another region, or fewer stops and longer stays), each at a relaxed pace with the stops in travel order and the nights at each, and save them with suggest_routes so I can compare them on the map: a short name and a line on why for each, every option keeps ${first} first and ends with ${last} with 0 nights, uses all ${nightsTxt(days(V.trip.start, V.trip.end))}, and gives every stop its nearest airport code, its lat and lon, and island true for islands. If the trip really suits one place only, save that one with update_trip instead.`,
     { poll: refresh, done: () => !!V.options?.length || V.stops.map((x) => `${x.place}:${x.nights}`).join() !== before, tries: 60 });
 }
 
@@ -761,7 +770,7 @@ function flightBlock(l) {
       h('div', { class: 'acts' },
         bookedButton(l),
         l.chosen.link ? h('button', { onclick: () => app.openLink({ url: l.chosen.link }) }, icon(ExternalLink), 'Booking page') : null,
-        l.chosen.part === 'return' ? null : findButton(l, ''),
+        l.chosen.part === 'return' || l.chosen.own ? null : findButton(l, ''),
         h('button', { class: 'ghost', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove')),
       ...results(l)].filter(Boolean);
   }
@@ -769,6 +778,8 @@ function flightBlock(l) {
     l.stale ? h('div', { class: 'note warn' }, `A flight was chosen for ${day(l.stale.date)}, before the dates moved: ${l.stale.summary}, ${money(l.stale.price, l.stale.currency)}. ${l.stale.booked ? 'It was marked booked, so change or cancel it with the airline. ' : ''}Choose one for ${day(l.date)}. `,
       h('button', { class: 'link', disabled: ui.busy, onclick: () => clearFlight(l) }, 'Remove it')) : null,
     h('div', { class: 'acts' }, findButton(l, fares[l.key]?.state === 'done' ? '' : 'primary')),
+    h('p', { class: 'small own-line' }, 'Booked it already? ', ownLink(`leg|${l.key}`, 'I already have this flight')),
+    ownPanel(`leg|${l.key}`, ownLeg(l)),
     ...results(l),
   ].filter(Boolean);
 }
@@ -789,14 +800,16 @@ function results(l) {
 function ticket(c) {
   const m = /(\d{1,2}:\d{2})\s*([A-Z]{3})\s*→\s*(\d{1,2}:\d{2})\s*([A-Z]{3})/.exec(c.summary || '');
   const airline = (c.summary || '').split(',')[0].trim().replace(/\b([A-Z0-9]{2}) (\d)/g, '$1\u00a0$2');   // "Thai AirAsia FD 3104": the flight number never breaks
-  return h('div', { class: 'ticket' },
+  return h('div', { class: `ticket${c.own ? ' own-ticket' : ''}` },
     h('div', { class: 'tmain' },
       m ? h('div', { class: 'troute' },
         h('span', { class: 'code' }, h('b', { text: m[2] }), h('span', { class: 'time', text: m[1] })),
         h('span', { class: 'line' }, icon(Plane)),
         h('span', { class: 'code' }, h('b', { text: m[4] }), h('span', { class: 'time', text: m[3] }))) : h('p', { class: 'tsum', text: c.summary }),
-      h('p', { class: 'small', text: [m ? airline : null, c.source ? `via ${c.source}` : null].filter(Boolean).join(' · ') || ' ' })),
-    c.part === 'return'
+      h('p', { class: 'small', text: [m ? airline : null, c.source && !c.own ? `via ${c.source}` : null].filter(Boolean).join(' · ') || ' ' })),
+    c.own
+      ? h('div', { class: 'tside' }, h('span', { class: 'small', text: 'Your booking' }), c.price ? h('span', { class: 'price', text: money(c.price, c.currency) }) : null)
+      : c.part === 'return'
       ? h('div', { class: 'tside' }, h('span', { class: 'small', text: 'In the return fare' }))
       : h('div', { class: 'tside' }, h('span', { class: 'price', text: money(c.price, c.currency) }), h('span', { class: 'small', text: c.part === 'out' ? `for ${V.trip.adults}, return` : `for ${V.trip.adults}` })));
 }
@@ -937,6 +950,21 @@ const chooseRide = (l, o, i) => save('choose_transport', { trip_id: V.trip.id, l
 const choose = (l, f, line) => save('choose_flight', { trip_id: V.trip.id, leg_key: l.key, summary: line, price: f.total, currency: f.currency, source: f.demo ? 'Demo data' : V.flights.provider, ...(f.link ? { link: f.link } : {}) },
   `the traveller chose ${line} for ${l.fromName} → ${l.toName} on ${l.date}, ${money(f.total, f.currency)} for ${V.trip.adults}.`)
   .then((r) => { if (r) celebrate(`Flight chosen: ${l.from} → ${l.to}, ${money(f.total, f.currency)}`, { kind: 'leg', key: l.key }); return r; });
+
+// A flight the traveller booked themselves, for one leg: read from a pasted booking by Claude, or filled in
+function ownLeg(l) {
+  const ends = l.kind === 'out' || l.kind === 'home';
+  const mine = () => V.legs.find((x) => x.kind === l.kind && (ends || x.key === l.key))?.chosen?.own;
+  return {
+    mode: 'leg', leg: l,
+    intro: `Paste your booking confirmation, or just the flight number and times. Pinroute skips the search, marks it booked and puts it in your calendar at its times.${ends ? ' A flight on another day moves the trip to it.' : ''}`,
+    save: (args) => save('add_booked_flight', { trip_id: V.trip.id, leg_key: l.key, ...args },
+      `the traveller added the flight they booked themselves for ${l.from} → ${l.to}: ${args.out.number || ''} ${args.out.date}${args.out.departs ? ` ${args.out.departs}` : ''}, marked booked.`)
+      .then((r) => { if (r) celebrate(`Flight booked: ${l.from} → ${l.to}`, { kind: 'leg', key: r.structuredContent.legs.find((x) => x.kind === l.kind && (ends || x.key === l.key))?.key || l.key }); return r; }),
+    ask: (words, key) => ask(key, `I already booked the flight ${l.fromName} (${l.from}) → ${l.toName} (${l.to}) for my Pinroute trip "${V.trip.name}" (trip_id "${V.trip.id}"), the leg on ${longDay(l.date)} (leg_key "${l.key}"). Here is my booking, or what I know of it: """${words}""". Read the flight from it: airports as IATA codes, the day it leaves, departure and arrival times as local times on the ticket, the day it lands when that is later, the flight number, the airline, the booking reference and what I paid if it says. Save it with add_booked_flight (trip_id "${V.trip.id}", leg_key "${l.key}", the flight as out${ends ? '; a flight on another day moves the trip to it' : `; it has to leave on ${l.date}, so if it leaves on another day, tell me rather than save it`}). If something can't be read, ask me rather than guess. Don't search for flights. In the chat, one line is enough; the planner I'm looking at shows it.`,
+      { poll: refresh, done: () => !!mine(), answer: false, tries: 45 }),
+  };
+}
 
 async function findFlights(l) {
   fares[l.key] = { ...(fares[l.key] || {}), state: 'loading' };
