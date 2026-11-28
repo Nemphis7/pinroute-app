@@ -92,11 +92,12 @@ export async function loadAnswers(prefix = ui.scope) {
 export const OWN_TOOLS = ' For flights, hotels, tours and getting between places, use only Pinroute\'s own tools and what you know, not other travel tools or booking sites.';
 const inPlanner = (k) => ` Put your full answer in the Pinroute planner with show_answer (key "${k}"), where I asked; in the chat, one short line is enough. The planner I'm looking at refreshes itself.`;
 
-export async function ask(key, message, { poll, done, then, every = 8000, tries = 30, answer = true } = {}) {
+// own: false leaves out the line that keeps Claude to Pinroute's own tools, for a message that names the tools to use
+export async function ask(key, message, { poll, done, then, every = 8000, tries = 30, answer = true, own = true } = {}) {
   const scope = ui.scope || '', ak = scope + key, since = answers[ak]?.at || '';
   waiting[key] = true;
   render();
-  await app.sendMessage({ role: 'user', content: [{ type: 'text', text: message + OWN_TOOLS + (answer ? inPlanner(ak) : '') }] }).catch((e) => showError(e.message || String(e)));
+  await app.sendMessage({ role: 'user', content: [{ type: 'text', text: message + (own ? OWN_TOOLS : '') + (answer ? inPlanner(ak) : '') }] }).catch((e) => showError(e.message || String(e)));
   if (!(poll && done) && !answer) return;
   let n = 0;
   const timer = setInterval(async () => {

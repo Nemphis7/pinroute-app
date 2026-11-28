@@ -127,6 +127,50 @@ test('fares Claude saves show up on the Flights step', { skip }, async () => {
   assert.match(await frame().locator('.banner').textContent(), /Exceptional deal.*via LetsFG/);
 });
 
+test('Flights: the traveller taps the sites to search, Claude searches them, the sites compared side by side', { skip }, async () => {
+  const chips = frame().locator('.site-chip');
+  assert.deepEqual((await frame().locator('.site-chip .site-txt b').allTextContents()), ['Pinroute', 'Kiwi.com', 'Expedia', 'eDreams', 'lastminute.com']);
+  assert.equal(await frame().locator('.site-chip.on').count(), 1, 'Pinroute\'s own search to start with');
+  await chips.filter({ hasText: 'Kiwi.com' }).click();
+  await frame().locator('.site-chip.on', { hasText: 'Kiwi.com' }).waitFor();
+  await chips.filter({ hasText: 'eDreams' }).click();
+  await frame().locator('.site-chip.on', { hasText: 'eDreams' }).waitFor();
+  assert.deepEqual((await draft()).draft.sites, ['pinroute', 'kiwi', 'edreams']);
+
+  const before = await page.evaluate(() => window.__messages.length);
+  await frame().locator('.toolbar').getByRole('button', { name: 'Find flights' }).click();
+  await page.waitForFunction((n) => window.__messages.length > n, before);
+  const msg = await lastMessage();
+  assert.match(msg, /^Find flight deals for my new trip in Pinroute with my own flight-search connectors in Claude: Kiwi\.com, eDreams\./);
+  assert.match(msg, /Kiwi\.com \(search-flight\) searches date ranges: .*nights_in_dst_from 13, nights_in_dst_to 16, adults 2/);
+  assert.match(msg, /eDreams search exact dates: for each departure and arrival airport, search these date pairs, and the cheapest dates Kiwi\.com finds:\n- /);
+  assert.match(msg, /From: (FRA, MUC|MUC, FRA)\./);
+  assert.match(msg, /save_flight_deals: source exactly "Kiwi\.com" \/ "eDreams"/);
+  assert.doesNotMatch(msg, /use only Pinroute's own tools/, 'this one message lets Claude use the traveller\'s connectors');
+  await frame().locator('.sites .busy', { hasText: 'Claude is searching Kiwi.com, eDreams' }).waitFor();
+
+  // what Claude would do: save Kiwi's fares, and say eDreams isn't connected
+  const first = (await draft()).draft.compare[0];
+  await client.callTool({ name: 'save_flight_deals', arguments: { country: first, deals: [{ from: 'MUC', to: 'BKK', depart: addDays(FROM, 2), return: addDays(FROM, 16), price: 320, currency: 'EUR', adults: 2, airline: 'Kiwi Air', stops: 1, source: 'Kiwi.com', link: 'https://www.kiwi.com/deep?x=1' }],
+    sites: [{ site: 'kiwi', status: 'searched' }] } });
+  await client.callTool({ name: 'save_flight_deals', arguments: { country: first, sites: [{ site: 'edreams', status: 'not_connected' }] } });
+  await frame().locator('.connect', { hasText: 'eDreams isn\'t connected in your Claude yet' }).waitFor({ timeout: 20000 });
+  assert.match(await frame().locator('.connect ol').textContent(), /Settings → Connectors/);
+  assert.equal(await frame().locator('.site-chip.miss').textContent().then((t) => /eDreams.*Not connected/.test(t)), true);
+  await frame().locator('.sites .busy').waitFor({ state: 'detached', timeout: 20000 });
+
+  const cmp = frame().locator('.country').first().locator('.site-cmp');
+  await cmp.waitFor();
+  const rows = await cmp.locator('.sc-who .sc-name').allTextContents();
+  assert.equal(rows[0], 'LetsFG', 'the cheapest site first, a source Claude used before by its own name');
+  assert.ok(rows.includes('Kiwi.com'));
+  assert.match(await cmp.locator('.sc-row.sc-win').textContent(), /LetsFG€\d+ less.*€150$/);
+  await cmp.locator('.sc-row').nth(1).click();
+  await frame().locator('.country').first().locator('.sc-row.sc-picked').nth(0).waitFor();
+  assert.equal(await frame().locator('.country').first().locator('.eyebrow').first().textContent(), 'Your pick');
+  await cmp.locator('.sc-row').first().click();
+});
+
 test('plans a trip with the best fare, then Claude plans the route', { skip }, async () => {
   await frame().locator('.banner').getByRole('button', { name: /with this flight/ }).click();
   await frame().locator('#app[data-screen="trip"]').waitFor();

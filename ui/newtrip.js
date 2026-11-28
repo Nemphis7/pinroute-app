@@ -18,6 +18,7 @@ import { openConfirm } from './tripmenu.js';
 import { scene, kindOfTags } from './scene.js';
 import { ownLink, ownPanel } from './ownflight.js';
 import { climatePanel } from './climate.js';
+import { sitePicker, siteCompare, sitesMessage, pickedSites, connectorsPicked, pairsFor } from './sources.js';
 
 // A country's postcard, from what it is known for
 const destArt = (d, w = 400, hgt = 200, sky) => scene(d.name, kindOfTags(d.tags), { w, h: hgt, sky });
@@ -39,7 +40,7 @@ export const newState = N;
 
 // ---------------------------------------------------------------- saving the draft
 const ARGS = { from: 'free_from', until: 'free_until', minNights: 'min_nights', maxNights: 'max_nights', adults: 'adults', budget: 'budget',
-  homes: 'home_airports', regions: 'regions', interests: 'interests', compare: 'compare', country: 'country', way: 'way', step: 'step', wishes: 'wishes', focus: 'focus' };
+  homes: 'home_airports', regions: 'regions', interests: 'interests', compare: 'compare', country: 'country', way: 'way', step: 'step', wishes: 'wishes', focus: 'focus', sites: 'flight_sites' };
 async function save(patch, line) {
   Object.assign(N.d, patch);
   render();
@@ -386,11 +387,12 @@ function flightsStep() {
     head('Find a flight deal', `Return flights from ${N.homes.map((a) => a.code).join(' or ') || 'your airport'} for ${nightsRange()} nights between ${dm(d.from)} and ${dm(d.until)}, ${plural(d.adults, 'traveller')}. Choose one to start planning that country.`),
     h('div', { class: 'toolbar' },
       h('div', { class: 'acts' },
-        h('button', { class: top ? '' : 'primary', disabled: off, title: findTitle(), onclick: () => findAll(ids) }, icon(Plane), scanning ? 'Searching…' : 'Find flights')),
+        h('button', { class: top ? '' : 'primary', disabled: off || !!waiting.sites, title: findTitle(), onclick: () => findAll(ids) }, icon(Plane), scanning || waiting.sites ? 'Searching…' : 'Find flights')),
       h('div', { class: 'sorter', role: 'group', 'aria-label': 'Changes' }, h('span', { class: 'small', text: 'Stops' }),
         [[null, 'Any'], [1, 'Max 1'], [0, 'Direct']].map(([k, l]) => h('button', { 'aria-pressed': String(N.stops === k), onclick: () => { N.stops = k; N.pick = {}; render(); } }, l))),
       h('div', { class: 'sorter', role: 'group', 'aria-label': 'Sort' }, h('span', { class: 'small', text: 'Sort' }),
         [['deal', 'Deal'], ['price', 'Price'], ['weather', 'Weather']].map(([k, l]) => h('button', { 'aria-pressed': String(N.sort === k), onclick: () => { N.sort = k; render(); } }, l)))),
+    sitePicker(d, { toggle: toggleSite, busy: scanning || !!waiting.sites }),
     ownLine(),
     ownPanel('new', ownTrip),
     !N.homes.length ? h('p', { class: 'note warn' }, 'Add a departure airport first. ', h('button', { class: 'link', onclick: () => goStep(d.way === 'where' ? 'season' : 'when') }, 'Add one')) : null,
@@ -424,6 +426,7 @@ function countryDeals({ d, list, fit }) {
     const rest = list.filter((x) => x !== main && !others.slice(0, 3).includes(x));
     body = [h('p', { class: 'eyebrow', text: N.pick[d.id] ? 'Your pick' : 'Best dates found' }),
       dealItem(d, main, true),
+      siteCompare(d, list, { picked: N.pick[d.id] || main.id, pick: (x) => { N.pick[d.id] = x.id; render(); } }),
       others.length ? h('section', { class: 'alts', 'aria-label': 'Other dates' }, h('p', { class: 'small', text: 'Other dates' }),
         others.slice(0, 3).map((x) => h('button', { class: 'alt', onclick: () => { N.pick[d.id] = x.id; render(); } },
           h('span', { class: 'ad', text: `${day(x.depart)} → ${day(x.return)}` }),
@@ -432,6 +435,7 @@ function countryDeals({ d, list, fit }) {
       compareBlock(d, main),
       rest.length ? h('details', {}, h('summary', { text: `${plural(rest.length, 'more fare')}` }), rest.slice(0, 8).map((x) => dealItem(d, x, false))) : null];
   } else if (st === 'loading') body = h('p', { class: 'meta busy', text: 'Checking fares…' });
+  else if (waiting.sites) body = h('p', { class: 'meta busy', text: 'Claude is searching your sites…' });
   else body = h('div', { class: 'acts' }, h('span', { class: 'meta', text: N.stops != null && (N.deals[d.id] || []).length ? `No ${N.stops ? 'fares with at most one change' : 'direct fares'} yet.` : 'No fares yet.' }),
     h('button', { class: 'ghost', disabled: !N.homes.length, title: findTitle(), onclick: () => findAll([d.id]) }, icon(Plane), 'Find flights'));
   return h('article', { class: 'country', id: `deals-${d.id}` },
@@ -558,7 +562,35 @@ export async function openFlightLink(args) {
   catch (e) { showError(e.message || String(e)); }
 }
 
+// Find flights: Pinroute's own search when it is picked (or nothing else is), and Claude for the connector sites picked
 async function findAll(ids) {
+  if (connectorsPicked(N.d).length) askSites(ids);
+  if (pickedSites(N.d).includes('pinroute')) await findOwn(ids);
+}
+function toggleSite(id) {
+  const cur = pickedSites(N.d);
+  const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+  const list = next.length ? next : ['pinroute'];
+  save({ sites: list }, `the traveller set the Flights step to search on: ${list.join(', ')}.`);
+}
+// Claude searches the connector sites picked, across the dates and every departure and arrival airport, and saves the
+// fares with save_flight_deals; the planner follows until every site has reported for this search
+function askSites(ids) {
+  const since = new Date(Date.now() - 2000).toISOString();
+  const countries = ids.map(destById).filter(Boolean).map((d) => ({
+    id: d.id, name: N.d.focus?.[d.id] ? `${d.name} (${N.d.focus[d.id].area})` : d.name,
+    airports: (N.view.arrivals?.[d.id] || []).map((a) => a.code).slice(0, 4),
+    pairs: pairsFor(N.d, N.view.windows?.[d.id], N.deals[d.id]),
+  })).filter((c) => c.airports.length);
+  if (!countries.length) return;
+  const wanted = connectorsPicked(N.d);
+  ask('sites', sitesMessage(N.d, { countries, homes: N.homes.map((a) => a.code).slice(0, 4), stops: N.stops }), {
+    own: false, answer: false, poll: refresh, every: 6000, tries: 60,
+    done: () => wanted.every((id) => (N.d.siteStatus?.[id]?.at || '') > since),
+  });
+}
+
+async function findOwn(ids) {
   const origins = N.homes.map((a) => a.code).slice(0, 8);
   ids.forEach((id) => { N.scan[id] = 'loading'; });
   render();

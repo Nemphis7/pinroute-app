@@ -23,7 +23,7 @@ Claude (the traveller's own plan)
 | `plan_new_trip` | The new-trip planner; saves free dates, length, travellers, budget, airports, regions, interests, countries to compare, the traveller's wishes and a focus on part of a country (its airports are used for fares) | writes |
 | `scan_flight_deals` | Return fares to a country: recent prices across the window or by month (Travelpayouts), or live fares (Amadeus) including one pair of dates across several departure and arrival airports; keeps the cheapest | writes |
 | `country_weather` | A country's weather in each month: day and night temperatures, rain, sunshine and, for beach countries, the sea; ten-year averages from Open-Meteo (free, no key), kept 60 days. The Best time step shows it as a chart | reads |
-| `save_flight_deals` | Keeps fares Claude found with any flight search, per country | writes |
+| `save_flight_deals` | Keeps fares Claude found with any flight search, per country, up to 40 at a time; each source keeps its best fares so the planner can compare the sites side by side. `sites` records how each flight-search connector's search went (searched, no fares, not connected, failed) | writes |
 | `add_booked_flight` | Flights the traveller booked themselves, read by Claude from a pasted booking or filled in on the planner: a new trip from them, a trip fitted to them, or one leg of the route; no search, the legs marked booked with the booking reference, times in the calendar | writes |
 | `start_trip_from_flight` | A trip from a saved fare: from landing to the flight home, the fare on both flights | writes |
 | `set_trip_fare` | Moves a trip to another saved fare: dates follow the flights, nights go to or come from the longest stays, a new arrival or departure airport joins the route | changes |
@@ -46,6 +46,10 @@ Claude (the traveller's own plan)
 | `delete_my_data` | Deletes everything the person saved | deletes |
 
 Every tool has a title and a read-only or destructive annotation, and its description says what it does without steering Claude, as the [directory review](https://claude.com/docs/connectors/building/review-criteria) asks.
+
+## Flight search on the traveller's own sites
+
+Until Pinroute has its own price partners, the Flights step of a new trip can also search the flight-search connectors a traveller has in Claude: **Kiwi.com, Expedia, eDreams and lastminute.com** (Skyscanner and Google Flights have no Claude connector). The traveller taps the sites to use (`flight_sites` in the draft; Pinroute's own airline search is the default and the fallback). **Find flights** runs Pinroute's search on this server and sends Claude one message naming the picked sites, the departure and arrival airports and the dates: Kiwi.com searches the whole window with a nights range, the exact-date sites search the cheapest windows found so far. Claude saves what it finds with `save_flight_deals` and reports each site; the planner shows each country's best fare per site side by side, and how to connect a site the traveller picked but doesn't have. The code is in `src/sites.mjs` and `ui/sources.js`.
 
 ## Run it
 
