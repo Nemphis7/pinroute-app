@@ -52,7 +52,7 @@ test('a fallback to marker= links logs one warning with its reason, never a secr
   for (const l of lines) assert.ok(!/tp-secret-token|123456|987|x\.test|aviasales\.com/.test(l), l);
 });
 
-test('a window is scanned from recent prices: low-cost fares, per adult times travellers, without airline searches', async () => {
+test('a window is scanned from recent prices, day by day: every travel window of the right length, without airline searches', async () => {
   await call('plan_new_trip', { free_from: FROM, free_until: UNTIL, min_nights: 9, max_nights: 12, adults: 2, home_airports: ['FRA'], compare: ['Vietnam'], step: 'flights' });
   const before = (await call('plan_new_trip')).structuredContent.flights;
   assert.equal(before.recent, true);
@@ -64,12 +64,19 @@ test('a window is scanned from recent prices: low-cost fares, per adult times tr
   assert.equal(searched[0].from, 'FRA');
   assert.ok(deals.length >= 3 && deals.every((x) => x.source === 'Aviasales' && x.recent && x.airline === 'VietJet Air'), 'the airline by name, not its code');
   assert.ok(deals.every((x) => x.depart >= FROM && x.return <= UNTIL), 'inside the window');
-  assert.ok(deals.every((x) => { const n = (Date.parse(x.return) - Date.parse(x.depart)) / 864e5; return n >= 8 && n <= 13; }), 'the 3-night trip is left out');
-  assert.equal(deals[0].price, 580, '€290 per adult, two adults');
+  const len = (x) => (Date.parse(x.return) - Date.parse(x.depart)) / 864e5;
+  assert.ok(deals.every((x) => len(x) >= 9 && len(x) <= 12), '9 to 12 nights, as asked');
+  const { windows } = r.structuredContent;
+  assert.ok(windows.length >= 5, `a window from many departure days, not two or three dates: ${windows.length}`);
+  assert.ok(windows.every((w) => w.depart >= FROM && w.return <= UNTIL && w.nights >= 9 && w.nights <= 12 && w.price === w.perAdult * 2));
+  assert.ok(new Set(windows.map((w) => w.nights)).size > 1, 'trip lengths vary within the range');
+  assert.equal(deals[0].price, Math.min(...windows.map((w) => w.price)), 'the cheapest window is saved first');
   assert.match(deals[0].link, /^https:\/\/aviasales\.tp\.st\//);
   assert.match(r.content[0].text, /^Recent prices on Aviasales \(found by travellers in the last days, check before booking\)/);
-  const q = fake.calls.find((c) => c.path === '/aviasales/v3/prices_for_dates').query;
-  assert.deepEqual([q.origin, q.destination, q.departure_at, q.one_way, q.currency], ['FRA', 'SGN', FROM.slice(0, 7), 'false', 'eur']);
+  assert.match(r.content[0].text, /\nCheapest windows \(recent Aviasales prices, per person\): /);
+  const q = fake.calls.find((c) => c.path === '/aviasales/v3/grouped_prices' && c.query.group_by === 'departure_at').query;
+  assert.deepEqual([q.origin, q.destination, q.departure_at, q.min_trip_duration, q.max_trip_duration, q.currency], ['FRA', 'SGN', FROM.slice(0, 7), '9', '12', 'eur']);
+  assert.deepEqual((await call('plan_new_trip')).structuredContent.windows['704'].map((w) => w.depart), windows.map((w) => w.depart), 'the draft keeps the windows for the planner');
   assert.equal((await call('plan_new_trip')).structuredContent.flights.searchesLeft, before.searchesLeft, 'no airline searches used');
 });
 
@@ -137,6 +144,15 @@ test('a window from five home airports to six arrival airports runs in one call:
   assert.deepEqual([...new Set(searched.map((x) => x.to))].sort(), [...tos].sort());
   assert.equal(new Set(searched.map((x) => `${x.from}>${x.to}`)).size + left_out.length, 30);
   assert.match(r.content[0].text, /of 30 routes, each airport at least once; left out: /);
+});
+
+test('live airline fares for a window go to its cheapest windows from the calendar, not to evenly spread dates', async () => {
+  const cal = (await call('plan_new_trip')).structuredContent.windows['704'];
+  const cheapest = cal.slice().sort((a, b) => a.perAdult - b.perAdult).slice(0, 3).map((w) => `${w.depart}>${w.return}`).sort();
+  const r = await call('scan_flight_deals', { country: 'Vietnam', source: 'live' });
+  assert.ok(!r.isError, JSON.stringify(r.content));
+  assert.deepEqual(r.structuredContent.searched.map((x) => `${x.depart}>${x.return}`).sort(), cheapest);
+  assert.match(r.content[0].text, /the cheapest windows /);
 });
 
 test('with no live searches left, a live scan answers with recent Aviasales prices instead of an error', async () => {

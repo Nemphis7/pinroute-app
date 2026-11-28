@@ -49,6 +49,22 @@ test('deals from recent prices first, live airline fares second, and the commiss
   assert.match(await page.evaluate(() => window.__links.at(-1)), /^https:\/\/aviasales\.tp\.st\//, 'the fare opens as a partner link');
 });
 
+test('the cheapest window from each departure day, and a tap checks that window live', { skip }, async () => {
+  const strip = f().locator('.country').first().locator('.wstrip');
+  await strip.waitFor({ timeout: 30000 });
+  assert.ok(await strip.locator('button.win').count() >= 5, 'many departure days, not two or three dates');
+  assert.ok(await strip.locator('button.win.low').count() >= 1, 'the cheapest marked');
+  const w = strip.locator('button.win').nth(1);
+  const title = await w.getAttribute('title');
+  const [, out] = title.match(/^(\w{3} \d+ \w{3})/) || [];
+  assert.ok(out, title);
+  const left = async () => (await client.callTool({ name: 'plan_new_trip', arguments: {} })).structuredContent.flights.searchesLeft;
+  const before = await left();
+  await w.click();
+  for (let i = 0; i < 50 && (await left()) === before; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await left(), before - 1, 'one live search for that window');
+});
+
 test('the best time to go fills every month from one look-up', { skip }, async () => {
   await client.callTool({ name: 'plan_new_trip', arguments: { country: 'Japan' } });
   await f().getByRole('button', { name: 'Home' }).click();
@@ -60,7 +76,7 @@ test('the best time to go fills every month from one look-up', { skip }, async (
   await f().getByRole('button', { name: 'Find flights' }).waitFor({ timeout: 30000 });   // recent prices, then airline fares for the good months
   const priced = await f().locator('.mcell .mprice').allTextContents();
   assert.ok(priced.filter((t) => /^€/.test(t)).length >= 11, priced.join(' '));
-  assert.equal(fake.calls.filter((c) => c.path === '/aviasales/v3/grouped_prices').length, 1);
+  assert.equal(fake.calls.filter((c) => c.path === '/aviasales/v3/grouped_prices' && c.query.group_by !== 'departure_at').length, 1, 'one look-up for the year by month');
 });
 
 test('a flight search links to Aviasales for its route and date', { skip }, async () => {

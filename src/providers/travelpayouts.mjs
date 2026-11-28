@@ -61,6 +61,17 @@ export async function monthlyPrices({ origin, destination, minDays, maxDays }, c
   return Object.values(data && typeof data === 'object' ? data : {}).map(mapEntry).filter((f) => f.depart && f.return && f.pricePerAdult > 0);
 }
 
+// The cheapest return fare for each departure day of one month (YYYY-MM), for trips of minDays to maxDays: a calendar
+// of travel windows in one request
+export async function dayPrices({ origin, destination, month, minDays, maxDays }, ctx) {
+  const data = await get('/aviasales/v3/grouped_prices', {
+    origin: origin.toUpperCase(), destination: destination.toUpperCase(), group_by: 'departure_at', departure_at: month, currency: 'eur',
+    min_trip_duration: minDays, max_trip_duration: maxDays,
+  }, ctx);
+  return Object.values(data && typeof data === 'object' ? data : {}).map(mapEntry).filter((f) => f.depart && f.return && f.pricePerAdult > 0)
+    .sort((a, b) => a.depart.localeCompare(b.depart));
+}
+
 // An Aviasales search for a route and dates: FRA0103BKK15032 is Frankfurt to Bangkok on 1 March, back 15 March, 2 adults
 export function searchUrl({ from, to, depart, ret, adults = 1 }) {
   const ddmm = (d) => `${d.slice(8, 10)}${d.slice(5, 7)}`;
