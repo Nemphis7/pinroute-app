@@ -13,6 +13,7 @@ import {
   dealPP, dealRatio, dealLabel, dealsFor, budgetFit, bestMonthsText, MON,
 } from './discover.mjs';
 import { climateFor, climateText } from './climate.mjs';
+import { SITE_IDS, CONNECTOR_IDS, DEFAULT_SITES, siteById } from './sites.mjs';
 import { tripMap, regionMap, pickMap } from './map.mjs';
 import { routePlaces } from './places.mjs';
 import { flightProvider } from './providers/index.mjs';
@@ -666,7 +667,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const last = store.listTrips(owner).find((t) => t.home);
     const from = addDays(today, 30);
     return { way: 'prompt', step: 'prompt', datesSet: false, from, until: addDays(from, 20), minNights: 9, maxNights: 12, adults: last?.adults || 2, budget: 0,
-      homes: last ? [last.home] : [], regions: [], interests: [], compare: [], country: null, deals: {}, windows: {}, wishes: '', focus: {} };
+      homes: last ? [last.home] : [], regions: [], interests: [], compare: [], country: null, deals: {}, windows: {}, wishes: '', focus: {}, sites: DEFAULT_SITES, siteStatus: {} };
   }
   const draftOf = () => store.getDraft(owner) || { ...freshDraft(), updated: null };
   const homesOf = (dr) => dr.homes.map((c) => airport(c)).filter(Boolean).map((a) => ({ code: a.code, city: cityOf(a), country: a.country, lat: a.lat, lon: a.lon }));
@@ -684,6 +685,11 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     return [airport(d.gw), ...list].filter(Boolean).slice(0, 5).map((a) => ({ code: a.code, city: cityOf(a), served: a.served }));
   }
 
+  // The n cheapest fares, and each source's `per` cheapest besides, so the planner can set the sites side by side
+  function eachSource(list, n, per) {
+    const seen = new Map();
+    return list.filter((x, i) => { const k = (seen.get(x.source) || 0) + 1; seen.set(x.source, k); return i < n || k <= per; });
+  }
   function draftResult(dr, line) {
     const homes = homesOf(dr);
     const ranked = rankDests(dr, homes[0]);
@@ -691,11 +697,12 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const warnings = [];
     if (diffDays(dr.from, dr.until) < dr.minNights) warnings.push(`The window is ${diffDays(dr.from, dr.until)} days, shorter than the ${dr.minNights} nights wanted.`);
     if (!homes.length) warnings.push('No departure airport yet.');
-    const deals = Object.fromEntries(Object.entries(dr.deals || {}).map(([id, l]) => [id, l.slice(0, MAX_DEALS).map(namedFare)]));
+    const deals = Object.fromEntries(Object.entries(dr.deals || {}).map(([id, l]) => [id, eachSource(l, MAX_DEALS, 2).map(namedFare)]));
     const view = {
       screen: 'new',
       draft: { way: dr.way, step: dr.step, from: dr.from, until: dr.until, minNights: dr.minNights, maxNights: dr.maxNights, adults: dr.adults, budget: dr.budget,
-        homes: dr.homes, regions: dr.regions, interests: dr.interests, compare: dr.compare, country: dr.country, wishes: dr.wishes || '', focus: dr.focus || {}, updated: dr.updated, booked: dr.booked || null },
+        homes: dr.homes, regions: dr.regions, interests: dr.interests, compare: dr.compare, country: dr.country, wishes: dr.wishes || '', focus: dr.focus || {}, updated: dr.updated, booked: dr.booked || null,
+        sites: dr.sites?.length ? dr.sites : DEFAULT_SITES, siteStatus: dr.siteStatus || {} },
       homes,
       top: ranked.slice(0, 8).map((r) => ({ id: r.d.id, name: r.d.name, fit: fitLabel(r.fit)[1], hours: r.hours, cost: r.cost.total, budget: budgetFit(r.cost, dr.budget)?.[1] || null })),
       deals,
@@ -753,6 +760,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       area: z.string().max(60).describe('The part of the country, e.g. "Sulawesi"; empty to clear the focus'),
       airports: z.array(IATA).max(5).describe('That area\'s main airports with scheduled flights, busiest first; fares are searched to these'),
     })).max(8).optional().describe('A part of a country to travel in, with its airports'),
+    flight_sites: z.array(z.enum(SITE_IDS)).max(SITE_IDS.length).optional().describe(`Where the Flights step looks for fares, as the traveller picked them on the planner: "pinroute" is Pinroute's own airline search; ${CONNECTOR_IDS.join(', ')} are flight-search connectors the traveller can have in Claude. Empty for Pinroute's own search only`),
   };
   registerAppTool(server, 'plan_new_trip', {
     title: 'Plan a trip (where and when to go)',
@@ -796,7 +804,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     }
     let bad = null;
     const dr = store.updateDraft(owner, (cur) => {
-      let d = a.reset ? { ...freshDraft(), homes: cur.homes?.length ? cur.homes : freshDraft().homes, adults: cur.adults || 2 } : { ...freshDraft(), ...cur };
+      let d = a.reset ? { ...freshDraft(), homes: cur.homes?.length ? cur.homes : freshDraft().homes, adults: cur.adults || 2, sites: cur.sites || DEFAULT_SITES, siteStatus: cur.siteStatus || {} } : { ...freshDraft(), ...cur };
       const fromWords = d.way === 'prompt' && !a.way && !a.step;
       if (a.free_from || a.free_until) d.datesSet = true;
       if (a.free_from) { d.from = a.free_from; if (!a.free_until && d.until <= d.from) d.until = addDays(d.from, Math.max(d.maxNights, 7)); }
@@ -811,6 +819,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       if (a.interests) d.interests = a.interests;
       if (cmp.ids) d.compare = cmp.ids;
       if (a.wishes !== undefined) d.wishes = a.wishes.trim();
+      if (a.flight_sites) d.sites = a.flight_sites.length ? SITE_IDS.filter((id) => a.flight_sites.includes(id)) : DEFAULT_SITES;
       if (focus.length) {
         d.focus = { ...(d.focus || {}) };
         for (const f of focus) { if (f.area && f.airports.length) d.focus[f.id] = { area: f.area, airports: f.airports }; else delete d.focus[f.id]; }
@@ -847,7 +856,9 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const seen = new Set(fresh.map((x) => `${x.from}>${x.to}|${x.depart.slice(0, 7)}`));
     const today = new Date().toISOString().slice(0, 10);
     const kept = (cur[id] || []).filter((x) => x.depart >= today && !(x.source === source && seen.has(`${x.from}>${x.to}|${x.depart.slice(0, 7)}`)));
-    return { ...cur, [id]: [...fresh, ...kept].sort((a, b) => dealPP(a) - dealPP(b)).slice(0, 30) };
+    const all = [...fresh, ...kept].sort((a, b) => dealPP(a) - dealPP(b));
+    // the 30 cheapest, and each source's 4 cheapest besides, so every site stays in the side-by-side comparison
+    return { ...cur, [id]: eachSource(all, 30, 4) };
   }
   const distOf = (from, to) => km(airport(from), airport(to));
 
@@ -1142,14 +1153,21 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     source: z.string().min(1).max(40).describe('Where the fare was found, e.g. the airline or Aviasales'),
   });
 
+  const siteIn = z.object({
+    site: z.enum(CONNECTOR_IDS).describe('The flight-search site: ' + CONNECTOR_IDS.map((id) => `${id} (${siteById(id).name})`).join(', ')),
+    status: z.enum(['searched', 'no_fares', 'not_connected', 'failed']).describe('searched: fares found and saved; no_fares: searched, nothing found; not_connected: the traveller has no such connector in Claude; failed: the search went wrong'),
+    note: z.string().max(200).optional().describe('One short line, e.g. what failed or how many searches ran'),
+  });
+
   server.registerTool('save_flight_deals', {
     title: 'Save flight deals',
-    description: 'Saves return fares, such as ones the traveller found or picked, to the traveller\'s new-trip draft, for one country, so the planner can compare them and start a trip from one. Fares from the same source for the same airports that leave in the same months are replaced.',
-    inputSchema: { country: z.string().min(2).max(60), deals: z.array(dealIn).min(1).max(10) },
+    description: 'Saves return fares, such as ones the traveller found or picked, or ones found with the flight-search sites the traveller picked on the planner, to the traveller\'s new-trip draft, for one country, so the planner can compare them side by side and start a trip from one. Fares from the same source for the same airports that leave in the same months are replaced. sites records how each picked site\'s search went, including a site the traveller has not connected in Claude, so the planner can say so.',
+    inputSchema: { country: z.string().min(2).max(60), deals: z.array(dealIn).max(40).optional(), sites: z.array(siteIn).max(CONNECTOR_IDS.length).optional() },
     annotations: { title: 'Save flight deals', readOnlyHint: false, destructiveHint: false },
-  }, mine(async ({ country, deals }) => {
+  }, mine(async ({ country, deals = [], sites = [] }) => {
     const d = findDest(country);
     if (!d) return fail(destIds([country]).error);
+    if (!deals.length && !sites.length) return fail('Give the fares to save, or how the search on each site went (sites).');
     const dr = draftOf();
     for (const x of deals) {
       if (x.return <= x.depart) return fail(`A fare comes back on ${x.return}, not after it leaves on ${x.depart}.`);
@@ -1166,10 +1184,14 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const next = store.updateDraft(owner, (cur) => {
       let all = cur.deals || {};
       for (const [src, list] of bySource) all = keepDeals(all, d.id, src, list);
-      return { ...cur, deals: all };
+      const siteStatus = { ...(cur.siteStatus || {}) };
+      for (const x of sites) siteStatus[x.site] = { status: x.status, note: x.note || null, country: d.id, at: now };
+      return { ...cur, deals: all, siteStatus };
     }, freshDraft);
-    const saved = next.deals[d.id].filter((x) => x.at === now);
-    return { content: [text([`Saved ${saved.length} fare${saved.length === 1 ? '' : 's'} for ${d.name} to the Pinroute draft.`, ...saved.slice(0, 5).map(dealLine)].join('\n'))], structuredContent: { country: d.id, deals: saved } };
+    const saved = (next.deals[d.id] || []).filter((x) => x.at === now);
+    const siteLines = sites.map((x) => `${siteById(x.site).name}: ${{ searched: 'searched', no_fares: 'no fares found', not_connected: 'not connected in Claude, the planner shows how to connect it', failed: 'the search failed' }[x.status]}${x.note ? ` (${x.note})` : ''}.`);
+    return { content: [text([saved.length ? `Saved ${saved.length} fare${saved.length === 1 ? '' : 's'} for ${d.name} to the Pinroute draft.` : `No fares saved for ${d.name}.`, ...saved.slice(0, 5).map(dealLine), ...siteLines].join('\n'))],
+      structuredContent: { country: d.id, deals: saved, sites: next.siteStatus || {} } };
   }));
 
   // Fits a trip to a return fare: it starts the day the flight lands and ends the day the flight home leaves. Nights

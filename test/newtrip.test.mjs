@@ -133,6 +133,32 @@ test('saves fares Claude found with the traveller\'s own flight tools', async ()
   assert.match((await call('save_flight_deals', { country: 'Atlantis', deals: [fare] })).content[0].text, /isn't one of them/);
 });
 
+test('the sites the traveller picks to search, how each search went, and every site kept for the side by side', async () => {
+  assert.deepEqual((await call('plan_new_trip', {})).structuredContent.draft.sites, ['pinroute'], 'Pinroute\'s own search until the traveller picks more');
+  const picked = await call('save_new_trip_draft', { flight_sites: ['edreams', 'kiwi', 'pinroute'] });
+  assert.deepEqual(picked.structuredContent.draft.sites, ['pinroute', 'kiwi', 'edreams'], 'kept in the order the planner shows them');
+  assert.deepEqual((await call('save_new_trip_draft', { flight_sites: [] })).structuredContent.draft.sites, ['pinroute'], 'none picked is Pinroute\'s own search');
+  assert.ok((await call('save_new_trip_draft', { flight_sites: ['skyscanner'] })).isError, 'only sites with a Claude connector');
+  await call('save_new_trip_draft', { flight_sites: ['pinroute', 'kiwi', 'edreams'] });
+
+  const fare = (i, source) => ({ from: 'FRA', to: 'CMB', depart: addDays(FROM, 1 + (i % 5)), return: addDays(FROM, 15), price: 900 + i * 10, currency: 'EUR', adults: 2, airline: 'Qatar Airways', source });
+  const cheap = Array.from({ length: 34 }, (_, i) => ({ ...fare(i, 'Kiwi.com'), to: ['CMB', 'HRI', 'JAF'][i % 3], from: ['FRA', 'MUC', 'STR', 'DUS'][i % 4], depart: addDays(FROM, 1 + (i % 7)) }));
+  const r = await call('save_flight_deals', { country: 'Sri Lanka', deals: cheap.slice(0, 34), sites: [{ site: 'kiwi', status: 'searched', note: '8 searches' }] });
+  assert.ok(!r.isError, JSON.stringify(r.content));
+  const dear = await call('save_flight_deals', { country: 'Sri Lanka', deals: [{ ...fare(0, 'eDreams'), price: 2400 }], sites: [{ site: 'edreams', status: 'searched' }] });
+  assert.ok(!dear.isError, JSON.stringify(dear.content));
+  const all = (await call('plan_new_trip', {})).structuredContent;
+  const shown = all.deals['144'];
+  assert.ok(shown.slice(0, 12).every((x) => x.source === 'Kiwi.com'), 'the 12 cheapest come first');
+  assert.ok(shown.slice(12).some((x) => x.source === 'eDreams'), 'and eDreams\'s best besides, though dearer');
+  const kept = (await call('save_flight_deals', { country: 'Sri Lanka', sites: [{ site: 'expedia', status: 'not_connected' }] }));
+  assert.match(kept.content[0].text, /No fares saved for Sri Lanka\.\nExpedia: not connected in Claude, the planner shows how to connect it\./);
+  const status = kept.structuredContent.sites;
+  assert.deepEqual([status.kiwi.status, status.kiwi.note, status.edreams.status, status.expedia.status], ['searched', '8 searches', 'searched', 'not_connected']);
+  assert.deepEqual((await call('plan_new_trip', {})).structuredContent.draft.siteStatus.expedia.status, 'not_connected');
+  assert.match((await call('save_flight_deals', { country: 'Sri Lanka' })).content[0].text, /Give the fares to save/);
+});
+
 test('starts a trip from a fare: from landing to the flight home, with the fare on both flights', async () => {
   const draft = (await call('plan_new_trip', {})).structuredContent;
   const deal = draft.deals['704'].find((x) => x.id === dealId);
