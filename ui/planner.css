@@ -1238,3 +1238,11 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
 .own-grid input, .own-grid select { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .own-ticket { grid-template-columns: minmax(0, 1fr); }
 .own-ticket .tside { border-left: 0; border-top: 2px dashed var(--line-2); grid-auto-flow: column; justify-content: space-between; align-items: baseline; padding-top: var(--s-2); padding-bottom: var(--s-2); }
+
+/* New trip: the next best other dates under the best one */
+.alts { display: grid; gap: 6px; }
+.alt { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: var(--s-3); text-align: left; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-0); background: var(--paper); }
+.alt .ad { color: var(--ink); font-size: 13px; }
+.alt .small { grid-column: 1; }
+.alt b { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-variant-numeric: tabular-nums; color: var(--ink); }
+.alt:hover { border-color: var(--accent); }

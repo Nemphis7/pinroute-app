@@ -146,6 +146,13 @@ test('a window from five home airports to six arrival airports runs in one call:
   assert.match(r.content[0].text, /of 30 routes, each airport at least once; left out: /);
 });
 
+test('Stops applies to recent prices too: direct only leaves out fares with a change', async () => {
+  const r = await call('scan_flight_deals', { country: 'Vietnam', source: 'recent', max_stops: 0 });
+  assert.ok(!r.isError, JSON.stringify(r.content));
+  assert.ok(r.structuredContent.searched.every((x) => x.fares === 0), 'the stand-in has only one-change fares');
+  assert.equal(r.structuredContent.windows.length, 0);
+});
+
 test('live airline fares for a window go to its cheapest windows from the calendar, not to evenly spread dates', async () => {
   const cal = (await call('plan_new_trip')).structuredContent.windows['704'];
   const cheapest = cal.slice().sort((a, b) => a.perAdult - b.perAdult).slice(0, 3).map((w) => `${w.depart}>${w.return}`).sort();

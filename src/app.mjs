@@ -520,6 +520,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
   const outOfSearches = () => `Today's ${limits.searchesPerDay} live airline searches in Pinroute are used up (they start again at 00:00 UTC)`;
   const NEARBY_RESERVE = 20;                        // below this many searches left, nearby days are priced from Aviasales only
   const MAX_LIVE_PER_SCAN = 8;                      // live searches one scan_flight_deals call may spend
+  const MAX_LIVE_WINDOW = 10;                       // ...when it has to find the best dates in a window itself
 
   // Aviasales's recent price for each pair of dates, as a second quote next to the live search. Only the filters Aviasales
   // data can answer (changes, airline) apply; one look-up per date, counted toward the daily recent-price limit.
@@ -887,9 +888,9 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   // When live airline searches are used up or out of reach: recent Aviasales prices for the same routes and dates, and
   // when there are none, the fares already saved and Aviasales's own search. Never an error: the traveller can go on.
-  async function scanFallback({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, why }) {
+  async function scanFallback({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, why, max_stops }) {
     if (tp.configured(env) && store.usage(owner, 'recent') < limits.recentPerDay) {
-      const r = await scanRecent({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, by_month: false });
+      const r = await scanRecent({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, by_month: false, max_stops });
       if (!r.isError && r.structuredContent.deals.length) {
         r.content[0].text = `${why}, so these are recent Aviasales prices instead.\n${r.content[0].text}`;
         r.structuredContent = { ...r.structuredContent, fallback: 'recent', searches_left: Math.max(0, limits.searchesPerDay - store.usage(owner, 'search')) };
@@ -926,9 +927,26 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const best = new Map();
     for (const x of list) if (!best.has(x.depart) || x.pricePerAdult < best.get(x.depart).pricePerAdult) best.set(x.depart, x);
     return [...best.values()].sort((a, b) => a.depart.localeCompare(b.depart)).map((x) => ({
-      depart: x.depart, return: x.return, nights: diffDays(x.depart, x.return), from: x.from, to: x.to, airline: x.airline,
+      depart: x.depart, return: x.return, nights: diffDays(x.depart, x.return), from: x.from, to: x.to, airline: x.airline, stops: x.stops ?? null,
       perAdult: Math.round(x.pricePerAdult), price: Math.round(x.pricePerAdult * adults), currency: x.currency }));
   }
+  // Windows from a new search replace those of the same departure day; the others stay
+  const mergeWindows = (cur, fresh) => {
+    const by = new Map((cur || []).map((w) => [w.depart, w]));
+    for (const w of fresh) by.set(w.depart, w);
+    return [...by.values()].sort((a, b) => a.depart.localeCompare(b.depart));
+  };
+  // The distinct date combinations found, cheapest first: the best one and the next few, one fare each
+  const bestDates = (fares) => {
+    const by = new Map();
+    for (const x of fares) {
+      const k = `${x.depart}|${x.return}`;
+      if (!by.has(k) || x.price < by.get(k).price) by.set(k, x);
+    }
+    return [...by.values()].sort((a, b) => a.price - b.price).map((x) => ({ depart: x.depart, return: x.return, nights: diffDays(x.depart, x.return),
+      from: x.from, to: x.to, airline: x.airline, price: Math.round(x.price), perAdult: Math.round(x.price / x.adults), currency: x.currency, id: x.id }));
+  };
+  const optionLine = (o) => `${shortDate(o.depart)} → ${shortDate(o.return)} (${o.nights} nights), ${o.from} → ${o.to}, ${o.airline}, €${o.perAdult} pp`;
   const windowsLine = (ws) => {
     if (!ws.length) return null;
     const cheap = ws.slice().sort((a, b) => a.perAdult - b.perAdult).slice(0, 5).sort((a, b) => a.depart.localeCompare(b.depart));
@@ -937,7 +955,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   // Recent prices from Aviasales (Travelpayouts Data API): one request per route and month, per route and pair of dates,
   // or per route for a whole year by month. They don't use the airline searches; they have a daily count of their own.
-  async function scanRecent({ d, dr, froms, tos, routes: spread, allRoutes, natural, depart, ret, lo, hi, by_month }) {
+  async function scanRecent({ d, dr, froms, tos, routes: spread, allRoutes, natural, depart, ret, lo, hi, by_month, max_stops }) {
+    const stopsOk = (x) => max_stops == null || (x.stops != null && x.stops <= max_stops);
     const months = monthsIn(lo, hi);
     // a window looks up every route in each month, so it keeps fewer routes, still spread over every airport
     const routes = natural(depart || by_month ? spread : spread.slice(0, Math.max(1, Math.floor(MAX_ROUTES / months.length))));
@@ -953,15 +972,15 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
         // a window: the cheapest return from each departure day of the month, for every trip length wanted; when
         // Aviasales has no calendar for the route, the cheapest fares of the month
         const days = (await recentLookup('dayPrices', { origin: j.f, destination: j.t, month: j.departure, minDays: dr.minNights, maxDays: dr.maxNights }))
-          .filter((x) => x.depart >= lo && x.return <= hi && nights(x) >= dr.minNights && nights(x) <= dr.maxNights);
+          .filter((x) => x.depart >= lo && x.return <= hi && nights(x) >= dr.minNights && nights(x) <= dr.maxNights && stopsOk(x));
         windowed.push(...days);
         if (days.length) return days.slice().sort((a, b) => a.pricePerAdult - b.pricePerAdult).slice(0, 4);
       }
       const list = by_month
         ? await recentLookup('monthlyPrices', { origin: j.f, destination: j.t, minDays: dr.minNights, maxDays: dr.maxNights })
         : await recentLookup('pricesForDates', { origin: j.f, destination: j.t, departure: j.departure, ret: j.ret });
-      const fit = by_month ? list : depart ? list.filter((x) => x.depart === depart && x.return === ret)
-        : list.filter((x) => x.depart >= lo && x.return <= hi && nights(x) >= dr.minNights - 1 && nights(x) <= dr.maxNights + 1);
+      const fit = (by_month ? list : depart ? list.filter((x) => x.depart === depart && x.return === ret)
+        : list.filter((x) => x.depart >= lo && x.return <= hi && nights(x) >= dr.minNights - 1 && nights(x) <= dr.maxNights + 1)).filter(stopsOk);
       return fit.slice(0, by_month ? 12 : depart ? 2 : 4);
     }));
     const windows = windowsOf(windowed, dr.adults);
@@ -1006,7 +1025,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       earliest: DATE.optional().describe('First departure day; the draft\'s window if left out'),
       latest: DATE.optional().describe('Last day to be back'),
       dates: z.number().int().min(1).max(6).optional().describe('How many departure dates to try in the window, 3 if left out; more dates find cheaper days but each is a search'),
-      max_stops: z.number().int().min(0).max(3).optional().describe('Live fares only: most changes in each direction, 0 for direct flights'),
+      max_stops: z.number().int().min(0).max(3).optional().describe('Most changes in each direction, 0 for direct flights only'),
       source: z.enum(['recent', 'live']).optional().describe('"recent": prices Aviasales travellers found in the last days, low-cost airlines included (when the server has Travelpayouts); "live": airline fares now. Recent for a window, live for exact dates, if left out'),
       by_month: z.boolean().optional().describe('With recent prices: the cheapest fare for each month of the coming year, instead of the window'),
     },
@@ -1032,45 +1051,77 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     let routes = allRoutes.slice(0, MAX_ROUTES);
     if (source === 'recent' && !tp.configured(env)) return fail('Recent prices need Travelpayouts on the server (TRAVELPAYOUTS_TOKEN). source "live" searches airline fares.');
     if (by_month && (source === 'live' || !tp.configured(env))) return fail('by_month works with recent prices, which need Travelpayouts on the server.');
-    if (recentScan) return scanRecent({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, by_month });
+    if (recentScan) return scanRecent({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, by_month, max_stops });
     // One scan spends at most a few live searches (each route and date is one): a spread of routes, fewer dates when
     // there are many. When none are left, or the airline search is out of reach, recent prices stand in.
     const left = limits.searchesPerDay - store.usage(owner, 'search');
-    const fallback = (why) => scanFallback({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, why });
+    const fallback = (why) => scanFallback({ d, dr, froms, tos, routes, allRoutes, natural, depart, ret, lo, hi, why, max_stops });
     if (left <= 0) return fallback(outOfSearches());
-    const budget = Math.min(left, MAX_LIVE_PER_SCAN);
+    const budget = Math.min(left, depart ? MAX_LIVE_PER_SCAN : MAX_LIVE_WINDOW);
     routes = natural(routes.slice(0, budget));      // each route is at least one search: keep the ones that cover every airport
-    // A window: each route's live searches go to its cheapest windows in Aviasales's calendar (any departure day, any
-    // trip length wanted); without a calendar, departure days spread over the window
-    const per = Math.max(1, Math.min(dates || 3, Math.floor(budget / routes.length)));
-    const cals = depart ? [] : await Promise.all(routes.map(([f, t]) => calendarFor(f, t, lo, hi, dr).catch(() => [])));
-    const jobs = routes.flatMap(([f, t], i) => {
-      const best = (cals[i] || []).slice().sort((a, b) => a.pricePerAdult - b.pricePerAdult).slice(0, per).sort((a, b) => a.depart.localeCompare(b.depart));
-      const pairs = depart ? [[depart, ret]] : best.length ? best.map((x) => [x.depart, x.return]) : datePairs(lo, hi, dr.minNights, dr.maxNights, per);
-      return pairs.map(([out, back]) => ({ f, t, out, back }));
-    }).slice(0, budget);
-    const windows = windowsOf(cals.flat(), dr.adults);
     const now = new Date().toISOString();
-    const runs = await inTurn(jobs.map((j) => async () => {
+    const runJobs = (js) => inTurn(js.map((j) => async () => {
       const r = await liveSearch({ origin: j.f, destination: j.t, date: j.out, returnDate: j.back, adults: dr.adults, nonstop: max_stops === 0, currency: 'EUR' });
       return applyFilters(r.fares, { max_stops }).slice(0, 2).map((f) => fareOf(f, d, dr.adults, j.f, j.t, j.out, j.back, now));
     }));
+    const per = Math.max(1, Math.min(dates || 3, Math.floor(budget / routes.length)));
+    const cals = depart ? [] : await Promise.all(routes.map(([f, t]) => calendarFor(f, t, lo, hi, dr).then((l) => l.filter((x) => max_stops == null || (x.stops != null && x.stops <= max_stops))).catch(() => [])));
+    let jobs, runs, explored = false;
+    if (depart || cals.some((c) => c.length)) {
+      // exact dates, or a window Aviasales has a calendar for: each route's searches go to its cheapest windows there
+      jobs = routes.flatMap(([f, t], i) => {
+        const best = (cals[i] || []).slice().sort((a, b) => a.pricePerAdult - b.pricePerAdult).slice(0, per).sort((a, b) => a.depart.localeCompare(b.depart));
+        const pairs = depart ? [[depart, ret]] : best.length ? best.map((x) => [x.depart, x.return]) : datePairs(lo, hi, dr.minNights, dr.maxNights, per);
+        return pairs.map(([out, back]) => ({ f, t, out, back }));
+      }).slice(0, budget);
+      runs = await runJobs(jobs);
+    } else {
+      // No calendar (Aviasales keeps few prices months ahead): find the best dates live, in two rounds on the main
+      // route. First departure days spread over the window, then around the cheapest of them: a day or two either
+      // side and the shortest and longest stay wanted. What is left goes to the other routes on the best dates.
+      explored = true;
+      const [mf, mt] = routes[0];
+      const key = (j) => `${j.f}>${j.t}|${j.out}|${j.back}`;
+      const probes = datePairs(lo, hi, dr.minNights, dr.maxNights, dates ? Math.min(dates, budget) : Math.max(1, Math.min(5, budget - Math.min(4, Math.floor(budget / 2))))).map(([out, back]) => ({ f: mf, t: mt, out, back }));
+      jobs = [...new Map(probes.map((j) => [key(j), j])).values()];
+      runs = await runJobs(jobs);
+      const cost = (r) => (r.ok && r.value.length ? Math.min(...r.value.map((x) => x.price)) : Infinity);
+      const bi = runs.reduce((b, r, i) => (cost(r) < cost(runs[b]) ? i : b), 0);
+      const room = budget - jobs.length;
+      if (!dates && room > 0 && Number.isFinite(cost(runs[bi]))) {   // dates given: exactly that many, spread
+        const b = jobs[bi], n = diffDays(b.out, b.back), seen = new Set(jobs.map(key));
+        const near = [[-2, 0], [2, 0], [0, dr.minNights - n], [0, dr.maxNights - n], [-1, 0], [1, 0], [-3, 0], [3, 0]]
+          .map(([s, dn]) => { const out = addDays(b.out, s); return { f: mf, t: mt, out, back: addDays(out, n + dn) }; })
+          .filter((j) => j.out >= lo && j.out >= tomorrow && j.back <= hi && diffDays(j.out, j.back) >= dr.minNights && diffDays(j.out, j.back) <= dr.maxNights && !seen.has(key(j)) && seen.add(key(j)));
+        const others = routes.slice(1).map(([f, t]) => ({ f, t, out: b.out, back: b.back }));
+        const more = [...near.slice(0, Math.max(0, room - Math.min(others.length, Math.floor(room / 2)))), ...others].slice(0, room);
+        jobs = [...jobs, ...more];
+        runs = [...runs, ...(await runJobs(more))];
+      }
+    }
     const found = runs.filter((r) => r.ok).flatMap((r) => r.value);
     const failed = runs.filter((r) => !r.ok).map((r) => r.error);
     if (!found.length && failed.length === runs.length) return fallback(`The live airline search failed (${failed[0]})`);
-    const next = store.updateDraft(owner, (cur) => ({ ...cur, deals: found.length ? keepDeals(cur.deals || {}, d.id, provider.name, found) : cur.deals || {} }), freshDraft);
+    // the windows strip: Aviasales's calendar, and every window searched live at its live price
+    const liveWins = found.map((x) => ({ depart: x.depart, return: x.return, from: x.from, to: x.to, airline: x.airline, stops: x.stops, currency: x.currency, pricePerAdult: x.price / x.adults }));
+    const windows = depart ? [] : windowsOf([...cals.flat(), ...liveWins], dr.adults);
+    const next = store.updateDraft(owner, (cur) => ({ ...cur, deals: found.length ? keepDeals(cur.deals || {}, d.id, provider.name, found) : cur.deals || {},
+      windows: windows.length ? { ...(cur.windows || {}), [d.id]: mergeWindows(cur.windows?.[d.id], windows) } : cur.windows || {} }), freshDraft);
     const searched = jobs.map((j, i) => {
       const r = runs[i], best = r.ok && r.value.length ? Math.min(...r.value.map((x) => x.price)) : null;
       return { from: j.f, to: j.t, depart: j.out, return: j.back, fares: r.ok ? r.value.length : 0, best, error: r.ok ? null : r.error };
     });
     const shown = depart ? found.slice().sort((a, b) => a.price - b.price) : dealsFor(next.deals[d.id], { ...next, from: lo, until: hi });
     const what = depart ? `${froms.join(', ')} → ${tos.join(', ')}, ${shortDate(depart)} to ${shortDate(ret)}`
-      : `${windows.length ? 'the cheapest windows' : 'windows'} ${[...new Set(jobs.map((j) => `${shortDate(j.out)}–${shortDate(j.back)}`))].join(', ')}`;
+      : explored ? `${jobs.length} date combinations between ${shortDate(lo)} and ${shortDate(hi)}`
+        : `the cheapest windows ${[...new Set(jobs.map((j) => `${shortDate(j.out)}–${shortDate(j.back)}`))].join(', ')}`;
     const head = found.length ? `${provider.name}: ${found.length} fare${found.length === 1 ? '' : 's'} saved for ${d.name}, ${what}.` : `${provider.name} had no return fares for ${d.name}, ${what}.`;
     const out = leftOut(allRoutes, jobs);
+    const options = bestDates(found);
+    const bestText = !depart && options.length ? [`Best dates: ${optionLine(options[0])}.`, options.length > 1 ? `Next best: ${options.slice(1, 4).map(optionLine).join('; ')}.` : null] : [];
     return {
-      content: [text([head, ...shown.slice(0, 3).map(dealLine), out.note, failed.length ? `${failed.length} of the searches failed: ${failed[0]}` : null].filter(Boolean).join('\n'))],
-      structuredContent: { country: d.id, searched, left_out: out.routes, windows, deals: shown.slice(0, MAX_DEALS).map(namedFare), failed, searches_left: Math.max(0, limits.searchesPerDay - store.usage(owner, 'search')) },
+      content: [text([head, ...bestText, ...shown.slice(0, 3).map(dealLine), out.note, failed.length ? `${failed.length} of the searches failed: ${failed[0]}` : null].filter(Boolean).join('\n'))],
+      structuredContent: { country: d.id, searched, left_out: out.routes, windows, best_dates: options.slice(0, 4), deals: shown.slice(0, MAX_DEALS).map(namedFare), failed, searches_left: Math.max(0, limits.searchesPerDay - store.usage(owner, 'search')) },
     };
   }));
 
