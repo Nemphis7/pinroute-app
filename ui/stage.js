@@ -27,12 +27,13 @@ export function stageEl() {
   return S.el;
 }
 
-// o: { V, M, sel, settled(l), onPick(sel), onHover(stop, on, leg) }
+// o: { V, M, sel, settled(l), onPick(sel), onHover(stop, on, leg), ghosts?: [{ id, name, points }], onGhost?(id) }
+// ghosts are the other route options, drawn faint under the route; a tap on one shows it instead
 export function updateStage(o) {
   stageEl();
   S.o = o; S.V = o.V; S.M = o.M;
   if (!o.M) { S.wrap.replaceChildren(); S.svg = null; return; }
-  const key = JSON.stringify([o.V.trip.id, o.M.w, o.M.h, o.M.points, o.V.stops.map((x) => x.nights), o.V.legs.map((l) => [l.key, o.settled(l)])]);
+  const key = JSON.stringify([o.V.trip.id, o.M.w, o.M.h, o.M.points, o.V.stops.map((x) => x.nights), o.V.legs.map((l) => [l.key, o.settled(l)]), (o.ghosts || []).map((g) => g.id)]);
   const fresh = key !== S.key;
   if (fresh) { S.key = key; build(); }
   mark();
@@ -86,6 +87,26 @@ function build() {
   const clouds = s('g', { class: 'clouds', filter: 'url(#st-blur)' });
   for (let i = 0; i < 4; i++) clouds.append(s('ellipse', { cx: rnd() * W, cy: rnd() * H, rx: 40 + rnd() * 50, ry: 20 + rnd() * 20, style: `animation-delay:${(-rnd() * 40).toFixed(1)}s` }));
   svg.append(clouds);
+  // the other route options, faint, each with its letter: a tap shows that one
+  if (o.ghosts?.length) {
+    const ghosts = s('g', { class: 'ghosts' });
+    for (const gh of o.ghosts) {
+      const p = (gh.points || []).filter(Boolean);
+      if (p.length < 2) continue;
+      const d = `M${p.map((q) => q.join(',')).join(' L')}`;
+      const g = s('g', { class: 'ghost', 'data-opt': gh.id, role: 'button', 'aria-label': `Show route ${gh.id}: ${gh.name}` });
+      g.append(s('path', { class: 'ghost-hit', d }), s('path', { class: 'ghost-route', d }), s('title', {}, `Route ${gh.id}: ${gh.name}`));
+      const m = p[Math.floor((p.length - 1) / 2)], n = p[Math.floor((p.length - 1) / 2) + 1] || m;
+      const tag = s('g', { transform: `translate(${(m[0] + n[0]) / 2},${(m[1] + n[1]) / 2})` });
+      const inner = s('g', { class: 'pin-s' });
+      inner.append(s('circle', { class: 'ghost-dot', r: 10 }), s('text', { class: 'ghost-tag', 'text-anchor': 'middle', dy: '0.35em' }, gh.id));
+      tag.append(inner);
+      g.append(tag);
+      g.addEventListener('click', () => { stopPlay(); S.o.onGhost?.(gh.id); });
+      ghosts.append(g);
+    }
+    svg.append(ghosts);
+  }
   // the route, leg by leg in travel order
   const routes = s('g', { class: 'routes' });
   let n = 0;

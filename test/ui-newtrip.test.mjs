@@ -122,13 +122,29 @@ test('plans a trip with the best fare, then Claude plans the route', { skip }, a
   assert.equal(trip.ticket.source, 'LetsFG');
   await frame().locator('.row.leg').last().click();
   assert.match(await frame().locator('.ticket').textContent(), /In the return fare/);
-  await frame().getByRole('button', { name: 'Ask Claude to plan the route' }).click();
+  await frame().getByRole('button', { name: 'Ask Claude for route options' }).click();
   await page.waitForFunction(() => /^Plan the route for my Pinroute trip/.test(window.__messages.at(-1).content[0].text));
-  assert.match(await lastMessage(), new RegExp(`trip_id "${trip.id}".*update_trip: keep Bangkok first, end with Bangkok with 0 nights`));
-  await client.callTool({ name: 'update_trip', arguments: { trip_id: trip.id, stops: [{ place: 'Bangkok', nights: 3 }, { place: 'Koh Lanta', nights: 6 }, { place: 'Ao Nang', nights: 5 }, { place: 'Bangkok', nights: 0 }] } });
+  assert.match(await lastMessage(), new RegExp(`trip_id "${trip.id}".*Suggest 2 or 3 routes.*suggest_routes.*keeps Bangkok first and ends with Bangkok with 0 nights, uses all 14 nights`));
+  const bad = await client.callTool({ name: 'suggest_routes', arguments: { trip_id: trip.id, options: [{ name: 'Short', stops: [{ place: 'Bangkok', nights: 3 }, { place: 'Bangkok', nights: 0 }] }, { name: 'Also short', stops: [{ place: 'Bangkok', nights: 2 }, { place: 'Bangkok', nights: 0 }] }] } });
+  assert.match(bad.content[0].text, /"Short" has 3 nights; the trip's flights leave room for 14/);
+  await client.callTool({ name: 'suggest_routes', arguments: { trip_id: trip.id, options: [
+    { name: 'Andaman islands', why: 'Beaches on the west coast', stops: [{ place: 'Bangkok', nights: 3 }, { place: 'Koh Lanta', nights: 6 }, { place: 'Ao Nang', nights: 5 }, { place: 'Bangkok', nights: 0 }] },
+    { name: 'The north', why: 'Temples and mountains', stops: [{ place: 'Bangkok', nights: 4 }, { place: 'Chiang Mai', nights: 6 }, { place: 'Chiang Rai', nights: 4 }, { place: 'Bangkok', nights: 0 }] },
+  ] } });
   await frame().locator('.callout').getByRole('button', { name: 'Refresh' }).click();
+  await frame().locator('.route-opt').first().waitFor();
+  assert.equal(await frame().locator('.route-opt').count(), 2, 'both routes side by side');
+  assert.equal(await frame().locator('.stage .ghost').count(), 1, 'the other route faint on the map');
+  assert.match(await frame().locator('.detail h2').textContent(), /Andaman islands/);
+  await frame().locator('.stage .ghost .ghost-dot').dispatchEvent('click');
+  await frame().locator('.detail h2', { hasText: 'The north' }).waitFor();
+  assert.match(await frame().locator('.stage svg.stage-svg').getAttribute('aria-label'), /Chiang Mai/, 'the map shows the route picked');
+  assert.equal(await frame().locator('.row.stop').count(), 0, 'the route is not changed until one is chosen');
+  await frame().locator('.route-opt', { hasText: 'Andaman islands' }).click();
+  await frame().getByRole('button', { name: 'Use this route' }).click();
   await frame().locator('.row.stop', { hasText: 'Koh Lanta' }).waitFor();
   assert.equal(await frame().locator('.callout').count(), 0, 'once planned, the route stands on its own');
+  await frame().getByRole('button', { name: 'Compare routes (2)' }).waitFor();
   assert.match(await frame().locator('#status').textContent(), /2 of 4 flights chosen · 0 of 1 ferry or drive booked/);
 });
 
@@ -161,5 +177,37 @@ test('the draft in the chat: a card with where it stands and Open planner', { sk
   assert.equal(await f.locator('.side svg.world.mini').count(), 1);
   await f.getByRole('button', { name: 'Open planner' }).click();
   await f.locator('#app[data-layout="app"] .country').waitFor();
+  await p.close();
+});
+
+test('a new trip starts from the traveller\'s words; Claude fills it and the planner moves on', { skip }, async () => {
+  const p = await openHost('open_planner', {});
+  const f = p.frameLocator('#planner');
+  await f.getByRole('button', { name: 'Open Pinroute' }).click();
+  await f.locator('#start-words').fill('I want to go on a trip to Japan in April for two weeks');
+  assert.equal(await f.locator('.way').count(), 2, 'setting it up by hand stays, as two small buttons');
+  await f.getByRole('button', { name: 'Plan it with Claude' }).click();
+  await p.waitForFunction(() => /^I want to plan a new trip in Pinroute\. In my words: "I want to go on a trip to Japan in April/.test(window.__messages?.at(-1)?.content[0].text));
+  await f.locator('#words').waitFor();
+  assert.equal(await f.locator('#words').inputValue(), 'I want to go on a trip to Japan in April for two weeks');
+  assert.equal((await draft()).draft.step, 'prompt');
+  await client.callTool({ name: 'save_new_trip_draft', arguments: { country: 'Japan', free_from: addDays(FROM, 30), free_until: addDays(FROM, 50), min_nights: 13, max_nights: 15 } });
+  await f.locator('.country h3', { hasText: 'Japan' }).waitFor({ timeout: 30000 });
+  assert.equal(await f.locator('.step[aria-current="step"]').textContent(), '3Flights', 'straight to the flights for Japan');
+  await p.close();
+});
+
+test('the countries ticked to compare can be cleared at once', { skip }, async () => {
+  await client.callTool({ name: 'plan_new_trip', arguments: { compare: ['Vietnam', 'Thailand', 'Japan'], step: 'where', way: 'when' } });
+  const p = await openHost('plan_new_trip', {});
+  const f = p.frameLocator('#planner');
+  await f.getByRole('button', { name: 'Open planner' }).click();
+  await f.locator('.picked').waitFor();
+  assert.equal(await f.locator('.picked .token').count(), 3);
+  await f.getByRole('button', { name: 'Remove Japan' }).click();
+  await f.locator('.picked .token', { hasText: 'Japan' }).waitFor({ state: 'detached' });
+  await f.getByRole('button', { name: 'Clear all' }).click();
+  await f.locator('.picked').waitFor({ state: 'detached' });
+  assert.deepEqual((await draft()).draft.compare, []);
   await p.close();
 });

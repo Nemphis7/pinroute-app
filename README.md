@@ -1,6 +1,6 @@
 # Pinroute app
 
-Pinroute as an **MCP App**: a trip planner that runs inside Claude. A trip starts from the days the traveller is free (**I know when**: When → Where → Flights) or from a country (**I know where**: Country → Best time → Flights) and ends with a trip planned around the fare they picked. Each traveller uses their own Claude plan for the AI work; this server keeps each person's trips and new-trip draft, ranks 60 countries by season, finds airports, searches airline fares, keeps the flight deals found and stores the local picks Claude researched.
+Pinroute as an **MCP App**: a trip planner that runs inside Claude. A trip usually starts from the traveller's own words ("I want to go on a trip to Japan in April"): Claude fills the draft from them and the planner opens at the first step still open. Set up by hand, it starts from the days the traveller is free (**I know when**: When → Where → Flights) or from a country (**I know where**: Country → Best time → Flights). It ends with a trip planned around the fare they picked, where Claude suggests two or three routes to compare on the map. Each traveller uses their own Claude plan for the AI work; this server keeps each person's trips and new-trip draft, ranks 60 countries by season, finds airports, searches airline fares, keeps the flight deals found and stores the local picks Claude researched.
 
 Why inside Claude: Anthropic does not allow other apps to offer a Claude login or to run on people's Claude plans ([policy](https://code.claude.com/docs/en/legal-and-compliance)). An app that runs inside Claude, as a connector with its own screen, is the supported way.
 
@@ -11,7 +11,7 @@ Claude (the traveller's own plan)
  ├─ talks with the traveller; researches flights, routes and local picks with its own tools
  ├─ calls this server's tools ──── token from the sign-in service ────► Pinroute server (this repo)
  └─ shows the planner (ui/, one HTML; Back, Home, New trip, Trips)       ├─ checks the token (src/auth.mjs)
-      ├─ start screen: I know when / I know where, the trips              ├─ trips, draft, fares, picks per person (SQLite on the volume)
+      ├─ start screen: your words, I know when / where, the trips         ├─ trips, draft, fares, picks per person (SQLite on the volume)
       ├─ new trip: When → Where → Flights, Country → Best time → Flights  ├─ 60 countries by season and price level (src/discover.mjs)
       ├─ a trip: route (or build it on the map), flights, ferries, local picks                     ├─ airports and Thailand places (src/data)
       └─ "Ask Claude": Claude searches with the traveller's tools ──────► └─ fares: Amadeus Travel Builder, or demo
@@ -25,6 +25,7 @@ Claude (the traveller's own plan)
 | `save_flight_deals` | Keeps fares Claude found with any flight search, per country | writes |
 | `start_trip_from_flight` | A trip from a saved fare: from landing to the flight home, the fare on both flights | writes |
 | `set_trip_fare` | Moves a trip to another saved fare: dates follow the flights, nights go to or come from the longest stays, a new arrival or departure airport joins the route | changes |
+| `suggest_routes` / `choose_route` | Two or three route options for a trip, compared on the planner's map (the others drawn faint beside the one shown); one becomes the route, the rest stay to switch back to | writes / changes |
 | `create_trip` / `update_trip` / `delete_trip` / `list_trips` | Multi-stop trips with nights per stop; dates and legs are worked out; stops anywhere by coordinates | writes / changes / deletes / reads |
 | `save_route_ideas` | Places worth a stop on a trip, with coordinates, airport and a why, shown as pins to tap on the planner's map | writes |
 | `route_map` | For the planner only: the places to tap when building a route on the map (Pinroute's Thailand places, the cities with flights elsewhere, Claude's ideas) and the map around them | reads |
