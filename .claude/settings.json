@@ -12,6 +12,9 @@
     },
     "caveman": {
       "source": { "source": "github", "repo": "JuliusBrussee/caveman" }
+    },
+    "claude-plugins-official": {
+      "source": { "source": "github", "repo": "anthropics/claude-plugins-official" }
     }
   },
   "enabledPlugins": {
@@ -19,7 +22,8 @@
     "supabase@supabase-agent-skills": true,
     "postgres-best-practices@supabase-agent-skills": true,
     "ponytail@ponytail": true,
-    "caveman@caveman": true
+    "caveman@caveman": true,
+    "claude-code-setup@claude-plugins-official": true
   },
   "env": {
     "CAVEMAN_DEFAULT_MODE": "manual"
