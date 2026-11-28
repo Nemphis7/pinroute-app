@@ -1353,3 +1353,19 @@ button.cal-opt:hover { border-color: var(--accent); background: color-mix(in srg
   .site-chip .site-tick { display: none; }
   .site-chip .site-mark { width: 28px; height: 28px; font-size: 12px; }
 }
+
+/* Fare cards: every fare found for a country, cheapest first, each with a Book button for its site */
+.fare-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s-2); }
+.fare-card { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-0); background: var(--paper); }
+.fare-card.fc-win { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
+.fare-card.fc-picked:not(.fc-win) { border-color: var(--line-2); background: var(--paper-2); }
+.fare-card.outside .pp { color: var(--ink-2); }
+.fc-head { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
+.fc-head .site-mark { width: 26px; height: 26px; font-size: 11px; border-radius: 7px; }
+.fc-site { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: var(--medium); color: var(--ink); }
+.fc-dates { font-size: 13px; color: var(--ink); }
+.fc-leg { overflow-wrap: anywhere; }
+.fc-when { color: var(--ink-3); }
+.fare-card .acts { margin-top: auto; padding-top: var(--s-2); display: flex; flex-wrap: wrap; gap: var(--s-1); }
+.fare-card .acts button { flex: 1 1 auto; justify-content: center; }
+.more-fares > .fare-cards { margin-top: var(--s-2); }

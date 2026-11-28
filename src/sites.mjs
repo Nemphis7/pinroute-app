@@ -26,3 +26,23 @@ export function siteOf(source) {
   if (/amadeus|demodata|aviasales|pinroute/.test(s)) return 'pinroute';
   return null;
 }
+
+// A site's own search page for a return trip, for a fare saved without a booking link (Expedia's connector gives none):
+// the Book button then opens the same search on that site. Null for a site without such a page.
+export function searchLink(site, { from, to, back_from, depart, return: ret, adults = 1 }) {
+  const home = back_from || to;
+  const us = (iso) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}`;
+  switch (site) {
+    case 'expedia':
+      return `https://www.expedia.com/Flights-Search?trip=roundtrip&leg1=${encodeURIComponent(`from:${from},to:${to},departure:${us(depart)}TANYT`)}`
+        + `&leg2=${encodeURIComponent(`from:${home},to:${from},departure:${us(ret)}TANYT`)}&passengers=${encodeURIComponent(`adults:${adults},children:0,infantinlap:N`)}&mode=search&options=cabinclass%3Aeconomy`;
+    case 'edreams':
+      return `https://www.edreams.com/travel/?searchMainProductTypeName=FLIGHT&deeplink=${encodeURIComponent(`/results/type=R;dep=${depart};ret=${ret};from.iata=${from};to.iata=${to};adults=${adults};children=0;infants=0;class=TOURIST`)}`;
+    case 'kiwi':
+      return `https://www.kiwi.com/en/search/results/${from}/${to}/${depart}/${ret}?adults=${adults}`;
+    case 'lastminute':
+      return `https://www.lastminute.com/flights/search?from=${from}&to=${to}&departure=${depart}&return=${ret}&adults=${adults}`;
+    default:
+      return null;
+  }
+}

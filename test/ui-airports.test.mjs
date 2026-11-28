@@ -78,7 +78,7 @@ test('Escape closes the map without adding anything', { skip }, async () => {
 test('compares the same dates from every departure airport to the airports chosen, cheapest marked', { skip }, async () => {
   await f().locator('.step', { hasText: 'Flights' }).click();
   await f().locator('.country').first().getByRole('button', { name: 'Find flights' }).click();
-  await f().locator('.country .deal.main').waitFor({ timeout: 30000 });
+  await f().locator('.country .fare-card.fc-lead').waitFor({ timeout: 30000 });
   const block = f().locator('details.compare');
   await block.locator('summary').click();
   const homes = (await draft()).draft.homes;
@@ -97,5 +97,5 @@ test('compares the same dates from every departure airport to the airports chose
   const other = block.locator('td:not(.win) button.mx-c').first();
   await other.click();
   await block.locator('td.picked:not(.win)').waitFor();
-  assert.equal(await block.locator('.deal').count(), 1, 'the fare picked in the table, ready to plan with');
+  assert.equal(await block.locator('.fare-card').count(), 1, 'the fare picked in the table, ready to plan with');
 });

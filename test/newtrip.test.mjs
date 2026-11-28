@@ -236,3 +236,34 @@ test('from the traveller\'s words: the draft moves on to the first step the word
   const byHand = (await call('plan_new_trip', { reset: true, step: 'country' })).structuredContent.draft;
   assert.deepEqual([byHand.way, byHand.step], ['where', 'country'], 'a step set by hand picks its way');
 });
+
+test('nights count by the calendar, a fare without a link books on its site, a failed site said plainly', async () => {
+  await call('save_new_trip_draft', { min_nights: 14, max_nights: 15, adults: 2 });
+  // leaves late, lands after midnight: still 16 nights from the 14th to the 30th, outside 14–15
+  const late = { from: 'CRL', to: 'PMO', depart: addDays(FROM, 0), arrive: addDays(FROM, 1), return: addDays(FROM, 16), price: 177, currency: 'EUR', airline: 'Ryanair', stops: 0, source: 'Expedia' };
+  const fits = { ...late, from: 'HHN', to: 'CTA', arrive: undefined, return: addDays(FROM, 14), price: 184 };
+  const r = await call('save_flight_deals', { country: 'Italy', deals: [late, fits], sites: [{ site: 'expedia', status: 'searched' }, { site: 'edreams', status: 'failed', note: 'no fares in the result' }] });
+  assert.ok(!r.isError, JSON.stringify(r.content));
+  const t = r.content[0].text;
+  assert.match(t, /CRL → PMO .*\(16 nights\)/);
+  assert.match(t, /1 of them is outside the 14–15 nights wanted, counted by the calendar/);
+  assert.match(t, /eDreams: the search failed, so the planner leaves it out of the results/);
+  assert.match(t, /cards, cheapest first, each with a Book button\. Don't list them in the chat/);
+  const saved = r.structuredContent.deals;
+  const link = saved.find((x) => x.from === 'CRL').link;
+  assert.match(link, /^https:\/\/www\.expedia\.com\/Flights-Search\?trip=roundtrip&leg1=from%3ACRL%2Cto%3APMO%2Cdeparture%3A/, 'Expedia gives no link: its own search for the dates');
+  assert.match(link, /passengers=adults%3A2/);
+  const { deals } = (await call('plan_new_trip', {})).structuredContent;
+  const { dealsFor } = await import('../src/discover.mjs');
+  const d = (await call('plan_new_trip', {})).structuredContent.draft;
+  const ranked = dealsFor(deals[findDest('Italy').id], { ...d, from: FROM, until: addDays(FROM, 30) });
+  assert.deepEqual(ranked.map((x) => [x.to, x.fits]), [['CTA', true], ['PMO', false]], 'the 16-night fare is outside 14–15 and goes after the one that fits');
+});
+
+test('a focus on part of a country names the airports close by that it leaves out', async () => {
+  const r = await call('save_new_trip_draft', { focus: [{ country: 'Italy', area: 'Sicily', airports: ['CTA', 'PMO'] }] });
+  assert.match(r.content[0].text, /Not in the Sicily focus but close to its airports: .*TPS \(Trapani, \d+ km from PMO\).*CIY \(Comiso, \d+ km from CTA\)|Not in the Sicily focus but close to its airports: .*CIY \(Comiso, \d+ km from CTA\).*TPS \(Trapani, \d+ km from PMO\)/);
+  const all = await call('save_new_trip_draft', { focus: [{ country: 'Italy', area: 'Sicily', airports: ['CTA', 'PMO', 'TPS', 'CIY'] }] });
+  assert.doesNotMatch(all.content[0].text, /Not in the Sicily focus/);
+  assert.deepEqual(all.structuredContent.arrivals[findDest('Italy').id]?.map((a) => a.code) ?? ['CTA', 'PMO', 'TPS', 'CIY'], ['CTA', 'PMO', 'TPS', 'CIY']);
+});

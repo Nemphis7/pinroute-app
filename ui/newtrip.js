@@ -18,7 +18,7 @@ import { openConfirm } from './tripmenu.js';
 import { scene, kindOfTags } from './scene.js';
 import { ownLink, ownPanel } from './ownflight.js';
 import { climatePanel } from './climate.js';
-import { sitePicker, siteCompare, sitesMessage, pickedSites, connectorsPicked, pairsFor } from './sources.js';
+import { sitePicker, siteCompare, sitesMessage, pickedSites, connectorsPicked, pairsFor, failedSites, bookOn, siteOf, siteMark } from './sources.js';
 
 // A country's postcard, from what it is known for
 const destArt = (d, w = 400, hgt = 200, sky) => scene(d.name, kindOfTags(d.tags), { w, h: hgt, sky });
@@ -136,7 +136,7 @@ async function askWishes() {
   N.wish = null;
   const since = N.d.updated;
   const where = N.d.way === 'where';
-  ask('wish', `Here is what I have in mind for my new trip in Pinroute: "${text}". Set up my Pinroute draft to match with save_new_trip_draft (the planner is open and follows): ${where ? 'the country (country)' : 'the countries worth comparing (compare)'}, and the regions, interests, trip length (min_nights, max_nights), dates and travellers if I said them. For a part of a country I named, such as an island or a region, add a focus with its name and its main airports with scheduled flights (IATA codes, busiest first), so Pinroute looks up fares to those airports. Leave my wishes as they are. Then say in two or three lines what you set.`,
+  ask('wish', `Here is what I have in mind for my new trip in Pinroute: "${text}". Set up my Pinroute draft to match with save_new_trip_draft (the planner is open and follows): ${where ? 'the country (country)' : 'the countries worth comparing (compare)'}, and the regions, interests, trip length (min_nights, max_nights), dates and travellers if I said them. For a part of a country I named, such as an island or a region, add a focus with its name and every airport in it with scheduled passenger flights (IATA codes, busiest first, the small ones too: Sicily is CTA, PMO, TPS and CIY), so Pinroute looks up fares to all of them. Leave my wishes as they are. Then say in two or three lines what you set.`,
     { poll: refresh, done: () => (N.d.updated || '') > (since || ''), tries: 45 });
 }
 
@@ -170,7 +170,7 @@ function manualWays() {
 function askStart(text) {
   N.wish = null;
   const since = N.d.updated;
-  ask('start', `I want to plan a new trip in Pinroute. In my words: "${text}". Set up my Pinroute draft from it with save_new_trip_draft (the planner is open and follows; leave way and step out, so it moves on by itself): the country if I named one, or the countries worth comparing; my free dates (free_from, free_until; a month or season counts as its first and last day) and the trip length (min_nights, max_nights) if I said them; travellers, budget and departure airports if I said them; regions and interests. For a part of a country I named, such as an island or a region, add a focus with its name and its main airports with scheduled flights (IATA codes, busiest first). Leave my wishes as they are. Then say in two or three lines what you set. If my words don't say enough to choose a country or dates, set what they do say and ask me one short question.`,
+  ask('start', `I want to plan a new trip in Pinroute. In my words: "${text}". Set up my Pinroute draft from it with save_new_trip_draft (the planner is open and follows; leave way and step out, so it moves on by itself): the country if I named one, or the countries worth comparing; my free dates (free_from, free_until; a month or season counts as its first and last day) and the trip length (min_nights, max_nights) if I said them; travellers, budget and departure airports if I said them; regions and interests. For a part of a country I named, such as an island or a region, add a focus with its name and every airport in it with scheduled passenger flights (IATA codes, busiest first, the small ones too: Sicily is CTA, PMO, TPS and CIY). Leave my wishes as they are. Then say in two or three lines what you set. If my words don't say enough to choose a country or dates, set what they do say and ask me one short question.`,
     { poll: refresh, done: () => (N.d.updated || '') > (since || '') && N.d.step !== 'prompt', tries: 45 });
 }
 // From the start screen: a fresh draft with the words, then Claude fills it in
@@ -365,7 +365,8 @@ const stopsOk = (x) => N.stops == null || (x.stops != null && x.stops <= N.stops
 const stopsArg = () => (N.stops == null ? {} : { max_stops: N.stops });
 function rowsFor() {
   return N.d.compare.map(destById).filter(Boolean).map((d) => {
-    const all = dealsFor(N.deals[d.id], N.d).filter(stopsOk);
+    const off = failedSites(N.d);                  // a site whose search failed is left out until it searches again
+    const all = dealsFor(N.deals[d.id], N.d).filter(stopsOk).filter((x) => !off.includes(siteOf(x.source)));
     const picked = all.find((x) => x.id === N.pick[d.id]);
     const list = picked ? [picked, ...all.filter((x) => x !== picked)] : all;
     return { d, list, best: list[0] || null, fit: seasonFit(d, months()) };
@@ -420,20 +421,15 @@ function countryDeals({ d, list, fit }) {
   const [, fl] = fitLabel(fit);
   let body;
   if (list.length) {
-    // The best date combination leads; then the next best other dates, one fare each, to pick from in a tap
-    const main = list[0], seen = new Set([`${main.depart}|${main.return}`]);
-    const others = list.filter((x) => { const k = `${x.depart}|${x.return}`; if (seen.has(k)) return false; seen.add(k); return true; });
-    const rest = list.filter((x) => x !== main && !others.slice(0, 3).includes(x));
-    body = [h('p', { class: 'eyebrow', text: N.pick[d.id] ? 'Your pick' : 'Best dates found' }),
-      dealItem(d, main, true),
-      siteCompare(d, list, { picked: N.pick[d.id] || main.id, pick: (x) => { N.pick[d.id] = x.id; render(); } }),
-      others.length ? h('section', { class: 'alts', 'aria-label': 'Other dates' }, h('p', { class: 'small', text: 'Other dates' }),
-        others.slice(0, 3).map((x) => h('button', { class: 'alt', onclick: () => { N.pick[d.id] = x.id; render(); } },
-          h('span', { class: 'ad', text: `${day(x.depart)} → ${day(x.return)}` }),
-          h('span', { class: 'small', text: [nightsTxt(dealNights(x)), `${x.from} → ${x.to}`, x.stops == null ? null : x.stops ? plural(x.stops, 'change') : 'Direct', x.airline].filter(Boolean).join(' · ') }),
-          h('b', { text: money(dealPP(x), x.currency) })))) : null,
-      compareBlock(d, main),
-      rest.length ? h('details', {}, h('summary', { text: `${plural(rest.length, 'more fare')}` }), rest.slice(0, 8).map((x) => dealItem(d, x, false))) : null];
+    // Every fare found as a card, the ones that fit the trip length first and cheapest first, each with its Book button
+    const main = list[0], picked = list.find((x) => x.id === N.pick[d.id]) || main;
+    const shown = list.slice(0, 6), rest = list.slice(6);
+    body = [h('p', { class: 'eyebrow', text: `${plural(list.length, 'fare')} found, cheapest first` }),
+      h('div', { class: 'fare-cards' }, shown.map((x, i) => fareCard(d, x, { lead: i === 0, cheapest: i === 0 && !N.pick[d.id] && x.fits, picked: x.id === picked.id }))),
+      rest.length ? h('details', { class: 'more-fares' }, h('summary', { text: `${plural(rest.length, 'more fare')}` }),
+        h('div', { class: 'fare-cards' }, rest.slice(0, 18).map((x) => fareCard(d, x, { picked: x.id === picked.id })))) : null,
+      siteCompare(d, list, { picked: picked.id, pick: (x) => { N.pick[d.id] = x.id; render(); } }),
+      compareBlock(d, picked)];
   } else if (st === 'loading') body = h('p', { class: 'meta busy', text: 'Checking fares…' });
   else if (waiting.sites) body = h('p', { class: 'meta busy', text: 'Claude is searching your sites…' });
   else body = h('div', { class: 'acts' }, h('span', { class: 'meta', text: N.stops != null && (N.deals[d.id] || []).length ? `No ${N.stops ? 'fares with at most one change' : 'direct fares'} yet.` : 'No fares yet.' }),
@@ -516,7 +512,7 @@ function compareBlock(d, x) {
     h('summary', { text: 'Same dates, other airports' }),
     h('p', { class: 'small', text: `${day(x.depart)} → ${day(x.return)}, per person. Switch airports on or off; each route is one search.` }),
     table,
-    picked && picked.id !== x.id ? dealItem(d, picked, false) : null,
+    picked && picked.id !== x.id ? fareCard(d, picked, { picked: true }) : null,
     st?.error ? h('p', { class: 'note warn', text: st.error }) : null,
     st?.leftOut?.length ? h('p', { class: 'small', text: `Searched a spread that includes every airport; ${plural(st.leftOut.length, 'route')} left out to save searches. Switch some airports off to compare those.` }) : null,
     h('div', { class: 'acts' },
@@ -534,23 +530,28 @@ async function compareRoutes(d, x, m) {
   } catch (e) { N.scan[`c|${d.id}`] = { error: e.message || String(e) }; }
   await refresh(true);
 }
-function dealItem(d, x, main) {
+// One fare as a card: the price per person and for everyone, the dates and nights, the flights, and a Book button that
+// opens the site it was found on; planning the country with it is the second button.
+function fareCard(d, x, { lead = false, cheapest = false, picked = false } = {}) {
   const dl = dealLabel(dealRatio(x));
   const cost = N.d.budget ? roughCost(d, { adults: x.adults, nights: dealNights(x), flightTotal: x.price }) : null;
   const bf = cost && budgetFit(cost, N.d.budget);
-  return h('div', { class: `deal${main ? ' main' : ''}` },
+  const site = siteOf(x.source), book = bookOn(x);
+  return h('article', { class: `fare-card${lead ? ' fc-lead' : ''}${cheapest ? ' fc-win' : ''}${picked ? ' fc-picked' : ''}${x.fits ? '' : ' outside'}`, 'data-deal': x.id },
+    h('header', { class: 'fc-head' }, siteMark(site, x.source), h('span', { class: 'fc-site', text: x.source }),
+      cheapest ? h('span', { class: 'pill done', text: 'Cheapest' }) : dl ? h('span', { class: `badge ${dl[0]}`, text: dl[1] }) : null),
     h('div', { class: 'dprice' }, h('b', { class: 'pp', text: money(dealPP(x), x.currency) }),
-      h('span', { class: 'meta', text: `per person${x.adults > 1 ? ` · ${money(x.price, x.currency)} for ${x.adults}` : ''}` }),
-      dl ? h('span', { class: `badge ${dl[0]}`, text: dl[1] }) : null),
-    h('p', { class: 'meta', text: `${day(x.depart)} → ${day(x.return)} · ${nightsTxt(dealNights(x))}${x.fits ? '' : ', outside your trip length'} · ${x.from} → ${x.to}${x.back_from && x.back_from !== x.to ? `, home from ${x.back_from}` : ''}` }),
-    h('p', { class: 'small', text: [x.airline, x.stops == null ? null : x.stops ? plural(x.stops, 'change') : 'Direct', `via ${x.source}`, x.recent ? 'a recent price, check it before booking' : `checked ${time(x.at)}`].filter(Boolean).join(' · ') }),
-    x.out ? h('p', { class: 'small', text: `Out: ${x.out}` }) : null,
-    x.back ? h('p', { class: 'small', text: `Back: ${x.back}` }) : null,
+      h('span', { class: 'meta', text: `per person${x.adults > 1 ? ` · ${money(x.price, x.currency)} for ${x.adults}` : ''}` })),
+    h('p', { class: 'fc-dates', text: `${day(x.depart)} → ${day(x.return)} · ${nightsTxt(dealNights(x))}${x.fits ? '' : ', outside your trip length'}` }),
+    h('p', { class: 'small', text: [`${x.from} → ${x.to}${x.back_from && x.back_from !== x.to ? `, home from ${x.back_from}` : ''}`, x.airline, x.stops == null ? null : x.stops ? plural(x.stops, 'change') : 'Direct'].filter(Boolean).join(' · ') }),
+    x.out ? h('p', { class: 'small fc-leg', text: `Out: ${x.out}` }) : null,
+    x.back ? h('p', { class: 'small fc-leg', text: `Back: ${x.back}` }) : null,
     bf ? h('p', { class: `small bud ${bf[0]}`, text: `${bf[1]}: about ${money(cost.total)} with ${money(cost.ground)} on the ground` }) : null,
+    h('p', { class: 'small fc-when', text: x.recent ? 'A recent price, check it before booking' : `Checked ${time(x.at)}` }),
     h('div', { class: 'acts' },
-      h('button', { disabled: ui.busy, onclick: () => startFrom(d, x) }, `Plan ${d.name} with this flight`, icon(ArrowRight)),
-      x.link ? h('button', { class: 'ghost', onclick: () => app.openLink({ url: x.link }) }, icon(ExternalLink), x.recent ? 'Check on Aviasales' : 'Booking page') : null,
-      x.recent ? null : h('button', { class: 'ghost', onclick: () => openFlightLink({ from: x.from, to: x.to, depart: x.depart, return: x.return, adults: x.adults }) }, icon(ExternalLink), 'Compare on Trip.com')));
+      h('button', { class: 'primary book', onclick: () => (book.url ? app.openLink({ url: book.url }).catch(() => {}) : openFlightLink({ from: x.from, to: x.to, depart: x.depart, return: x.return, adults: x.adults })) },
+        icon(ExternalLink), book.label),
+      h('button', { class: 'ghost', disabled: ui.busy, onclick: () => startFrom(d, x) }, `Plan ${d.name} with it`, icon(ArrowRight))));
 }
 // One Find flights button, as on a trip's flight legs: Pinroute's own search, recent Aviasales prices from every home
 // airport first (when the server has them), then airline fares from the main one.
@@ -579,7 +580,7 @@ function askSites(ids) {
   const since = new Date(Date.now() - 2000).toISOString();
   const countries = ids.map(destById).filter(Boolean).map((d) => ({
     id: d.id, name: N.d.focus?.[d.id] ? `${d.name} (${N.d.focus[d.id].area})` : d.name,
-    airports: (N.view.arrivals?.[d.id] || []).map((a) => a.code).slice(0, 4),
+    airports: (N.view.arrivals?.[d.id] || []).map((a) => a.code).slice(0, N.d.focus?.[d.id] ? 8 : 4),   // a focus: every airport in the area
     pairs: pairsFor(N.d, N.view.windows?.[d.id], N.deals[d.id]),
   })).filter((c) => c.airports.length);
   if (!countries.length) return;
