@@ -22,7 +22,7 @@ import { climatePanel } from './climate.js';
 // A country's postcard, from what it is known for
 const destArt = (d, w = 400, hgt = 200, sky) => scene(d.name, kindOfTags(d.tags), { w, h: hgt, sky });
 
-const N = { view: null, d: null, homes: [], deals: {}, flights: {}, seq: 0, all: false, sort: 'deal', scan: {}, q: '', air: { q: '', list: [] }, regionsOpen: false, mx: {} };
+const N = { view: null, d: null, homes: [], deals: {}, flights: {}, seq: 0, all: false, sort: 'deal', stops: null, pick: {}, scan: {}, q: '', air: { q: '', list: [] }, regionsOpen: false, mx: {} };
 const ICON = { city: Building2, culture: Landmark, nature: Trees, beach: Waves };
 const STEPS = { when: [['when', 'When'], ['where', 'Where'], ['flights', 'Flights']], where: [['country', 'Country'], ['season', 'Best time'], ['flights', 'Flights']] };
 const time = (iso) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -359,9 +359,14 @@ function askTake() {
 }
 
 // ---------------------------------------------------------------- Flights
+// Direct only, at most one change, or any: applies to every fare shown, the searches and the windows strip
+const stopsOk = (x) => N.stops == null || (x.stops != null && x.stops <= N.stops);
+const stopsArg = () => (N.stops == null ? {} : { max_stops: N.stops });
 function rowsFor() {
   return N.d.compare.map(destById).filter(Boolean).map((d) => {
-    const list = dealsFor(N.deals[d.id], N.d);
+    const all = dealsFor(N.deals[d.id], N.d).filter(stopsOk);
+    const picked = all.find((x) => x.id === N.pick[d.id]);
+    const list = picked ? [picked, ...all.filter((x) => x !== picked)] : all;
     return { d, list, best: list[0] || null, fit: seasonFit(d, months()) };
   });
 }
@@ -382,6 +387,8 @@ function flightsStep() {
     h('div', { class: 'toolbar' },
       h('div', { class: 'acts' },
         h('button', { class: top ? '' : 'primary', disabled: off, title: findTitle(), onclick: () => findAll(ids) }, icon(Plane), scanning ? 'Searching…' : 'Find flights')),
+      h('div', { class: 'sorter', role: 'group', 'aria-label': 'Changes' }, h('span', { class: 'small', text: 'Stops' }),
+        [[null, 'Any'], [1, 'Max 1'], [0, 'Direct']].map(([k, l]) => h('button', { 'aria-pressed': String(N.stops === k), onclick: () => { N.stops = k; N.pick = {}; render(); } }, l))),
       h('div', { class: 'sorter', role: 'group', 'aria-label': 'Sort' }, h('span', { class: 'small', text: 'Sort' }),
         [['deal', 'Deal'], ['price', 'Price'], ['weather', 'Weather']].map(([k, l]) => h('button', { 'aria-pressed': String(N.sort === k), onclick: () => { N.sort = k; render(); } }, l)))),
     ownLine(),
@@ -411,11 +418,21 @@ function countryDeals({ d, list, fit }) {
   const [, fl] = fitLabel(fit);
   let body;
   if (list.length) {
-    body = [dealItem(d, list[0], true),
-      compareBlock(d, list[0]),
-      list.length > 1 ? h('details', {}, h('summary', { text: `${plural(list.length - 1, 'more fare')}` }), list.slice(1, 8).map((x) => dealItem(d, x, false))) : null];
+    // The best date combination leads; then the next best other dates, one fare each, to pick from in a tap
+    const main = list[0], seen = new Set([`${main.depart}|${main.return}`]);
+    const others = list.filter((x) => { const k = `${x.depart}|${x.return}`; if (seen.has(k)) return false; seen.add(k); return true; });
+    const rest = list.filter((x) => x !== main && !others.slice(0, 3).includes(x));
+    body = [h('p', { class: 'eyebrow', text: N.pick[d.id] ? 'Your pick' : 'Best dates found' }),
+      dealItem(d, main, true),
+      others.length ? h('section', { class: 'alts', 'aria-label': 'Other dates' }, h('p', { class: 'small', text: 'Other dates' }),
+        others.slice(0, 3).map((x) => h('button', { class: 'alt', onclick: () => { N.pick[d.id] = x.id; render(); } },
+          h('span', { class: 'ad', text: `${day(x.depart)} → ${day(x.return)}` }),
+          h('span', { class: 'small', text: [nightsTxt(dealNights(x)), `${x.from} → ${x.to}`, x.stops == null ? null : x.stops ? plural(x.stops, 'change') : 'Direct', x.airline].filter(Boolean).join(' · ') }),
+          h('b', { text: money(dealPP(x), x.currency) })))) : null,
+      compareBlock(d, main),
+      rest.length ? h('details', {}, h('summary', { text: `${plural(rest.length, 'more fare')}` }), rest.slice(0, 8).map((x) => dealItem(d, x, false))) : null];
   } else if (st === 'loading') body = h('p', { class: 'meta busy', text: 'Checking fares…' });
-  else body = h('div', { class: 'acts' }, h('span', { class: 'meta', text: 'No fares yet.' }),
+  else body = h('div', { class: 'acts' }, h('span', { class: 'meta', text: N.stops != null && (N.deals[d.id] || []).length ? `No ${N.stops ? 'fares with at most one change' : 'direct fares'} yet.` : 'No fares yet.' }),
     h('button', { class: 'ghost', disabled: !N.homes.length, title: findTitle(), onclick: () => findAll([d.id]) }, icon(Plane), 'Find flights'));
   return h('article', { class: 'country', id: `deals-${d.id}` },
     h('div', { class: 'c-art' }, destArt(d, 800, 120)),
@@ -430,12 +447,12 @@ function countryDeals({ d, list, fit }) {
 // Every travel window of the right length in the dates free, from Aviasales's day-by-day calendar: the cheapest return
 // for each departure day. Tapping one checks the live airline fare for exactly that window (one search).
 function windowStrip(d) {
-  const ws = N.view.windows?.[d.id] || [];
+  const ws = (N.view.windows?.[d.id] || []).filter(stopsOk);
   if (ws.length < 2) return null;
   const low = Math.min(...ws.map((w) => w.perAdult)), high = Math.max(...ws.map((w) => w.perAdult));
   const st = N.scan[`w|${d.id}`];
   return h('section', { class: 'wins', 'aria-label': `${d.name}: cheapest window from each departure day` },
-    h('p', { class: 'small', text: `Cheapest window from each day you could leave, per person (recent Aviasales prices). Tap one to check the live airline fare.` }),
+    h('p', { class: 'small', text: 'Cheapest window from each day you could leave, per person. Tap one to check the live airline fare for those dates.' }),
     h('div', { class: 'wstrip' }, ws.map((w) => h('button', {
       class: `win${w.perAdult === low ? ' low' : ''}`, disabled: st === 'loading' || !N.homes.length,
       title: `${day(w.depart)} → ${day(w.return)}, ${nightsTxt(w.nights)}, ${w.from} → ${w.to}, ${w.airline}: ${money(w.perAdult, w.currency)} per person`,
@@ -451,7 +468,7 @@ async function checkWindow(d, w) {
   N.scan[`w|${d.id}`] = 'loading';
   render();
   try {
-    await call('scan_flight_deals', { country: d.id, origins: [w.from], destinations: [w.to], depart: w.depart, return: w.return, source: 'live' });
+    await call('scan_flight_deals', { country: d.id, origins: [w.from], destinations: [w.to], depart: w.depart, return: w.return, source: 'live', ...stopsArg() });
     N.scan[`w|${d.id}`] = null;
   } catch (e) { N.scan[`w|${d.id}`] = { error: e.message || String(e) }; }
   await refresh(true);
@@ -548,10 +565,10 @@ async function findAll(ids) {
   for (const id of ids) {                           // one country at a time: each scan already runs its dates side by side
     const errors = [];
     if (N.flights.recent) {
-      try { await call('scan_flight_deals', { country: id, origins, source: 'recent' }); } catch (e) { errors.push(e.message || String(e)); }
+      try { await call('scan_flight_deals', { country: id, origins, source: 'recent', ...stopsArg() }); } catch (e) { errors.push(e.message || String(e)); }
       await refresh(true);
     }
-    try { await call('scan_flight_deals', { country: id, source: 'live' }); } catch (e) { errors.push(e.message || String(e)); }
+    try { await call('scan_flight_deals', { country: id, source: 'live', ...stopsArg() }); } catch (e) { errors.push(e.message || String(e)); }
     N.scan[id] = errors.length && !(N.deals[id] || []).length ? { error: errors[0] } : null;
     await refresh(true);
   }

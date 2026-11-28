@@ -98,6 +98,24 @@ test('Flights: one Find flights button prices every country, the best deal leads
   assert.match(await frame().locator('.country .deal.main').first().textContent(), /per person · €[\d,]+ for 2/);
 });
 
+test('Flights: the best dates lead, other dates follow, and Stops narrows every fare to direct or one change', { skip }, async () => {
+  const card = frame().locator('.country').first();
+  assert.equal(await card.locator('.eyebrow').first().textContent(), 'Best dates found');
+  const alts = card.locator('.alts .alt');
+  assert.ok(await alts.count() >= 1, 'other date combinations to pick from');
+  const mainDates = (await card.locator('.deal.main .meta').nth(1).textContent()).split(' · ')[0];
+  const altDates = await alts.first().locator('.ad').textContent();
+  assert.notEqual(altDates, mainDates, 'other dates, not the same dates again');
+  await alts.first().click();
+  assert.equal(await card.locator('.eyebrow').first().textContent(), 'Your pick');
+  assert.equal((await card.locator('.deal.main .meta').nth(1).textContent()).split(' · ')[0], altDates);
+  const stops = frame().locator('.sorter[aria-label="Changes"]');
+  assert.deepEqual((await stops.locator('button').allTextContents()), ['Any', 'Max 1', 'Direct']);
+  await stops.getByRole('button', { name: 'Direct' }).click();
+  for (const t of await frame().locator('.country .deal.main .small').first().allTextContents()) assert.match(t, /Direct/);
+  await stops.getByRole('button', { name: 'Any' }).click();
+});
+
 test('fares Claude saves show up on the Flights step', { skip }, async () => {
   const d = await draft();
   const first = d.draft.compare[0];

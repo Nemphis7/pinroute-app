@@ -73,13 +73,21 @@ test('moving on to Where compares the four best matches; the traveller can chang
   assert.match(c.content[0].text, /Comparing: Vietnam, Sri Lanka, Mexico\./);
 });
 
-test('scans airline fares for a country on dates spread over the window, and keeps them', async () => {
+test('finds the best dates in the window live: spread over it, then around the cheapest, and leads with them', async () => {
   const r = await call('scan_flight_deals', { country: 'Vietnam' });
   assert.ok(!r.isError, JSON.stringify(r.content));
-  const { searched, deals } = r.structuredContent;
-  assert.equal(searched.length, 3);
+  const { searched, deals, best_dates } = r.structuredContent;
+  assert.ok(searched.length > 5 && searched.length <= 10, `5 spread, then some around the best: ${searched.length}`);
   assert.equal(searched[0].depart, FROM);
   for (const s of searched) assert.ok(s.return <= UNTIL && s.return > s.depart);
+  const nights = (s) => (Date.parse(s.return) - Date.parse(s.depart)) / 864e5;
+  assert.ok(searched.every((s) => nights(s) >= 9 && nights(s) <= 12), 'every stay as long as wanted');
+  assert.ok(new Set(searched.map(nights)).size > 1, 'shorter and longer stays tried too');
+  assert.equal(new Set(searched.map((s) => `${s.depart}>${s.return}`)).size, searched.length, 'no combination twice');
+  const cheapest = Math.min(...searched.filter((s) => s.best).map((s) => s.best));
+  assert.equal(best_dates[0].price, cheapest, 'the best combination leads');
+  assert.ok(best_dates.length >= 3 && new Set(best_dates.map((o) => `${o.depart}>${o.return}`)).size === best_dates.length, 'then other date combinations, not the same dates again');
+  assert.match(r.content[0].text, /\nBest dates: \d+ \w+ → \d+ \w+ \(\d+ nights\), FRA → SGN, .+, €\d+ pp\.\nNext best: /);
   assert.ok(deals.length >= 3);
   for (const d of deals) {
     assert.deepEqual([d.from, d.to, d.adults, d.source], ['FRA', 'SGN', 2, 'Demo data']);
