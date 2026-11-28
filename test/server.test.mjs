@@ -7,8 +7,8 @@ let srv, client, trip;
 before(async () => { srv = await startServer(null, { SEARCH_LIMIT_PER_DAY: '6' }); client = await connect(srv.url); });
 after(async () => { await client.close(); srv.server.close(); });
 
-const TOOLS = ['calendar_link', 'choose_flight', 'choose_route', 'choose_stay', 'clear_flight', 'clear_stay', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'flight_link', 'get_local_picks', 'hotel_link', 'list_trips', 'mark_leg', 'open_planner',
-  'plan_new_trip', 'planner_answers', 'save_flight_deals', 'save_local_picks', 'save_new_trip_draft', 'scan_flight_deals', 'search_flights', 'set_nights', 'set_trip_fare', 'show_answer', 'start_trip_from_flight', 'suggest_routes', 'update_trip'];
+const TOOLS = ['calendar_link', 'choose_flight', 'choose_route', 'choose_stay', 'choose_transport', 'clear_flight', 'clear_stay', 'create_trip', 'delete_my_data', 'delete_trip', 'find_airports', 'find_transport', 'flight_link', 'get_local_picks', 'hotel_link', 'list_trips', 'mark_leg', 'open_planner',
+  'plan_new_trip', 'planner_answers', 'save_flight_deals', 'save_local_picks', 'save_new_trip_draft', 'save_transport_options', 'scan_flight_deals', 'search_flights', 'set_nights', 'set_trip_fare', 'show_answer', 'start_trip_from_flight', 'suggest_routes', 'update_trip'];
 
 test('lists every tool, each with a title and the right read or write annotation', async () => {
   const { tools } = await client.listTools();
@@ -158,8 +158,10 @@ test('changes nights at one stop, and flags a flight whose date moved', async ()
   assert.equal(r.structuredContent.trip.end, addDays(LAST_DAY, 1), 'the end moves a day');
   const leg = r.structuredContent.legs.find((l) => l.from === 'KBV' && l.to === 'BKK');
   assert.equal(leg.chosen, null);
-  assert.deepEqual([leg.stale.date, leg.stale.price], [LAST_DAY, 186], 'the flight chosen for the old date is kept and flagged');
+  assert.deepEqual([leg.stale.date, leg.stale.price, leg.stale.booked], [LAST_DAY, 186, false], 'the flight chosen for the old date is kept and flagged');
+  assert.match(r.content[0].text, new RegExp(`need a new pick: the flight Ao Nang → Bangkok \\(saved for ${LAST_DAY}\\)\\.$`), 'Claude hears what to pick again');
   const back = await client.callTool({ name: 'set_nights', arguments: { trip_id: trip.id, stop: lanta, nights: 3 } });
+  assert.doesNotMatch(back.content[0].text, /new pick/, 'nothing to pick again once it fits');
   assert.equal(back.structuredContent.legs.find((l) => l.key === KBV_BKK).chosen.price, 186, 'and it fits again once the date is back');
   const bad = await client.callTool({ name: 'set_nights', arguments: { trip_id: trip.id, stop: 19, nights: 1 } });
   assert.match(bad.content[0].text, /has 8 stops/);
@@ -207,4 +209,11 @@ test('deletes one trip, then everything', async () => {
   assert.match(all.content[0].text, /Deleted 1 trip, the new-trip draft and the local picks for 1 place/);
   assert.equal(all.structuredContent.deleted.answers, 2, 'answers shown in the planner go too');
   assert.equal((await client.callTool({ name: 'list_trips', arguments: {} })).structuredContent.trips.length, 0);
+});
+
+test('a booked flight left on old dates is named as booked, with what to do about it', async () => {
+  const { movedNote } = await import('../src/app.mjs');
+  const v = { legs: [{ fromName: 'Ao Nang', toName: 'Bangkok', stale: { date: '2027-03-02', booked: true } }, { fromName: 'A', toName: 'B', stale: null }], stays: [] };
+  assert.equal(movedNote(v), ' The dates moved, so these need a new pick: the flight Ao Nang → Bangkok (saved for 2027-03-02, marked booked). Bookings made for the old dates have to be changed or cancelled with the airline or hotel; Pinroute does not do that.');
+  assert.equal(movedNote({ legs: [], stays: [] }), '');
 });

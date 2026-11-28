@@ -35,6 +35,8 @@ const TOOLS = [
   ['set_nights', 'Changes the nights at one stop; later dates move with it', 'Writes'],
   ['choose_flight', 'Saves the flight you picked for a leg, from any flight search', 'Writes'],
   ['clear_flight', 'Removes the flight saved for a leg', 'Deletes'],
+  ['find_transport', 'Finds where to book a ferry, bus or train between two stops on the leg\'s day: 12Go in Asia, Omio in Europe and Rome2Rio (with Pinroute\'s partner ID when set up)', 'Reads'],
+  ['save_transport_options / choose_transport', 'Saves the ways to make a ferry or road leg, with usual times and prices, and the one you picked', 'Writes'],
   ['mark_leg', 'Marks a flight, ferry or drive as booked, with an optional note', 'Writes'],
   ['search_flights', 'Searches airline fares (Amadeus Travel Builder); daily limit per person', 'Reads'],
   ['flight_link', 'Makes a link to compare and book a flight on Aviasales (with Pinroute\'s partner ID when set up)', 'Reads'],

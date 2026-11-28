@@ -19,6 +19,7 @@ import * as acts from './providers/activities.mjs';
 import { airlineName, withAirlineName, namedFare } from './airlines.mjs';
 import * as cal from './calendar.mjs';
 import * as hotels from './hotels.mjs';
+import * as transport from './transport.mjs';
 import { applyFilters, sortFares, dedupe, facets } from './flightfilter.mjs';
 
 export const VERSION = '0.8.0';
@@ -41,7 +42,20 @@ function plannerHtml() {
 
 function summary(v) {
   const route = v.stops.map((s) => `${s.place} (${s.nights}n)`).join(' → ');
-  return `${v.trip.name}: ${v.trip.start} to ${v.trip.end}, ${v.trip.adults} traveller${v.trip.adults === 1 ? '' : 's'}. ${route}. Trip id ${v.trip.id}.`;
+  return `${v.trip.name}: ${v.trip.start} to ${v.trip.end}, ${v.trip.adults} traveller${v.trip.adults === 1 ? '' : 's'}. ${route}. Trip id ${v.trip.id}.${movedNote(v)}`;
+}
+
+// What a change of dates left behind: flights and hotels saved for the old dates, so Claude can say what to pick again.
+// One the traveller had marked booked needs changing with the airline or hotel too, so it says so.
+export function movedNote(v) {
+  const was = (dates, booked) => `saved for ${dates}${booked ? ', marked booked' : ''}`;
+  const items = [
+    ...v.legs.filter((l) => l.stale).map((l) => ({ booked: l.stale.booked, text: `the flight ${l.fromName} → ${l.toName} (${was(l.stale.date, l.stale.booked)})` })),
+    ...(v.stays || []).filter((s) => s.stale).map((s) => ({ booked: s.stale.booked, text: `${s.stale.name} in ${s.place} (${was(`${s.stale.checkin} to ${s.stale.checkout}`, s.stale.booked)})` })),
+  ];
+  if (!items.length) return '';
+  const booked = items.some((x) => x.booked) ? ' Bookings made for the old dates have to be changed or cancelled with the airline or hotel; Pinroute does not do that.' : '';
+  return ` The dates moved, so these need a new pick: ${items.map((x) => x.text).join('; ')}.${booked}`;
 }
 
 const eur = (n) => `€${Math.round(n).toLocaleString('en-GB')}`;
@@ -66,7 +80,7 @@ export const INSTRUCTIONS = 'Pinroute Trip Planner plans holidays and multi-stop
   + 'create_trip fits when they already know their stops. For a trip that travels around, suggest_routes keeps two or three route options the traveller compares on the planner\'s map. '
   + 'open_planner shows trips they saved before. '
   + 'Its own lookups cover live airline fares and recent Aviasales prices (search_flights, scan_flight_deals), a Booking.com search for each stop\'s dates (hotel_link), '
-  + 'tours and activities at each stop (find_activities), and each trip\'s route with its flight, ferry and road legs. Pinroute never books or pays for anything. '
+  + 'tours and activities at each stop (find_activities), where to book the ferries, buses and trains between stops (find_transport), and each trip\'s route with its flight, ferry and road legs. Pinroute never books or pays for anything. '
   + 'A planner already showing in the conversation refreshes itself after every change saved with these tools, so a change does not need open_planner or plan_new_trip to show it; '
   + 'save_new_trip_draft changes the new-trip draft without showing another planner. '
   + 'A message sent from the planner names a key when the traveller wants the answer in the planner: show_answer puts it there.';
@@ -99,7 +113,8 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     const legList = legs(trip).map((l) => {
       const chosen = choices[l.key] || null;
       const old = chosen ? null : Object.entries(choices).find(([k]) => k !== l.key && legRoute(k) === legRoute(l.key));
-      return { ...l, chosen, stale: old ? { ...old[1], date: old[0].split('|')[3] } : null, booked: !!marks[l.key]?.booked, note: marks[l.key]?.note || null };
+      const rides = l.mode === 'flight' ? null : transport.ridesFor(trip, l.key);
+      return { ...l, chosen, stale: old ? { ...old[1], date: old[0].split('|')[3], booked: !!marks[old[0]]?.booked } : null, booked: !!marks[l.key]?.booked, note: marks[l.key]?.note || null, ...(rides && { rides }) };
     });
     const d = trip.country ? destById(trip.country) : null;
     return {
@@ -112,6 +127,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
       picks,
       flights: { provider: provider.name, live: provider.name !== 'Demo data', partnerLinks: tp.linksOn(env) },
       hotels: { partnerLinks: hotels.linksOn(env) },
+      transport: { partnerLinks: transport.linksOn(env) },
       activities: { on: acts.configured(env), partnerLinks: tp.linksOn(env) },
       calendar: { links: cal.calendarLinks(trip.calendar?.token, env), hosted: !!cal.publicBase(env) },
       options: routeOptions(trip),
@@ -341,7 +357,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   server.registerTool('clear_flight', {
     title: 'Remove a chosen flight',
-    description: 'Removes the flight saved for one leg of a trip, so the leg shows as not chosen again. It does not cancel any booking.',
+    description: 'Removes the flight, or the ferry, bus or train, saved for one leg of a trip, so the leg shows as not chosen again. It does not cancel any booking.',
     inputSchema: { trip_id: z.string().max(40), leg_key: z.string().max(80) },
     annotations: { title: 'Remove a chosen flight', readOnlyHint: false, destructiveHint: true },
   }, mine(async ({ trip_id, leg_key }) => {
@@ -988,7 +1004,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
     if (fit.error) return fail(fit.error);
     const saved = store.putTrip(owner, { ...fit.trip, country: t.country || x.country });
     const moved = saved.start !== t.start || endDate(saved) !== endDate(t);
-    return viewResult(saved, `"${saved.name}" now flies ${x.from} → ${x.to} on ${x.depart} and home from ${x.back_from || x.to} on ${x.return} (${x.airline}, ${x.currency} ${Math.round(x.price)} for ${x.adults || saved.adults}).${moved ? ` The trip now runs ${saved.start} to ${endDate(saved)}, ${fit.total} nights.` : ''}`);
+    return viewResult(saved, `"${saved.name}" now flies ${x.from} → ${x.to} on ${x.depart} and home from ${x.back_from || x.to} on ${x.return} (${x.airline}, ${x.currency} ${Math.round(x.price)} for ${x.adults || saved.adults}).${moved ? ` The trip now runs ${saved.start} to ${endDate(saved)}, ${fit.total} nights.${movedNote(tripView(saved))}` : ''}`);
   }));
 
   server.registerTool('flight_link', {
@@ -1004,6 +1020,7 @@ export function buildServer({ owner = store.LOCAL, env = process.env } = {}) {
 
   // ---- hotels per stop: a Booking.com search for each stop's dates, and the stay the traveller picked
   hotels.registerHotelTools(server, { env, owner, store, mine, noTrip, viewResult });
+  transport.registerTransportTools(server, { env, owner, store, mine, noTrip, viewResult });
   // ---- tours and activities: found with Amadeus Travel Builder, booked through GetYourGuide or Klook partner links
   if (acts.configured(env)) {
     const money = (n, c) => (n == null ? null : `${c === 'EUR' ? '€' : `${c} `}${Math.round(n).toLocaleString('en-GB')}`);

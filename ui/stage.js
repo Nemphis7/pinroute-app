@@ -3,11 +3,14 @@
 // leg by leg and the stops drop in; waves move on the sea and cloud shadows drift over the land. "Play your trip"
 // flies from stop to stop in travel order with a postcard caption, the way you'd daydream over a map.
 // The map is built once per trip and state; renders only change classes and move the camera, so nothing restarts.
-import { Plane, Ship, Car, Play, Pause, Expand } from 'lucide';
+import { Plane, Ship, Car, Bus, TrainFront, CarTaxiFront, Play, Pause, Expand } from 'lucide';
 import { h, s, icon, span, nightsTxt, day } from './dom.js';
 import { scene, kindOf } from './scene.js';
 
 const S = { el: null, wrap: null, svg: null, key: '', vb: null, raf: 0, M: null, V: null, o: null, playing: 0, cap: null, mover: null };
+// A ferry or road leg moves as the ride chosen for it: a bus, a train, a boat
+const RIDE = { ferry: Ship, speedboat: Ship, bus: Bus, minivan: Bus, combined: Bus, train: TrainFront, taxi: CarTaxiFront, drive: Car };
+const rideOf = (l) => (l.mode !== 'flight' && l.chosen?.ride) || l.mode;
 const reduced = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
@@ -153,15 +156,15 @@ function mark() {
   if (top) top.parentNode.append(top);                      // the selected pin above its neighbours
   const l = sel?.kind === 'leg' ? o.V.legs.find((x) => x.key === sel.key) : null;
   const d = l && legPath(l);
-  const k = d ? `${l.key}|${d}` : '';
-  if (S.moverKey !== k) { S.moverKey = k; S.moverG.replaceChildren(...(d && !reduced() ? [mover(d, l.mode, true)] : [])); }
+  const k = d ? `${l.key}|${d}|${rideOf(l)}` : '';
+  if (S.moverKey !== k) { S.moverKey = k; S.moverG.replaceChildren(...(d && !reduced() ? [mover(d, rideOf(l), true)] : [])); }
 }
 
 function mover(d, mode, loop) {
   const g = s('g', { class: 'mover' });
   const inner = s('g', { class: 'pin-s' });
   inner.append(s('circle', { r: 10 }));
-  const ic = icon(mode === 'flight' ? Plane : mode === 'ferry' ? Ship : Car);
+  const ic = icon(mode === 'flight' ? Plane : RIDE[mode] || Car);
   ic.setAttribute('x', -6.5); ic.setAttribute('y', -6.5); ic.setAttribute('width', 13); ic.setAttribute('height', 13);
   if (mode === 'flight') ic.setAttribute('transform', 'rotate(45)');
   inner.append(ic);
@@ -249,8 +252,8 @@ async function playTrip() {
     const x = stops[n], i = x.index;
     const leg = n ? V.legs.find((l) => l.after === stops[n - 1].index) : null;
     const d = leg && legPath(leg);
-    if (d && !reduced()) S.moverG.replaceChildren(mover(d, leg.mode, false));
-    caption(x);
+    if (d && !reduced()) S.moverG.replaceChildren(mover(d, rideOf(leg), false));
+    caption(x, leg);
     for (const g of S.svg.querySelectorAll('.pin')) g.classList.toggle('play', Number(g.dataset.stop) === i);
     S.o.onHover(i, true);
     await flyTo(boxFor({ kind: 'stop', index: i }), 1300);
@@ -270,11 +273,19 @@ function stopPlay() {
   mark();
   flyTo(boxFor(S.o.sel), 1000);
 }
-function caption(x) {
-  const n = S.V.stops.length;
+const RIDE_WORD = { ferry: 'ferry', speedboat: 'speedboat', bus: 'bus', minivan: 'minivan', combined: 'bus and ferry', train: 'train', taxi: 'private transfer', drive: 'car' };
+// How the traveller got here: "By ferry · 09:00–10:30" when a ride is chosen for the leg in
+function arrival(leg) {
+  if (!leg || leg.mode === 'flight' || !leg.chosen) return null;
+  const t = /(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})/.exec(leg.chosen.summary || '');
+  return `By ${RIDE_WORD[leg.chosen.ride] || 'road'}${t ? ` · ${t[1]}–${t[2]}` : ''}${leg.booked ? ' · booked' : ''}`;
+}
+function caption(x, leg) {
+  const n = S.V.stops.length, by = arrival(leg);
   S.cap.hidden = false;
   S.cap.replaceChildren(h('span', { class: 'cap-art' }, scene(x.place, kindOf(x, x.index, n), { w: 120, h: 120 })),
     h('span', { class: 'cap-t' }, h('span', { class: 'small', text: `Stop ${x.index + 1} of ${n}` }), h('b', { text: x.place }),
-      h('span', { class: 'small', text: x.nights ? `${span(x.arrive, x.depart)} · ${nightsTxt(x.nights)}` : day(x.arrive) })));
+      h('span', { class: 'small', text: x.nights ? `${span(x.arrive, x.depart)} · ${nightsTxt(x.nights)}` : day(x.arrive) }),
+      by ? h('span', { class: 'small cap-by', text: by }) : null));
   S.cap.classList.remove('in'); void S.cap.offsetWidth; S.cap.classList.add('in');
 }

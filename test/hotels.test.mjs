@@ -68,7 +68,11 @@ test('choose_stay saves a hotel, goes stale when the dates move, and clear_stay 
   const saved = r.structuredContent.stays[2].chosen;
   assert.deepEqual([saved.name, saved.price, saved.currency, saved.booked, saved.note], ['Sea Breeze Resort', 180, 'EUR', true, 'Free cancellation']);
   // One more night in Bangkok moves Khao Lak a day later: the saved stay shows as stale
-  const moved = (await call('set_nights', { trip_id: trip.trip.id, stop: 0, nights: 2 })).structuredContent;
+  const change = await call('set_nights', { trip_id: trip.trip.id, stop: 0, nights: 2 });
+  const moved = change.structuredContent;
+  // Claude is told what to pick again, and that the booking for the old dates needs changing with the hotel
+  assert.match(change.content[0].text, new RegExp(`need a new pick: Sea Breeze Resort in Khao Lak \\(saved for ${trip.stays[2].checkin} to ${trip.stays[2].checkout}, marked booked\\)`));
+  assert.match(change.content[0].text, /changed or cancelled with the airline or hotel/);
   const kl = moved.stays[2];
   assert.equal(kl.chosen, null);
   assert.equal(kl.stale.name, 'Sea Breeze Resort');
